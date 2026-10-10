@@ -13,7 +13,7 @@ DryRun prepares you for high-stakes meetings and lets you rehearse them. n8n wat
 | Part | Location | Notes |
 |---|---|---|
 | Docs, n8n workflows, web client | this repo (`~/Desktop/HackSprint`) | GitHub: aryankalra404/HackSprint |
-| VR client (Unity 6.3, Quest 3S) | `~/My project` (**not in this repo, not under version control yet**) | Its own `CLAUDE.md` is the source of truth for scene, lighting, build steps and Unity gotchas. Read it before any Unity work. |
+| VR client (Unity 6.3, Quest 3S) | `~/My project` (not in this repo; its own local Git since 11 Oct, no remote) | Its own `CLAUDE.md` is the source of truth for scene, lighting, build steps and Unity gotchas. Read it before any Unity work. |
 | n8n workflows | `n8n/` | Built from `n8n/build/*.py` (prompts and nodes) into `n8n/sdk/*.ts`, deployed through the n8n MCP server; `n8n/*.json` are exports of the live workflows, credentials stripped. Re-export after every change. See `n8n/README.md`. |
 | Web client | `web/` | Next.js 16 (App Router, Cache Components, Tailwind 4). Must speak the same contract as VR. See `web/README.md`. |
 
@@ -47,7 +47,7 @@ When a task changes something these files describe, update the file in the same 
 - Never commit `docs/` (kept local). Stage files by path, not with `git add -A`.
 
 ## Gotchas
-- Disk is nearly full (about 4.5 GB free on 10 Oct). Unity builds fail and crash when it's low, so check `df -h ~` before builds or big imports.
+- Disk is nearly full (16 GB free on 11 Oct, after clearing an old project copy's cache; it was 4.5 GB on 10 Oct). Unity builds fail and crash when it's low, so check `df -h ~` before builds or big imports.
 - Don't trigger Quest builds through MCP Unity (it crashed Unity once). Ask the user to run `Tools > DryRun > Build And Run On Quest`.
 - Never commit API keys, n8n credentials or `.env` files. n8n exports must have credentials removed.
 - Only the laptop talks to n8n. The Quest must reach the laptop: the same network with device-to-device traffic allowed (a phone hotspot works; venue Wi-Fi often blocks it), or USB (`npm run quest`).
