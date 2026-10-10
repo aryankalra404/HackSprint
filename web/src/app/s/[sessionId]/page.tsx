@@ -19,5 +19,7 @@ export default function DashboardPage({ params }: PageProps<"/s/[sessionId]">) {
 async function Session({ sessionId }: { sessionId: string }) {
   const session = await getSession(sessionId);
   if (!session) notFound();
-  return <Dashboard session={session} nameCards={getRoom().name_cards} />;
+  const room = getRoom();
+  // Only the session in the laptop's room can be started and ended from here
+  return <Dashboard session={session} nameCards={room.name_cards} room={room.session_id === sessionId ? room : null} />;
 }

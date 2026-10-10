@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.9).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.10).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -232,4 +232,15 @@ export interface Room {
   session_id: string | null;
   // Tent cards with each person's name in VR; off unless switched on from the web
   name_cards: boolean;
+  // Set when the session starts; null before
+  live: LiveSession | null;
+}
+
+export type SessionActor = "headset" | "web";
+
+export interface LiveSession {
+  started_at: string;
+  started_by: SessionActor;
+  ended_at: string | null;
+  ended_by: SessionActor | null;
 }

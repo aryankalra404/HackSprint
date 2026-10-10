@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { PersonaId, SessionRecord } from "@/lib/contract";
+import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
 import { buildFeed } from "@/lib/feed";
 import { PersonaAvatar, StancePill } from "../ui";
 import { RoomBoard } from "./RoomBoard";
@@ -10,10 +10,11 @@ import { AgentFeed } from "./AgentFeed";
 import { BottomStrip } from "./BottomStrip";
 import { PersonaDrawer } from "./PersonaDrawer";
 import { NameCardsToggle } from "../room/NameCardsToggle";
+import { SessionControls } from "./SessionControls";
 
 // One screen for the room: it sits on the big display while the presenter is in VR.
-// Prep (briefed, waiting) and debrief share the layout; live comes next.
-export function Dashboard({ session, nameCards }: { session: SessionRecord; nameCards: boolean }) {
+// Prep (briefed, waiting) and debrief share the layout. For the session in the laptop's room, the header also starts and ends it.
+export function Dashboard({ session, nameCards, room }: { session: SessionRecord; nameCards: boolean; room: Room | null }) {
   const [open, setOpen] = useState<PersonaId | null>(null);
   const feed = useMemo(() => buildFeed(session), [session]);
   const { bundle, debrief } = session;
@@ -27,10 +28,14 @@ export function Dashboard({ session, nameCards }: { session: SessionRecord; name
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <NameCardsToggle initial={nameCards} />
-          <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
-            <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
-            {debrief ? "Debrief ready" : "Waiting for the presenter"}
-          </p>
+          {room && !debrief ? (
+            <SessionControls initial={room} />
+          ) : (
+            <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
+              <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
+              {debrief ? "Debrief ready" : "Waiting for the presenter"}
+            </p>
+          )}
         </div>
       </header>
 

@@ -1,0 +1,32 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { Room } from "./contract";
+
+const RETRY_MS = 2000;
+
+// Follows the laptop's room from the browser with the same long poll the headset uses (contract: GET /api/room)
+export function useRoom(initial: Room): Room {
+  const [room, setRoom] = useState(initial);
+  useEffect(() => {
+    const abort = new AbortController();
+    let since = initial.version;
+    (async () => {
+      while (!abort.signal.aborted) {
+        try {
+          const res = await fetch(`/api/room?since=${since}`, { cache: "no-store", signal: abort.signal });
+          const next = (await res.json()) as Room;
+          if (next.version !== since) {
+            since = next.version;
+            setRoom(next);
+          }
+        } catch {
+          if (abort.signal.aborted) return;
+          await new Promise((r) => setTimeout(r, RETRY_MS));
+        }
+      }
+    })();
+    return () => abort.abort();
+  }, [initial.version]);
+  return room;
+}

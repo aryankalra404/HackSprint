@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { BriefInput, DraftMember, PanelProposal, Room } from "./contract";
+import type { BriefInput, DraftMember, PanelProposal, Room, SessionActor } from "./contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "./personas";
 
 // The one room, held by the laptop (contract: Room API). Kept in memory, saved to .room.json so a restart
@@ -18,7 +18,7 @@ interface Store {
   headsetVia: "wifi" | "usb";
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };
@@ -93,6 +93,19 @@ export async function trackHeadset<T>(via: "wifi" | "usb", poll: () => Promise<T
 export function headsetStatus(): { connected: boolean; via: "wifi" | "usb" } {
   const s = store();
   return { connected: s.headsetPolling > 0 || Date.now() - s.headsetSeen < 30_000, via: s.headsetVia };
+}
+
+// Starts or ends the rehearsal (contract: POST /api/room/session). Only briefed → live → done is allowed,
+// so a second "start" from the headset and the web at the same moment changes nothing.
+export function changeSession(action: "start" | "end", by: SessionActor): { ok: true; room: Room } | { ok: false; error: string; room: Room } {
+  const room = getRoom();
+  const now = new Date().toISOString();
+  if (action === "start") {
+    if (room.phase !== "briefed") return { ok: false, error: `Can't start: the room is ${room.phase}, not briefed.`, room };
+    return { ok: true, room: updateRoom({ phase: "live", live: { started_at: now, started_by: by, ended_at: null, ended_by: null } }) };
+  }
+  if (room.phase !== "live" || !room.live) return { ok: false, error: `Can't end: the room is ${room.phase}, not live.`, room };
+  return { ok: true, room: updateRoom({ phase: "done", live: { ...room.live, ended_at: now, ended_by: by } }) };
 }
 
 // Why a panel can't be saved, or null if it's fine
