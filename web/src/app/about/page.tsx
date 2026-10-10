@@ -87,20 +87,23 @@ function Nav() {
   );
 }
 
+const WORKS_WITH = ["Google Calendar", "Gmail", "Gemini", "Meta Quest"];
+const IN_INVITE = PANEL.filter((m) => m.source === "email").length;
+
 function Hero() {
   return (
-    <section className="mx-auto max-w-6xl px-4 pt-16 sm:px-6 sm:pt-24">
-      <div className="max-w-3xl">
+    <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 pt-12 pb-8 sm:px-6 sm:pt-16 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-14 lg:py-12">
+      <div>
         <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2">
           <span aria-hidden="true" className="size-1.5 rounded-full bg-[#ea4b71]" />
           Built with n8n for HackSprint 2026
         </p>
-        <h1 className="mt-6 text-balance font-display text-4xl leading-[1.05] sm:text-6xl">
+        <h1 className="mt-6 text-balance font-display text-4xl leading-[1.05] sm:text-5xl">
           Know the hard questions before the meeting starts.
         </h1>
-        <p className="mt-6 max-w-2xl text-pretty text-lg text-ink-2">
-          DryRun watches your calendar. For each meeting that matters, an n8n agent researches the people and the company,
-          emails you a brief with sources, and seats them around a table in VR so you can practise the pitch.
+        <p className="mt-6 max-w-xl text-pretty text-lg text-ink-2">
+          An n8n agent watches your calendar, researches the people you&apos;re about to meet and emails you a brief with
+          sources. Then you pitch to them in a VR boardroom, before the real thing.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Link href="/" className="rounded-full bg-ink px-6 py-3 text-sm font-medium text-surface hover:bg-ink-2">
@@ -110,30 +113,56 @@ function Hero() {
             See how it works
           </a>
         </div>
+        <div className="mt-10 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+          <span className="mr-1 text-muted">Works with</span>
+          {WORKS_WITH.map((t) => (
+            <span key={t} className="rounded-full border border-line px-2.5 py-1">
+              {t}
+            </span>
+          ))}
+        </div>
       </div>
 
-      <div className="relative mt-14 sm:mt-16">
-        <div className="relative aspect-[16/10] overflow-hidden rounded-3xl bg-ink sm:aspect-[16/8]">
+      {/* The product in one picture: the room you rehearse in, and the app cards that get you there */}
+      <div className="relative lg:pr-4">
+        <div className="relative aspect-[4/3] overflow-hidden rounded-3xl bg-ink shadow-2xl shadow-ink/20">
           <Image
             src="/vr/room_wide.jpg"
             alt="The VR boardroom from where you stand: the practice panel seated around a long table."
             fill
             preload
-            sizes="(min-width: 1152px) 1104px, 100vw"
-            className="object-cover object-[center_65%]"
+            sizes="(min-width: 1024px) 600px, 100vw"
+            className="object-cover object-[center_75%]"
           />
-          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-ink/50 via-transparent to-transparent" />
+          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-ink/20" />
+          <p className="absolute top-4 left-4 inline-flex items-center gap-1.5 rounded-full bg-surface/90 px-3 py-1.5 text-xs shadow-sm backdrop-blur">
+            <StatusIcon tone="good" className="size-3.5 text-good-ink" />
+            Brief emailed to you
+          </p>
         </div>
-        {/* The step that starts it all: n8n has prepared a meeting and asks if you want to practise */}
-        <div className="relative -mt-10 px-3 sm:absolute sm:bottom-6 sm:left-6 sm:mt-0 sm:w-[380px] sm:px-0">
-          <div className="rounded-2xl border border-line bg-surface p-5 shadow-xl shadow-ink/10">
-            <p className="text-xs text-muted">In 2 days, 3:00 pm</p>
-            <p className="mt-1 font-display text-lg">Prepare for {meeting.title}?</p>
-            <p className="mt-2 text-sm text-ink-2">{meeting.why} n8n has written your brief.</p>
-            <div className="mt-4 flex gap-2 text-sm">
-              <span className="rounded-full bg-ink px-4 py-2 text-surface">Read the brief</span>
-              <span className="rounded-full border border-line px-4 py-2">Practise now</span>
-            </div>
+
+        <div className="absolute top-[18%] -right-2 hidden w-56 rounded-2xl border border-line bg-surface p-4 shadow-xl shadow-ink/10 sm:block lg:-right-4">
+          <p className="text-xs text-muted">Practice panel</p>
+          <div className="mt-3 flex -space-x-2">
+            {PANEL.map((m) => (
+              <span key={m.id} className="rounded-full ring-2 ring-surface">
+                <PersonaAvatar persona={m} size={34} />
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-ink-2">
+            {IN_INVITE} from the invite, {PANEL.length - IN_INVITE} practice roles
+          </p>
+        </div>
+
+        {/* n8n has prepared a meeting and asks if you want to practise */}
+        <div className="relative mx-3 -mt-12 rounded-2xl border border-line bg-surface p-5 shadow-xl shadow-ink/10 sm:absolute sm:-bottom-14 sm:-left-6 sm:mx-0 sm:mt-0 sm:w-[340px]">
+          <p className="text-xs text-muted">In 2 days, 3:00 pm</p>
+          <p className="mt-1 font-display text-lg">Prepare for {meeting.title}?</p>
+          <p className="mt-2 text-sm text-ink-2">{meeting.why}</p>
+          <div className="mt-4 flex gap-2 text-sm">
+            <span className="rounded-full bg-ink px-4 py-2 text-surface">Read the brief</span>
+            <span className="rounded-full border border-line px-4 py-2">Practise now</span>
           </div>
         </div>
       </div>
@@ -149,7 +178,7 @@ const STEPS = [
 
 function Steps() {
   return (
-    <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-24 sm:px-6 sm:pt-32">
+    <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-20 sm:px-6 lg:pt-12">
       <SectionHead eyebrow="How it works" title="From calendar invite to rehearsal, without asking." />
       <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3">
         {STEPS.map((s, i) => (
