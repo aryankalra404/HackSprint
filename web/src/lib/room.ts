@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { BriefInput, DraftMember, PanelProposal, Room, SessionActor } from "./contract";
+import type { BriefInput, DraftMember, PanelProposal, Room, SessionAction, SessionActor } from "./contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "./personas";
 
 // The one room, held by the laptop (contract: Room API). Kept in memory, saved to .room.json so a restart
@@ -97,12 +97,17 @@ export function headsetStatus(): { connected: boolean; via: "wifi" | "usb" } {
 
 // Starts or ends the rehearsal (contract: POST /api/room/session). Only briefed → live → done is allowed,
 // so a second "start" from the headset and the web at the same moment changes nothing.
-export function changeSession(action: "start" | "end", by: SessionActor): { ok: true; room: Room } | { ok: false; error: string; room: Room } {
+export function changeSession(action: SessionAction, by: SessionActor): { ok: true; room: Room } | { ok: false; error: string; room: Room } {
   const room = getRoom();
   const now = new Date().toISOString();
   if (action === "start") {
     if (room.phase !== "briefed") return { ok: false, error: `Can't start: the room is ${room.phase}, not briefed.`, room };
     return { ok: true, room: updateRoom({ phase: "live", live: { started_at: now, started_by: by, ended_at: null, ended_by: null } }) };
+  }
+  if (action === "restart") {
+    // Go again with the same panel and bundle
+    if (room.phase !== "done") return { ok: false, error: `Can't restart: the room is ${room.phase}, not done.`, room };
+    return { ok: true, room: updateRoom({ phase: "briefed", live: null }) };
   }
   if (room.phase !== "live" || !room.live) return { ok: false, error: `Can't end: the room is ${room.phase}, not live.`, room };
   return { ok: true, room: updateRoom({ phase: "done", live: { ...room.live, ended_at: now, ended_by: by } }) };

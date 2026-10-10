@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
 import { buildFeed } from "@/lib/feed";
+import { useRoom } from "@/lib/useRoom";
 import { PersonaAvatar, StancePill } from "../ui";
 import { RoomBoard } from "./RoomBoard";
 import { AgentFeed } from "./AgentFeed";
@@ -13,15 +14,23 @@ import { NameCardsToggle } from "../room/NameCardsToggle";
 import { SessionControls } from "./SessionControls";
 import { HeadsetView } from "./HeadsetView";
 
+type View = "headset" | "plan";
+
 // One screen for the room: it sits on the big display while the presenter is in VR.
-// Prep (briefed, waiting) and debrief share the layout. For the session in the laptop's room, the header also starts and ends it,
-// and the room panel shows what the presenter sees in the headset (the room plan is one click away).
-export function Dashboard({ session, nameCards, room }: { session: SessionRecord; nameCards: boolean; room: Room | null }) {
+// Prep (briefed, waiting) and debrief share the layout. For the session in the laptop's room, the dashboard follows the room:
+// the header starts, ends and restarts it, and the room panel shows the room plan while waiting and switches to what the
+// presenter sees in the headset once the session is live (the headset only streams while that view is open).
+export function Dashboard({ session, nameCards, room: initialRoom }: { session: SessionRecord; nameCards: boolean; room: Room | null }) {
   const [open, setOpen] = useState<PersonaId | null>(null);
   const feed = useMemo(() => buildFeed(session), [session]);
+  const room = useRoom(initialRoom);
   const { bundle, debrief } = session;
   const streamable = room !== null && !debrief;
-  const [view, setView] = useState<"headset" | "plan">(streamable ? "headset" : "plan");
+  // A click on the switch wins until the session moves on (to its next phase, or a new run)
+  const moment = `${room?.phase}:${room?.live?.started_at ?? ""}`;
+  const [picked, setPicked] = useState<{ view: View; moment: string } | null>(null);
+  const view: View = picked?.moment === moment ? picked.view : room?.phase === "live" ? "headset" : "plan";
+  const setView = (next: View) => setPicked({ view: next, moment });
 
   return (
     <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6 lg:h-dvh">
@@ -33,7 +42,7 @@ export function Dashboard({ session, nameCards, room }: { session: SessionRecord
         <div className="flex flex-wrap items-center gap-2">
           <NameCardsToggle initial={nameCards} />
           {room && !debrief ? (
-            <SessionControls initial={room} />
+            <SessionControls room={room} />
           ) : (
             <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
               <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
@@ -45,7 +54,12 @@ export function Dashboard({ session, nameCards, room }: { session: SessionRecord
 
       <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="flex min-h-0 flex-col gap-3 rounded-2xl border border-line bg-surface p-4" aria-label="The room">
-          {streamable && <ViewSwitch view={view} onChange={setView} />}
+          {streamable && (
+            <div className="flex flex-wrap items-center gap-3">
+              <ViewSwitch view={view} onChange={setView} />
+              {view === "plan" && room?.phase === "briefed" && <p className="text-xs text-muted">The headset view opens when the session starts.</p>}
+            </div>
+          )}
           {streamable && view === "headset" ? (
             <div className="flex min-h-[50vh] flex-1 flex-col lg:min-h-0">
               <HeadsetView name={bundle.prospect.company} />
@@ -53,7 +67,7 @@ export function Dashboard({ session, nameCards, room }: { session: SessionRecord
           ) : (
             <>
               <div className="hidden min-h-0 flex-1 md:block">
-                <RoomBoard session={session} onOpen={setOpen} />
+                <RoomBoard session={session} phase={room?.phase} onOpen={setOpen} />
               </div>
               <ul className="flex flex-col divide-y divide-line md:hidden">
                 {bundle.personas.map((p) => {
@@ -86,13 +100,13 @@ export function Dashboard({ session, nameCards, room }: { session: SessionRecord
 }
 
 // Headset view or room plan. Leaving the headset view unmounts it, which stops the headset encoding.
-function ViewSwitch({ view, onChange }: { view: "headset" | "plan"; onChange: (view: "headset" | "plan") => void }) {
+function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => void }) {
   const options = [
     { id: "headset", label: "Headset view" },
     { id: "plan", label: "Room plan" },
   ] as const;
   return (
-    <div role="tablist" aria-label="What the room panel shows" className="inline-flex self-start rounded-full border border-line bg-paper p-0.5 text-xs">
+    <div role="tablist" aria-label="What the room panel shows" className="inline-flex rounded-full border border-line bg-paper p-0.5 text-xs">
       {options.map((o) => (
         <button
           key={o.id}

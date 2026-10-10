@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.12).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.13).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -241,6 +241,9 @@ export interface Room {
 }
 
 export type SessionActor = "headset" | "web";
+
+// POST /api/room/session: start (briefed → live), end (live → done), restart (done → briefed, same panel)
+export type SessionAction = "start" | "end" | "restart";
 
 export interface LiveSession {
   started_at: string;

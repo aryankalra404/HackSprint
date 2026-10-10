@@ -5,12 +5,17 @@ import type { Room } from "./contract";
 
 const RETRY_MS = 2000;
 
-// Follows the laptop's room from the browser with the same long poll the headset uses (contract: GET /api/room)
-export function useRoom(initial: Room): Room {
+// Follows the laptop's room from the browser with the same long poll the headset uses (contract: GET /api/room).
+// Pass null when the page isn't about the laptop's room; nothing is polled then.
+export function useRoom(initial: Room): Room;
+export function useRoom(initial: Room | null): Room | null;
+export function useRoom(initial: Room | null): Room | null {
   const [room, setRoom] = useState(initial);
+  const version = initial?.version;
   useEffect(() => {
+    if (version === undefined) return;
     const abort = new AbortController();
-    let since = initial.version;
+    let since = version;
     (async () => {
       while (!abort.signal.aborted) {
         try {
@@ -27,6 +32,6 @@ export function useRoom(initial: Room): Room {
       }
     })();
     return () => abort.abort();
-  }, [initial.version]);
+  }, [version]);
   return room;
 }

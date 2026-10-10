@@ -1,4 +1,4 @@
-import type { PersonaId, SessionRecord } from "@/lib/contract";
+import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
 import { colorOf } from "@/lib/personas";
 import { PersonaAvatar, StanceText, StatusIcon } from "../ui";
 import { CARD_W, H, PRESENTER, RoomPlan, TABLE_CENTRE, W, cardPlacement, pct, seatPoint } from "../room/RoomPlan";
@@ -7,16 +7,24 @@ const LOW_SHARE = 0.1;
 
 interface Props {
   session: SessionRecord;
+  // The laptop's room, when this is its session: the table says where the session is
+  phase?: Room["phase"];
   onOpen: (id: PersonaId) => void;
 }
 
+const TABLE_TEXT: Partial<Record<Room["phase"], [string, string]>> = {
+  live: ["The session is live", "The panel is listening"],
+  done: ["Session ended", "Run it again from the top bar, or press A in the headset"],
+};
+
 // The room on the dashboard: who sits where, and after the session, how each of them landed
-export function RoomBoard({ session, onOpen }: Props) {
+export function RoomBoard({ session, phase, onOpen }: Props) {
   const { bundle, telemetry, debrief } = session;
   const dwell = telemetry?.gaze_dwell_s;
   const total = dwell ? Object.values(dwell).reduce((a, b) => a + b, 0) || 1 : 1;
   const share = (id: PersonaId) => (dwell ? (dwell[id] ?? 0) / total : null);
   const backing = debrief?.stakeholders.filter((s) => s.stance === "backs").length ?? 0;
+  const [headline, detail] = (phase && TABLE_TEXT[phase]) ?? ["The panel is seated", "Put on the headset to start"];
 
   // Where the presenter looked: line weight is share of eye contact
   const lines = bundle.personas.map((p) => {
@@ -52,8 +60,8 @@ export function RoomBoard({ session, onOpen }: Props) {
           className="absolute -translate-x-1/2 -translate-y-1/2 text-center font-display text-[1.8cqw] leading-tight whitespace-nowrap text-[#4a3826]"
           style={{ left: pct(TABLE_CENTRE.x, W), top: pct(TABLE_CENTRE.y, H) }}
         >
-          The panel is seated
-          <span className="block font-sans text-[1.15cqw] text-[#6b5641]">Put on the headset to start</span>
+          {headline}
+          <span className="block font-sans text-[1.15cqw] text-[#6b5641]">{detail}</span>
         </p>
       )}
 
