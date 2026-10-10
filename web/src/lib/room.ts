@@ -18,7 +18,7 @@ interface Store {
   headsetVia: "wifi" | "usb";
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };
@@ -31,7 +31,8 @@ function store(): Store {
     } catch {
       // No saved room yet
     }
-    g.__dryrunRoom = { ...saved, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb" };
+    // A room saved by an older version may lack newer fields
+    g.__dryrunRoom = { ...saved, room: { ...EMPTY, ...saved.room }, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb" };
   }
   return g.__dryrunRoom;
 }

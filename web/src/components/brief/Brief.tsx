@@ -7,6 +7,7 @@ import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction, proposePanelAction } from "@/app/new/actions";
 import { PanelTable, type Selection } from "./PanelTable";
 import { PanelEditor } from "./PanelEditor";
+import { NameCardsToggle } from "../room/NameCardsToggle";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
 
@@ -14,11 +15,12 @@ interface Props {
   sample: { company: string; website: string; context: string };
   // A panel still being drafted in the room, so a reload carries on where it left off
   resume: { input: BriefInput; draft: Draft; panel: DraftMember[] } | null;
+  nameCards: boolean;
 }
 
 // New rehearsal: describe the meeting, let n8n propose the panel, edit it on the table, then brief it.
 // Every edit is saved to the room on the laptop, and the headset seats the panel as it changes.
-export function Brief({ sample, resume }: Props) {
+export function Brief({ sample, resume, nameCards }: Props) {
   const [form, setForm] = useState({
     company: resume?.input.prospect.company ?? "",
     website: resume?.input.prospect.website ?? "",
@@ -133,7 +135,8 @@ export function Brief({ sample, resume }: Props) {
           <span className="text-sm text-ink-2">{proposal ? `Pitch to ${form.company}` : "New rehearsal"}</span>
         </div>
         {proposal && (
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <NameCardsToggle initial={nameCards} />
             <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs" aria-live="polite">
               <span
                 aria-hidden="true"

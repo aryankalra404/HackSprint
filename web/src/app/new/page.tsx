@@ -23,5 +23,5 @@ async function BriefFromRoom() {
     room.phase === "drafting" && brief
       ? { input: brief.input, draft: { draft_id: brief.draft_id, suggestions: brief.suggestions }, panel: room.panel }
       : null;
-  return <Brief sample={demoBriefInput} resume={resume} />;
+  return <Brief sample={demoBriefInput} resume={resume} nameCards={room.name_cards} />;
 }

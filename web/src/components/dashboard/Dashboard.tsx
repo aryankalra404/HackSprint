@@ -9,10 +9,11 @@ import { RoomBoard } from "./RoomBoard";
 import { AgentFeed } from "./AgentFeed";
 import { BottomStrip } from "./BottomStrip";
 import { PersonaDrawer } from "./PersonaDrawer";
+import { NameCardsToggle } from "../room/NameCardsToggle";
 
 // One screen for the room: it sits on the big display while the presenter is in VR.
 // Prep (briefed, waiting) and debrief share the layout; live comes next.
-export function Dashboard({ session }: { session: SessionRecord }) {
+export function Dashboard({ session, nameCards }: { session: SessionRecord; nameCards: boolean }) {
   const [open, setOpen] = useState<PersonaId | null>(null);
   const feed = useMemo(() => buildFeed(session), [session]);
   const { bundle, debrief } = session;
@@ -24,10 +25,13 @@ export function Dashboard({ session }: { session: SessionRecord }) {
           <Link href="/" className="font-display text-2xl">DryRun</Link>
           <span className="text-sm text-ink-2">Pitch to {bundle.prospect.company}</span>
         </div>
-        <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
-          <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
-          {debrief ? "Debrief ready" : "Waiting for the presenter"}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <NameCardsToggle initial={nameCards} />
+          <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
+            <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
+            {debrief ? "Debrief ready" : "Waiting for the presenter"}
+          </p>
+        </div>
       </header>
 
       <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">

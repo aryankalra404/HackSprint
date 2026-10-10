@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/api";
+import { getRoom } from "@/lib/room";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 
 export const metadata = { title: "DryRun dashboard" };
@@ -18,5 +19,5 @@ export default function DashboardPage({ params }: PageProps<"/s/[sessionId]">) {
 async function Session({ sessionId }: { sessionId: string }) {
   const session = await getSession(sessionId);
   if (!session) notFound();
-  return <Dashboard session={session} />;
+  return <Dashboard session={session} nameCards={getRoom().name_cards} />;
 }

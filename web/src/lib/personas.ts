@@ -17,7 +17,7 @@ export const MAX_PANEL = 6;
 
 // Every chair at the table (VR world x, z in metres). See Seats, avatars and colours in docs/CONTRACT.md.
 export const SEAT_POS: Record<Seat, { x: number; z: number }> = {
-  0: { x: -4.79, z: -1.52 },
+  0: { x: -4.53, z: -1.5 },
   1: { x: -5.4, z: -2.75 },
   2: { x: -5.4, z: -3.8 },
   3: { x: -5.4, z: -4.9 },
