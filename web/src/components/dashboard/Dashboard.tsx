@@ -13,6 +13,7 @@ import { PersonaDrawer } from "./PersonaDrawer";
 import { NameCardsToggle } from "../room/NameCardsToggle";
 import { SessionControls } from "./SessionControls";
 import { HeadsetView } from "./HeadsetView";
+import { DeckPanel } from "../room/DeckPanel";
 
 type View = "headset" | "plan";
 
@@ -40,6 +41,7 @@ export function Dashboard({ session, nameCards, room: initialRoom }: { session: 
           <span className="text-sm text-ink-2">Pitch to {bundle.prospect.company}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {room && !debrief && <DeckPanel room={room} compact />}
           <NameCardsToggle initial={nameCards} />
           {room && !debrief ? (
             <SessionControls room={room} />

@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.13).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.14).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -238,6 +238,25 @@ export interface Room {
   name_cards: boolean;
   // Set when the session starts; null before
   live: LiveSession | null;
+  // The presenter's slides, converted and served by the laptop; null until one is uploaded
+  deck: Deck | null;
+  // The slide on screen, from 0
+  slide: number;
+}
+
+// One slide image on the laptop: `image_url` is a path there (GET /api/deck/<id>/<n>.jpg)
+export interface DeckSlide {
+  index: number;
+  image_url: string;
+  width: number;
+  height: number;
+}
+
+// A new upload gets a new id, so its images never change
+export interface Deck {
+  id: string;
+  name: string;
+  slides: DeckSlide[];
 }
 
 export type SessionActor = "headset" | "web";

@@ -41,6 +41,7 @@ async function PracticeFromRoom({ id }: { id: string }) {
       draft={{ draft_id: brief.draft_id, suggestions: brief.suggestions }}
       panel={room.panel}
       nameCards={room.name_cards}
+      room={room}
     />
   );
 }

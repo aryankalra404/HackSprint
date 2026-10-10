@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import type { BriefInput, DraftMember } from "@/lib/contract";
 import { addMeeting, getMeeting, prepSession } from "@/lib/api";
-import { panelProblem, updateRoom } from "@/lib/room";
+import { getBrief, panelProblem, setDeck, updateRoom } from "@/lib/room";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -18,6 +18,8 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
     deck: { pdf_url: "", slide_image_urls: [] },
     prospect: { company: meeting.company, website: "", context: meeting.title },
   };
+  // A deck belongs to its meeting: seating another meeting's panel takes it off the screens
+  if (getBrief()?.draft_id !== meeting.id) setDeck(null);
   updateRoom(
     { phase: "drafting", prospect: { company: meeting.company }, panel, bundle: null, session_id: null },
     { input, draft_id: meeting.id, suggestions: proposal.suggestions },

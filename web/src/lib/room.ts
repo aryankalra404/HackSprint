@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { BriefInput, DraftMember, PanelProposal, Room, SessionAction, SessionActor } from "./contract";
+import type { BriefInput, Deck, DraftMember, PanelProposal, Room, SessionAction, SessionActor } from "./contract";
+import { removeDeckFiles } from "./deck";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "./personas";
 
 // The one room, held by the laptop (contract: Room API). Kept in memory, saved to .room.json so a restart
@@ -18,7 +19,7 @@ interface Store {
   headsetVia: "wifi" | "usb";
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0 };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };
@@ -102,15 +103,31 @@ export function changeSession(action: SessionAction, by: SessionActor): { ok: tr
   const now = new Date().toISOString();
   if (action === "start") {
     if (room.phase !== "briefed") return { ok: false, error: `Can't start: the room is ${room.phase}, not briefed.`, room };
-    return { ok: true, room: updateRoom({ phase: "live", live: { started_at: now, started_by: by, ended_at: null, ended_by: null } }) };
+    return { ok: true, room: updateRoom({ phase: "live", slide: 0, live: { started_at: now, started_by: by, ended_at: null, ended_by: null } }) };
   }
   if (action === "restart") {
     // Go again with the same panel and bundle
     if (room.phase !== "done") return { ok: false, error: `Can't restart: the room is ${room.phase}, not done.`, room };
-    return { ok: true, room: updateRoom({ phase: "briefed", live: null }) };
+    return { ok: true, room: updateRoom({ phase: "briefed", slide: 0, live: null }) };
   }
   if (room.phase !== "live" || !room.live) return { ok: false, error: `Can't end: the room is ${room.phase}, not live.`, room };
   return { ok: true, room: updateRoom({ phase: "done", live: { ...room.live, ended_at: now, ended_by: by } }) };
+}
+
+// Puts a new deck in the room (or none), back on its first slide, and deletes the old one's images
+export function setDeck(deck: Deck | null): Room {
+  const old = getRoom().deck;
+  const room = updateRoom({ deck, slide: 0 });
+  if (old && old.id !== deck?.id) void removeDeckFiles(old.id);
+  return room;
+}
+
+// Shows a slide, from the headset or the web (contract: POST /api/room/slide); the index is clamped to the deck
+export function setSlide(index: number): { ok: true; room: Room } | { ok: false; error: string; room: Room } {
+  const room = getRoom();
+  if (!room.deck) return { ok: false, error: "There's no deck in the room.", room };
+  const slide = Math.max(0, Math.min(room.deck.slides.length - 1, Math.trunc(index)));
+  return { ok: true, room: slide === room.slide ? room : updateRoom({ slide }) };
 }
 
 // Why a panel can't be saved, or null if it's fine

@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { BriefInput, DraftMember, PanelProposal, Seat } from "@/lib/contract";
+import type { BriefInput, DraftMember, PanelProposal, Room, Seat } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
 import { PanelEditor } from "./PanelEditor";
+import { useRoom } from "@/lib/useRoom";
 import { NameCardsToggle } from "../room/NameCardsToggle";
+import { DeckPanel } from "../room/DeckPanel";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
 
@@ -18,12 +20,15 @@ interface Props {
   draft: Draft;
   panel: DraftMember[];
   nameCards: boolean;
+  // The laptop's room, followed live for the deck (the headset's triggers change the slide)
+  room: Room;
 }
 
 // Practise a meeting: its panel (real attendees plus practice roles) on the table, editable, then briefed.
 // Every edit is saved to the room on the laptop, and the headset seats the panel as it changes.
-export function Practice({ meeting, input, draft, panel, nameCards }: Props) {
+export function Practice({ meeting, input, draft, panel, nameCards, room: initialRoom }: Props) {
   const proposal = draft;
+  const room = useRoom(initialRoom);
   const [members, setMembers] = useState<DraftMember[]>(panel);
   const [selection, setSelection] = useState<Selection>(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,11 +133,14 @@ export function Practice({ meeting, input, draft, panel, nameCards }: Props) {
       </header>
 
       <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="flex min-h-0 flex-col rounded-2xl border border-line bg-surface p-4" aria-label="The table">
-          <div className="hidden min-h-0 flex-1 md:block">
-            <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} />
-          </div>
-        </section>
+        <div className="flex min-h-0 flex-col gap-4">
+          <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-line bg-surface p-4" aria-label="The table">
+            <div className="hidden min-h-0 flex-1 md:block">
+              <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} />
+            </div>
+          </section>
+          <DeckPanel room={room} />
+        </div>
         <aside className="flex min-h-0 flex-col rounded-2xl border border-line bg-surface">
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             <PanelEditor
