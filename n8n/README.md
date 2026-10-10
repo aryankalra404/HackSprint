@@ -4,11 +4,11 @@ DryRun's brain, running on n8n Cloud (`https://aryankalra.app.n8n.cloud`). The w
 
 | Workflow | What it does |
 |---|---|
-| **DryRun prep** (`wf1-prep.json`) | Watches Google Calendar. For each new event, Gemini decides whether it's worth preparing for. If so: reads your recent emails with the attendees, researches the company with Google Search, writes the brief and proposes the panel, saves it to the **DryRun meetings** data table and emails you. The web app can also add a meeting by hand: `POST /webhook/dryrun/add-meeting`. |
+| **DryRun prep** (`wf1-prep.json`) | Watches Google Calendar. For each new event, Gemini decides whether it's worth preparing for. If so: reads your recent emails with the attendees, reads the news about the company (Google News) and its website, writes the brief and proposes the panel, saves it to the **DryRun meetings** data table and emails you. It saves its progress after each stage (shown live on the web app's brief page), and if a run fails it marks the meeting failed with the reason. The web app can also add a meeting by hand: `POST /webhook/dryrun/add-meeting`. |
 | **DryRun meetings API** (`wf0-meetings-api.json`) | `GET /webhook/dryrun/meetings` (upcoming meetings) and `GET /webhook/dryrun/meeting?id=` (one meeting with its brief and panel), from the data table. |
 
 ## How they're built
-- `build/prompts.py`: the Gemini prompts and JSON schemas (tested against `gemini-2.5-flash`).
+- `build/prompts.py`: the Gemini prompts and JSON schemas (the model is one setting, `GEMINI_MODEL`, now `gemini-3-flash-preview`; free-tier limits are per model).
 - `build/build.py` writes `sdk/*.ts`, n8n Workflow SDK code. It's validated and created in n8n through n8n's MCP server (`validate_workflow`, `create_workflow_from_code`), and later edits go through `update_workflow`.
 - `wf*.json` are exports of the live workflows with credentials removed, for reading or importing elsewhere.
 

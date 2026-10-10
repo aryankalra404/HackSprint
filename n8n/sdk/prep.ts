@@ -132,7 +132,7 @@ const triage = node({
     "name": "Worth preparing?",
     "parameters": {
       "method": "POST",
-      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
       "authentication": "predefinedCredentialType",
       "nodeCredentialType": "googlePalmApi",
       "sendBody": true,
@@ -253,7 +253,7 @@ const rowResearching = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// The meeting as a row in the DryRun meetings table, while n8n works on it\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'researching',\n  brief: '', proposal: '', updated_at: new Date().toISOString(),\n} }));"
+      "jsCode": "// The meeting as a row in the DryRun meetings table, while n8n works on it\n\nconst ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '') : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'researching',\n  brief: '', proposal: '', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...progressFields,\n} }));"
     },
     "output": [
   {
@@ -338,7 +338,7 @@ const summariseEmails = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// The recent thread with the attendees, as short text for the brief\nconst msgs = $input.all().map(i => i.json).filter(m => m.snippet);\nconst meeting = $('Read the decision').first().json;\nconst emails = msgs.slice(0, 10).map(m => 'From ' + (m.From || '') + ' (' + (m.Subject || '') + '): ' + (m.snippet || '').slice(0, 400)).join('\\n') || 'No recent emails.';\nreturn [{ json: { meeting, emails } }];"
+      "jsCode": "// The recent thread with the attendees, as short text for the brief\nconst msgs = $input.all().map(i => i.json).filter(m => m.snippet);\nconst meeting = $('Read the decision').first().json;\nconst emails = msgs.slice(0, 10).map(m => 'From ' + (m.From || '') + ' (' + (m.Subject || '') + '): ' + (m.snippet || '').slice(0, 400)).join('\\n') || 'No recent emails.';\nreturn [{ json: { meeting, emails, count: msgs.length } }];"
     },
     "output": [
   {
@@ -360,7 +360,159 @@ const summariseEmails = node({
       "kind": "sales_pitch",
       "why": ""
     },
-    "emails": "No recent emails."
+    "emails": "No recent emails.",
+    "count": 0
+  }
+]
+  }
+});
+
+const progressEmails = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Progress: emails read",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '') : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "progress": "[]"
+  }
+]
+  }
+});
+
+const saveProgressEmails = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Save progress: emails",
+    "parameters": {
+      "resource": "row",
+      "operation": "upsert",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "86BWrDlUXrOWFgqc",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.meeting_id }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "autoMapInputData",
+        "value": null
+      }
+    },
+    "output": [
+  {
+    "id": 1
+  }
+]
+  }
+});
+
+const news = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Find the news",
+    "parameters": {
+      "method": "GET",
+      "url": expr("https://news.google.com/rss/search?q={{ encodeURIComponent('\"' + $('Summarise the emails').first().json.meeting.company + '\"') }}&hl=en-IN&gl=IN&ceid=IN:en"),
+      "options": {
+        "timeout": 20000,
+        "response": {
+          "response": {
+            "responseFormat": "text"
+          }
+        }
+      }
+    },
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 2,
+    "output": [
+  {
+    "data": "<rss></rss>"
+  }
+]
+  }
+});
+
+const website = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Read their website",
+    "parameters": {
+      "method": "GET",
+      "url": expr("https://{{ $('Summarise the emails').first().json.meeting.company_domain || 'invalid.invalid' }}"),
+      "options": {
+        "timeout": 15000,
+        "redirect": {
+          "redirect": {}
+        },
+        "response": {
+          "response": {
+            "responseFormat": "text"
+          }
+        }
+      }
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {
+    "data": "<html></html>"
+  }
+]
+  }
+});
+
+const gatherSources = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Gather the sources",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// Up to 15 recent headlines (with date, publisher and link) and the readable text of their homepage\nconst prev = $('Summarise the emails').first().json;\nconst rss = ($('Find the news').first().json.data || '').toString();\nconst unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\");\nconst tag = (xml, t) => { const m = xml.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };\nconst news = (rss.match(/<item>[^]*?<\\/item>/g) || []).slice(0, 15).map(it => {\n  const src = it.match(/<source url=\"([^\"]*)\">([^]*?)<\\/source>/);\n  const date = new Date(tag(it, 'pubDate'));\n  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', site: src ? src[1] : '',\n           date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };\n});\nconst html = ($('Read their website').first().json.data || '').toString();\nconst meta = name => { const m = html.match(new RegExp('<meta[^>]+(?:name|property)=\"' + name + '\"[^>]+content=\"([^\"]*)\"', 'i')); return m ? unescape(m[1]) : ''; };\nconst body = html.replace(/<script[^]*?<\\/script>/gi, ' ').replace(/<style[^]*?<\\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n// App-style sites render in the browser; their meta description still says what the company does\nconst website = [tag(html, 'title'), meta('description'), meta('og:description'), body].filter(Boolean).join(' ').slice(0, 3000);\nreturn [{ json: { ...prev, news, website } }];"
+    },
+    "output": [
+  {
+    "meeting": {
+      "meeting_id": "evt123",
+      "title": "RouteIQ pitch",
+      "start": "2026-10-16T15:00:00+05:30",
+      "description": "",
+      "attendees": [
+        {
+          "name": "Priya Nair",
+          "email": "priya.nair@delhivery.com"
+        }
+      ],
+      "owner_email": "you@example.com",
+      "from_web": false,
+      "company": "Delhivery",
+      "company_domain": "delhivery.com",
+      "kind": "sales_pitch",
+      "why": ""
+    },
+    "emails": "",
+    "news": [],
+    "website": ""
   }
 ]
   }
@@ -373,12 +525,12 @@ const research = node({
     "name": "Research the company",
     "parameters": {
       "method": "POST",
-      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
       "authentication": "predefinedCredentialType",
       "nodeCredentialType": "googlePalmApi",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: \"Research {company} ({domain}) for someone about to meet them: a {kind} titled \\\"{title}\\\".\\nIn under 200 words: what they do, their scale, and the 3 to 5 most relevant recent developments (with dates) that the people\\nin the meeting will have on their minds: results, costs, leadership, strategy, problems. Plain text.\".replace('{company}', $json.meeting.company).replace('{domain}', $json.meeting.company_domain).replace('{kind}', $json.meeting.kind).replace('{title}', $json.meeting.title) }] }], tools: [{ google_search: {} }] }) }}"),
+      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: \"Someone is about to meet {company}: a {kind} titled \\\"{title}\\\". Summarise what they should know, using ONLY the sources below.\\nIn under 200 words: what the company does and its scale (from its website), then the 3 to 5 developments from the news that the\\npeople in the meeting will most likely have on their minds (results, costs, leadership, strategy, problems), each with its date.\\nDo not add anything that is not in these sources. If the sources say little, say so. Plain text.\\n\\nRecent news headlines (date, publisher, headline):\\n{news}\\n\\nFrom their website:\\n{website}\".replace('{company}', $json.meeting.company).replace('{kind}', $json.meeting.kind).replace('{title}', $json.meeting.title).replace('{news}', $json.news.map(n => n.date + ' | ' + n.publisher + ' | ' + n.title).join('\\n') || 'None found.').replace('{website}', $json.website || 'Not available.') }] }] }) }}"),
       "options": {
         "timeout": 120000
       }
@@ -413,7 +565,7 @@ const readResearch = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// The grounded research text and its web sources\nconst c = ($json.candidates && $json.candidates[0]) || {};\nconst research = ((c.content && c.content.parts) || []).map(p => p.text || '').join('');\nconst sources = ((c.groundingMetadata && c.groundingMetadata.groundingChunks) || []).filter(g => g.web).map(g => ({ title: g.web.title || '', url: g.web.uri }));\nconst prev = $('Summarise the emails').first().json;\nreturn [{ json: { ...prev, research, sources } }];"
+      "jsCode": "// The research summary, with the news it was written from as sources\nconst parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];\nconst research = parts.map(p => p.text || '').join('');\nconst prev = $('Gather the sources').first().json;\nconst sources = prev.news.slice(0, 8).map(n => ({ title: (n.publisher ? n.publisher + ': ' : '') + n.title, url: n.url, date: n.date, site: n.site }));\nreturn [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources, news_count: prev.news.length, has_website: !!prev.website } }];"
     },
     "output": [
   {
@@ -437,7 +589,65 @@ const readResearch = node({
     },
     "emails": "",
     "research": "",
-    "sources": []
+    "sources": [],
+    "news_count": 0,
+    "has_website": false
+  }
+]
+  }
+});
+
+const progressResearch = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Progress: researched",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '') : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "progress": "[]"
+  }
+]
+  }
+});
+
+const saveProgressResearch = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Save progress: research",
+    "parameters": {
+      "resource": "row",
+      "operation": "upsert",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "86BWrDlUXrOWFgqc",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.meeting_id }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "autoMapInputData",
+        "value": null
+      }
+    },
+    "output": [
+  {
+    "id": 1
   }
 ]
   }
@@ -450,12 +660,12 @@ const brief = node({
     "name": "Write the brief and panel",
     "parameters": {
       "method": "POST",
-      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
       "authentication": "predefinedCredentialType",
       "nodeCredentialType": "googlePalmApi",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: \"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from Google Search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 1 to 4 extra people for a rehearsal only, playing the roles that usually influence a decision like this at a company\\n  like this (e.g. CTO, procurement). Give them invented, realistic Indian names. Never use the names of real people found in the research.\\n  These are clearly hypothetical and are never presented as attendees.\\n- questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting, in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($json.meeting)).replace('{emails}', $json.emails).replace('{research}', $json.research) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"suggestions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"role\", \"role_short\", \"why\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} } }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"suggestions\", \"questions\", \"risks\"]} } }) }}"),
+      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: \"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from Google Search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 1 to 4 extra people for a rehearsal only, playing the roles that usually influence a decision like this at a company\\n  like this (e.g. CTO, procurement). Give them invented, realistic Indian names. Never use the names of real people found in the research.\\n  These are clearly hypothetical and are never presented as attendees.\\n- questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting, in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails).replace('{research}', $('Read the research').first().json.research) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"suggestions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"role\", \"role_short\", \"why\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} } }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"suggestions\", \"questions\", \"risks\"]} } }) }}"),
       "options": {
         "timeout": 120000
       }
@@ -527,7 +737,7 @@ const rowReady = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "const m = $json.meeting;\nreturn [{ json: { meeting_id: m.meeting_id, status: 'ready', brief: JSON.stringify($json.brief), proposal: JSON.stringify($json.proposal), updated_at: new Date().toISOString() } }];"
+      "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '') : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\nconst s = $('Seat the panel').first().json;\nreturn [{ json: { meeting_id: s.meeting.meeting_id, status: 'ready', brief: JSON.stringify(s.brief), proposal: JSON.stringify(s.proposal), updated_at: new Date().toISOString(), ...progressFields } }];"
     },
     "output": [
   {
@@ -601,6 +811,175 @@ const emailBrief = node({
   }
 });
 
+const progressEmailed = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Progress: emailed",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '') : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "progress": "[]"
+  }
+]
+  }
+});
+
+const saveProgressEmailed = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Save progress: emailed",
+    "parameters": {
+      "resource": "row",
+      "operation": "upsert",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "86BWrDlUXrOWFgqc",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.meeting_id }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "autoMapInputData",
+        "value": null
+      }
+    },
+    "output": [
+  {
+    "id": 1
+  }
+]
+  }
+});
+
+const onFailure = trigger({
+  type: "n8n-nodes-base.errorTrigger",
+  version: 1,
+  config: {
+    "name": "If a run fails",
+    "parameters": {},
+    "output": [
+  {
+    "execution": {
+      "id": "12",
+      "error": {
+        "message": "quota"
+      },
+      "lastNodeExecuted": "Research the company"
+    },
+    "workflow": {
+      "id": "wf"
+    }
+  }
+]
+  }
+});
+
+const findRun = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Find its meeting",
+    "parameters": {
+      "resource": "row",
+      "operation": "get",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "86BWrDlUXrOWFgqc",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "anyCondition",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "execution_id",
+            "condition": "eq",
+            "keyValue": expr("{{ String($json.execution.id) }}")
+          }
+        ]
+      }
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "progress": "[]"
+  }
+]
+  }
+});
+
+const markFailed = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Mark it failed",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// Show where it stopped and why, instead of leaving the page on \"researching\" forever\nconst failure = $('If a run fails').first().json.execution || {};\nconst message = (failure.error && (failure.error.description || failure.error.message)) || 'Something went wrong';\nconst reason = /quota|too many requests|rate limit/i.test(message)\n  ? \"Gemini's daily free limit is used up. Try again later, or switch to a paid key.\"\n  : message.split('\\n')[0].slice(0, 160);\nreturn $input.all().map(({ json: row }) => {\n  let progress = [];\n  try { progress = JSON.parse(row.progress || '[]'); } catch (e) { progress = []; }\n  const stuck = progress.find(s => s.state === 'running') || progress.find(s => s.state === 'pending');\n  if (stuck) Object.assign(stuck, { state: 'error', detail: reason });\n  return { json: { meeting_id: row.meeting_id, status: 'failed', progress: JSON.stringify(progress), updated_at: new Date().toISOString() } };\n});"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "status": "failed"
+  }
+]
+  }
+});
+
+const saveFailed = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Save: failed",
+    "parameters": {
+      "resource": "row",
+      "operation": "upsert",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "86BWrDlUXrOWFgqc",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.meeting_id }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "autoMapInputData",
+        "value": null
+      }
+    },
+    "output": [
+  {
+    "id": 1
+  }
+]
+  }
+});
+
 const about = sticky('## DryRun prep\nSpots important meetings on your calendar and prepares you for them: decides if it is worth it, reads your emails with the attendees, researches the company, writes the brief, proposes the panel, saves it to the DryRun meetings table and emails you. The web app can also add a meeting by hand.', [calendarTrigger, webTrigger], { color: 4 });
 
 export default workflow('dryrun-prep', 'DryRun prep')
@@ -614,8 +993,13 @@ export default workflow('dryrun-prep', 'DryRun prep')
   .add(triage)
   .to(readDecision)
   .to(prepareIt
-    .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(research.to(readResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief)))))))))))
+    .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(progressEmails.to(saveProgressEmails.to(news.to(website.to(gatherSources.to(research.to(readResearch.to(progressResearch.to(saveProgressResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief.to(progressEmailed.to(saveProgressEmailed))))))))))))))))))))
     .onFalse(skip))
   .group('Decide', [readDecision], { description: 'Gemini decides whether this meeting is worth preparing for, and why' })
-  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, research, readResearch], { description: 'Reads your recent emails with the attendees and researches the company with Google Search' })
-  .group('Brief', [brief, seatPanel, rowReady, saveReady, emailBrief], { description: 'Writes the brief, seats the panel, saves it and emails you' });
+  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, research, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your recent emails with the attendees, the news about the company and its website, saving progress as it goes' })
+  .add(onFailure)
+  .to(findRun)
+  .to(markFailed)
+  .to(saveFailed)
+  .group('If it fails', [findRun, markFailed, saveFailed], { description: 'Marks the meeting as failed, with where it stopped and why, so the web app never waits forever' })
+  .group('Brief', [brief, seatPanel, rowReady, saveReady, emailBrief, progressEmailed, saveProgressEmailed], { description: 'Writes the brief, seats the panel, saves it and emails you' });

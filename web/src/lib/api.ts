@@ -56,6 +56,12 @@ export async function getMeeting(id: string): Promise<MeetingDetail | null> {
   return detail.error ? null : detail;
 }
 
+// The n8n editor page for a run, so the progress view can link to the real execution
+export function n8nRunUrl(run: Meeting["run"]): string | null {
+  if (!N8N_URL || !run) return null;
+  return `${new URL(N8N_URL).origin}/workflow/${run.workflow_id}/executions/${run.execution_id}`;
+}
+
 // Hands a meeting to n8n to research and brief; it shows up in /meetings straight away as "researching"
 export async function addMeeting(meeting: NewMeeting): Promise<void> {
   if (!N8N_URL) return;

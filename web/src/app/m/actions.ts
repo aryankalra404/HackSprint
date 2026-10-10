@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import type { BriefInput, DraftMember } from "@/lib/contract";
-import { getMeeting, prepSession } from "@/lib/api";
+import { addMeeting, getMeeting, prepSession } from "@/lib/api";
 import { panelProblem, updateRoom } from "@/lib/room";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -23,6 +23,28 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
     { input, draft_id: meeting.id, suggestions: proposal.suggestions },
   );
   redirect(`/m/${encodeURIComponent(meeting.id)}/practise`);
+}
+
+// Runs n8n's preparation again for a meeting whose run failed, under the same id so its page carries on
+export async function retryMeetingAction(meetingId: string): Promise<Result<null>> {
+  const detail = await getMeeting(meetingId);
+  if (!detail) return { ok: false, error: "That meeting isn't in n8n's table any more." };
+  const m = detail.meeting;
+  try {
+    await addMeeting({
+      id: m.id,
+      title: m.title,
+      start: m.start,
+      company: m.company,
+      website: "",
+      context: m.why,
+      attendees: m.attendees,
+      owner_email: process.env.DRYRUN_OWNER_EMAIL ?? "",
+    });
+  } catch {
+    return { ok: false, error: "n8n didn't take it. Check that the DryRun prep workflow is active." };
+  }
+  return { ok: true, value: null };
 }
 
 // Briefs the practice panel, puts the bundle in the room, then goes to the dashboard. Only returns if something is wrong.

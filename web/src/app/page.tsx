@@ -5,6 +5,7 @@ import { listMeetings } from "@/lib/api";
 import type { Meeting } from "@/lib/contract";
 import { MeetingList } from "@/components/meetings/MeetingList";
 import { PreparePopup } from "@/components/meetings/PreparePopup";
+import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
 
 // Home: the meetings n8n is preparing you for
 export default function Home() {
@@ -56,6 +57,7 @@ async function Meetings() {
   }
   return (
     <>
+      {meetings.some((m) => m.status === "researching") && <RefreshWhileResearching />}
       <MeetingList meetings={meetings} />
       <PreparePopup meetings={meetings} />
     </>

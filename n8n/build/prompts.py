@@ -19,9 +19,16 @@ TRIAGE_SCHEMA = {"type": "object", "properties": {
     "kind": {"type": "string", "enum": ["sales_pitch", "investor_pitch", "interview", "client_review", "partnership", "internal", "personal", "other"]}},
     "required": ["prepare", "why", "company", "company_domain", "kind"]}
 
-RESEARCH_PROMPT = """Research {company} ({domain}) for someone about to meet them: a {kind} titled "{title}".
-In under 200 words: what they do, their scale, and the 3 to 5 most relevant recent developments (with dates) that the people
-in the meeting will have on their minds: results, costs, leadership, strategy, problems. Plain text."""
+RESEARCH_PROMPT = """Someone is about to meet {company}: a {kind} titled "{title}". Summarise what they should know, using ONLY the sources below.
+In under 200 words: what the company does and its scale (from its website), then the 3 to 5 developments from the news that the
+people in the meeting will most likely have on their minds (results, costs, leadership, strategy, problems), each with its date.
+Do not add anything that is not in these sources. If the sources say little, say so. Plain text.
+
+Recent news headlines (date, publisher, headline):
+{news}
+
+From their website:
+{website}"""
 
 BRIEF_PROMPT = """You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.
 

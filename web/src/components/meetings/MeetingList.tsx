@@ -31,6 +31,7 @@ export function MeetingList({ meetings }: { meetings: Meeting[] }) {
                   {m.attendees.length > 0 && `. With ${m.attendees.map((a) => a.name).join(", ")}`}
                 </span>
                 {m.why && <span className="text-sm text-ink-2">{m.why}</span>}
+                <PrepLine meeting={m} />
               </span>
               <span className="flex shrink-0 items-start">
                 <MeetingStatus status={m.status} />
@@ -40,5 +41,20 @@ export function MeetingList({ meetings }: { meetings: Meeting[] }) {
         );
       })}
     </ul>
+  );
+}
+
+// While n8n works on a meeting (or if it failed): which step it's on, from its progress reports
+function PrepLine({ meeting }: { meeting: Meeting }) {
+  const steps = meeting.progress ?? [];
+  if (!(meeting.status === "researching" || meeting.status === "failed") || steps.length === 0) return null;
+  const current = steps.find((s) => s.state === "error") ?? steps.find((s) => s.state === "running");
+  if (!current) return null;
+  const n = steps.indexOf(current) + 1;
+  return (
+    <span className={`text-sm ${current.state === "error" ? "text-bad-ink" : "text-ink"}`}>
+      Step {n} of {steps.length}: {current.detail}
+      {current.state === "running" && <span className="animate-pulse">…</span>}
+    </span>
   );
 }

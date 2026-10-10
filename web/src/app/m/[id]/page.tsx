@@ -1,13 +1,14 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getMeeting } from "@/lib/api";
+import { getMeeting, n8nRunUrl } from "@/lib/api";
 import type { MeetingDetail } from "@/lib/contract";
 import { meetingWhen, untilLabel } from "@/lib/format";
 import { PersonaAvatar } from "@/components/ui";
 import { MeetingStatus } from "@/components/meetings/MeetingStatus";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
+import { LiveProgress } from "@/components/meetings/LiveProgress";
 
 export const metadata = { title: "DryRun brief" };
 
@@ -43,9 +44,28 @@ async function Meeting({ id }: { id: string }) {
         </p>
         <h1 className="font-display text-4xl leading-tight">{meeting.title}</h1>
         {meeting.why && <p className="max-w-3xl text-ink-2">{meeting.why}</p>}
+        {brief && meeting.progress && meeting.progress.length > 0 && <HowPrepared meeting={meeting} />}
       </section>
 
-      {!brief ? <Researching company={meeting.company} /> : <BriefBody detail={{ ...detail, brief }} />}
+      {!brief ? (
+        meeting.progress && meeting.progress.length > 0 ? (
+          <>
+            {meeting.status === "researching" && <RefreshWhileResearching />}
+            <LiveProgress
+              meetingId={meeting.id}
+              title={meeting.title}
+              progress={meeting.progress}
+              startedAt={meeting.started_at ?? null}
+              runUrl={n8nRunUrl(meeting.run)}
+              runId={meeting.run?.execution_id ?? null}
+            />
+          </>
+        ) : (
+          <Researching company={meeting.company} />
+        )
+      ) : (
+        <BriefBody detail={{ ...detail, brief }} />
+      )}
 
       {brief && proposal && (
         <section id="practise" className="scroll-mt-6 flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 sm:flex-row sm:items-center sm:justify-between">
@@ -71,6 +91,33 @@ async function Meeting({ id }: { id: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+// "How n8n prepared this": the finished run's steps, for pointing at during a demo
+function HowPrepared({ meeting }: { meeting: NonNullable<MeetingDetail["meeting"]> }) {
+  const runUrl = n8nRunUrl(meeting.run);
+  return (
+    <details className="group w-fit max-w-3xl text-sm">
+      <summary className="cursor-pointer list-none text-ink-2 hover:text-ink">
+        <span className="underline decoration-line">How n8n prepared this</span> <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <ol className="mt-3 flex flex-col gap-1.5 rounded-2xl border border-line bg-surface p-4">
+        {(meeting.progress ?? []).map((s) => (
+          <li key={s.id} className="flex gap-2">
+            <span className="w-20 shrink-0 font-medium">{s.label}</span>
+            <span className={s.state === "error" ? "text-bad-ink" : "text-ink-2"}>{s.detail}</span>
+          </li>
+        ))}
+        {runUrl && (
+          <li className="pt-2">
+            <a href={runUrl} target="_blank" rel="noreferrer" className="text-ink-2 underline decoration-line hover:text-ink">
+              Open this run in n8n ↗
+            </a>
+          </li>
+        )}
+      </ol>
+    </details>
   );
 }
 

@@ -54,7 +54,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Upcoming (and today's) meetings, soonest first (docs/CONTRACT.md, GET /meetings)\nconst since = Date.now() - 12 * 3600 * 1000;\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nconst meetings = $input.all().map(i => i.json).filter(r => r.meeting_id && (!r.start || Date.parse(r.start) >= since))\n  .sort((a, b) => Date.parse(a.start || 0) - Date.parse(b.start || 0))\n  .map(r => ({ id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [] }));\nreturn [{ json: { meetings } }];"
+        "jsCode": "// Upcoming (and today's) meetings, soonest first (docs/CONTRACT.md, GET /meetings)\nconst since = Date.now() - 12 * 3600 * 1000;\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nconst meetings = $input.all().map(i => i.json).filter(r => r.meeting_id && (!r.start || Date.parse(r.start) >= since))\n  .sort((a, b) => Date.parse(a.start || 0) - Date.parse(b.start || 0))\n  .map(r => ({ id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [],\n               progress: parse(r.progress) || [], started_at: r.started_at || null,\n               run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null }));\nreturn [{ json: { meetings } }];"
       },
       "id": "d1967945-c216-4312-86e8-90cf73615e12",
       "name": "Upcoming meetings",
@@ -117,7 +117,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// One meeting by id, with its brief and proposed panel (docs/CONTRACT.md, GET /meeting)\nconst id = $('GET /meeting').first().json.query.id;\nconst r = $input.all().map(i => i.json).find(r => String(r.meeting_id) === String(id));\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nif (!r) return [{ json: { error: 'not found' } }];\nreturn [{ json: {\n  meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [] },\n  brief: parse(r.brief), proposal: parse(r.proposal),\n} }];"
+        "jsCode": "// One meeting by id, with its brief and proposed panel (docs/CONTRACT.md, GET /meeting)\nconst id = $('GET /meeting').first().json.query.id;\nconst r = $input.all().map(i => i.json).find(r => String(r.meeting_id) === String(id));\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nif (!r) return [{ json: { error: 'not found' } }];\nreturn [{ json: {\n  meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [],\n             progress: parse(r.progress) || [], started_at: r.started_at || null,\n             run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null },\n  brief: parse(r.brief), proposal: parse(r.proposal),\n} }];"
       },
       "id": "7c6894eb-b8b1-426d-ae61-2dd4c20ef66d",
       "name": "The meeting and its brief",
