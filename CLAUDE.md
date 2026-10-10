@@ -1,19 +1,25 @@
 # DryRun — project guide for Claude
 
 HackSprint (MAHE Bengaluru, 17–18 Oct 2026), team **Git Push and Pray**, Track T.02 AI & Automation, **PS 22: "Built with n8n."**
-DryRun is an AI rehearsal agent for high-stakes pitches. You present to a VR boardroom of AI stakeholders (CFO, CTO, Procurement, VP Ops, End User Lead) who have researched your prospect. They interrupt with grounded questions, a Rescue Agent catches you when you freeze, and an n8n debrief scores you, acts on the result, and makes the next rehearsal harder where you were weak.
+DryRun prepares you for high-stakes meetings and lets you rehearse them. n8n watches Google Calendar, decides which meetings are worth preparing, researches them (your emails with the attendees, Google News, the company website), emails a factual brief and proposes a practice panel. The web app is the full product (meetings, brief, practice panel, dashboard); the VR boardroom (Quest) is the premium way to rehearse, seated live from the web. The target, not built yet: stakeholders interrupt with grounded questions, a Rescue Agent catches you when you freeze, and an n8n debrief scores you, acts on the result and makes the next rehearsal harder where you were weak. Direction and demo script: `docs/PLAN.md`.
+
+## Current state (keep this short and current)
+- **Live and real:** n8n Cloud workflows **DryRun prep** (calendar or web → triage → emails → news, website, web search if news is thin → brief and panel → data table → email, with live progress and a failure branch) and **DryRun meetings API**; the web home, brief, add-meeting and practice pages on top of them; the room on the laptop, synced live to the headset; the session lifecycle (start on speech, A or the dashboard; end; run it again); the headset view on the dashboard.
+- **Sample data:** the dashboard's bundle, "What the agent did" feed and slide strip (`prepSession` always returns `web/src/lib/mock/prep.ts`; objections come from the practice panel), and the report (`/s/demo/report`). n8n `/panel`, `/prep` (deck), `/turn` and `/debrief` aren't built; `/api/turn` and `/api/debrief` forward to URLs that don't exist yet.
+- **Tested only in the Unity editor:** live seating, voice start, look-at, Wi-Fi discovery and the headset view (it only streams from an Android build).
+- **n8n access:** the n8n MCP server is set up for this project in Claude Code (local scope; the token isn't in the repo). Workflow IDs, how to change and redeploy them, and credentials: `n8n/README.md`. The Gemini key is on the free tier, so watch the daily quota (PLAN.md, Risks).
 
 ## Where things live
 | Part | Location | Notes |
 |---|---|---|
 | Docs, n8n workflows, web client | this repo (`~/Desktop/HackSprint`) | GitHub: aryankalra404/HackSprint |
 | VR client (Unity 6.3, Quest 3S) | `~/My project` (**not in this repo, not under version control yet**) | Its own `CLAUDE.md` is the source of truth for scene, lighting, build steps and Unity gotchas. Read it before any Unity work. |
-| n8n workflow exports | `n8n/*.json` | Export from n8n after every meaningful change. Strip credentials. |
+| n8n workflows | `n8n/` | Built from `n8n/build/*.py` (prompts and nodes) into `n8n/sdk/*.ts`, deployed through the n8n MCP server; `n8n/*.json` are exports of the live workflows, credentials stripped. Re-export after every change. See `n8n/README.md`. |
 | Web client | `web/` | Next.js 16 (App Router, Cache Components, Tailwind 4). Must speak the same contract as VR. See `web/README.md`. |
 
 ## Docs (keep these current)
 - `docs/PLAN.md`: the week plan, status checkboxes, decisions log and risks. **Update it whenever a task finishes or a decision is made.**
-- `docs/ARCHITECTURE.md`: components, the three n8n workflows, and what runs where.
+- `docs/ARCHITECTURE.md`: components, the n8n workflows (built and planned), and what runs where.
 - `docs/CONTRACT.md`: webhook request and response JSON shared by VR, web and n8n. **Change this file first, bump its version, then change the code.**
 - `docs/VR_CLIENT.md`: what the VR client does and needs, from the rest of the team's point of view.
 - `README.md`: public, judge-facing overview. Keep it short and true. Never claim features that don't work.
@@ -44,4 +50,6 @@ When a task changes something these files describe, update the file in the same 
 - Disk is nearly full (about 4.5 GB free on 10 Oct). Unity builds fail and crash when it's low, so check `df -h ~` before builds or big imports.
 - Don't trigger Quest builds through MCP Unity (it crashed Unity once). Ask the user to run `Tools > DryRun > Build And Run On Quest`.
 - Never commit API keys, n8n credentials or `.env` files. n8n exports must have credentials removed.
-- The Quest must reach n8n's webhook URL over the venue network. Use n8n Cloud or a stable tunnel, and test on a phone hotspot as a fallback.
+- Only the laptop talks to n8n. The Quest must reach the laptop: the same network with device-to-device traffic allowed (a phone hotspot works; venue Wi-Fi often blocks it), or USB (`npm run quest`).
+- The user usually has `next dev` running on :3000. Don't delete `web/.next` while it runs. `web/.room.json` is their live room (panel, phase): copy it before tests that change the room, and put it back after.
+- n8n Code nodes have no `URL` class, and backslashes in JS written inside `build.py` strings get eaten by Python; prefer `[^]` and string splits to escapes.
