@@ -591,6 +591,7 @@ const emailBrief = node({
         "appendAttribution": false
       }
     },
+    "onError": "continueRegularOutput",
     "credentials": { "gmailOAuth2": newCredential("Gmail") },
     "output": [
   {

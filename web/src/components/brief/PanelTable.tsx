@@ -8,11 +8,12 @@ import { CARD_W, H, RoomPlan, TABLE_CENTRE, W, cardPlacement, pct, seatPoint } f
 
 export type Selection = { kind: "person"; id: string } | { kind: "seat"; seat: Seat } | null;
 
+// Real attendees come from the invite; everyone else at the table is a practice role
 export const SOURCE_LABEL: Record<PanelMember["source"], string> = {
-  email: "From the email",
-  research: "From research",
-  deck: "From your deck",
-  typical: "Usual for this deal",
+  email: "In the invite",
+  research: "Practice role",
+  deck: "Practice role",
+  typical: "Practice role",
 };
 
 export function seatLabel(seat: Seat): string {

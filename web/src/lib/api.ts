@@ -1,5 +1,5 @@
-import type { Bundle, BriefInput, DraftMember, PanelProposal, SessionRecord } from "./contract";
-import { demoProposal } from "./mock/panel";
+import type { Bundle, BriefInput, DraftMember, Meeting, MeetingDetail, NewMeeting, SessionRecord } from "./contract";
+import { demoMeeting, demoMeetingDetail } from "./mock/meetings";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
 import { getRoom } from "./room";
@@ -11,9 +11,10 @@ const MOCKS: Record<string, SessionRecord> = { demo: demoSession, "demo-prep": d
 export const N8N_URL = process.env.DRYRUN_N8N_URL;
 
 export async function getSession(sessionId: string): Promise<SessionRecord | null> {
-  // The session in the room right now, until n8n has stored it
+  // The sample sessions, and the session in the room right now, until n8n stores sessions
+  if (MOCKS[sessionId]) return MOCKS[sessionId];
   const room = getRoom();
-  if (room.session_id === sessionId && room.bundle && !N8N_URL) {
+  if (room.session_id === sessionId && room.bundle) {
     const n = room.bundle.personas.length;
     const steps = demoPrepSession.status.steps.map((s) =>
       s.id === "personas" ? { ...s, detail: `${n} stakeholders, ${room.bundle!.personas.reduce((a, p) => a + p.objections.length, 0)} objections` } : s,
@@ -38,17 +39,31 @@ export async function postToN8n<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-// n8n proposes who will be in the room
-export async function proposePanel(input: BriefInput): Promise<PanelProposal> {
-  if (!N8N_URL) {
-    await new Promise((r) => setTimeout(r, 1500));
-    return demoProposal;
-  }
-  return postToN8n("/panel", input);
+// Upcoming meetings n8n has picked up (contract: GET /meetings)
+export async function listMeetings(): Promise<Meeting[]> {
+  if (!N8N_URL) return [demoMeeting];
+  const res = await fetch(`${N8N_URL}/meetings`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`n8n /meetings failed: ${res.status}`);
+  return ((await res.json()) as { meetings: Meeting[] }).meetings ?? [];
 }
 
-// n8n briefs the confirmed panel and returns the bundle
+// One meeting with its brief and practice panel (contract: GET /meeting)
+export async function getMeeting(id: string): Promise<MeetingDetail | null> {
+  if (!N8N_URL) return id === demoMeeting.id ? demoMeetingDetail : null;
+  const res = await fetch(`${N8N_URL}/meeting?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`n8n /meeting failed: ${res.status}`);
+  const detail = (await res.json()) as MeetingDetail & { error?: string };
+  return detail.error ? null : detail;
+}
+
+// Hands a meeting to n8n to research and brief; it shows up in /meetings straight away as "researching"
+export async function addMeeting(meeting: NewMeeting): Promise<void> {
+  if (!N8N_URL) return;
+  await postToN8n("/add-meeting", meeting);
+}
+
+// Builds the rehearsal bundle for a practice panel. n8n's /prep workflow isn't built yet, so this uses the sample deck and
+// the panel's own focus (from the brief) as their objections.
 export async function prepSession(input: BriefInput & { draft_id: string; panel: DraftMember[] }): Promise<Bundle> {
-  if (!N8N_URL) return mockPrep(input.panel);
-  return postToN8n("/prep", input);
+  return mockPrep(input.panel);
 }

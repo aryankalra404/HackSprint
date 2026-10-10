@@ -23,7 +23,9 @@ export function mockPrep(panel: DraftMember[]): Bundle {
       avatar: m.avatar,
       display_name: name,
       priorities: known?.priorities ?? [`What the deal means for the ${m.role.toLowerCase()}`],
-      objections: known?.objections ?? [{ slide_index: 3, text: `How does this affect my team as ${m.role}?`, source: "deck" }],
+      objections: m.will_push_on
+        ? [{ slide_index: 3, text: m.will_push_on, source: "research" }]
+        : (known?.objections ?? [{ slide_index: 3, text: `How does this affect my team as ${m.role}?`, source: "deck" }]),
       difficulty: m.difficulty,
       voice: known?.voice ?? "en-IN-neutral-1",
     };

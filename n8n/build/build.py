@@ -250,7 +250,7 @@ return [{ json: { meeting_id: m.meeting_id, status: 'ready', brief: JSON.stringi
                         " + '<p><a href=\"" + APP_URL + "/m/' + encodeURIComponent(m.meeting_id) + '\">Open the brief and practise in DryRun</a>. "
                         "The practice panel there adds hypothetical roles to rehearse against.</p>'; })() }}"),
         "options": {"appendAttribution": False},
-    }, [{"id": "msg1"}], credentials={"gmailOAuth2": "Gmail"})
+    }, [{"id": "msg1"}], credentials={"gmailOAuth2": "Gmail"}, extra={"onError": "continueRegularOutput"})
     c += ("const about = sticky('## DryRun prep\\nSpots important meetings on your calendar and prepares you for them: decides if it is worth it, "
           "reads your emails with the attendees, researches the company, writes the brief, proposes the panel, saves it to the DryRun meetings "
           "table and emails you. The web app can also add a meeting by hand.', [calendarTrigger, webTrigger], { color: 4 });\n\n")

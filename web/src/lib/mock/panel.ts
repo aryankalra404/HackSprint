@@ -28,16 +28,3 @@ export const demoProposal: PanelProposal = {
     { role: "Chief Executive Officer", role_short: "CEO", why: "A company-wide rollout this size usually reaches the CEO" },
   ],
 };
-
-export const demoBriefInput = {
-  company: "Kaveri Freight",
-  website: "kaverifreight.in",
-  context: `From: Priya Nair <priya.nair@kaverifreight.in>
-To: you
-Cc: Rajiv Menon (CFO)
-
-Hi, thanks for the intro call. Could you take us through RouteIQ on Thursday at 3? Rajiv will join for the commercials. We'd like to understand payback at our fleet size and how it works with SAP.
-
-Priya Nair
-VP Operations, Kaveri Freight`,
-};

@@ -1,27 +1,32 @@
-import { Suspense } from "react";
-import { connection } from "next/server";
-import { Brief } from "@/components/brief/Brief";
-import { demoBriefInput } from "@/lib/mock/panel";
-import { getBrief, getRoom } from "@/lib/room";
+import Link from "next/link";
+import { AddMeetingForm } from "@/components/meetings/AddMeetingForm";
 
-export const metadata = { title: "New rehearsal" };
+export const metadata = { title: "Add a meeting" };
 
-export default function NewRehearsalPage() {
+const SAMPLE = {
+  title: "RouteIQ pitch",
+  company: "Delhivery",
+  website: "delhivery.com",
+  attendees: "Priya Nair <priya.nair@delhivery.com>, Rajiv Menon <rajiv.menon@delhivery.com>",
+  context:
+    "Demo of RouteIQ (AI route planning for truck fleets) for their ops and finance team. Priya (VP Operations) set it up; Rajiv from finance wants payback numbers at their fleet size.",
+};
+
+export default function NewMeetingPage() {
   return (
-    <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Loading…</p>}>
-      <BriefFromRoom />
-    </Suspense>
+    <div className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-6 sm:px-8 sm:py-10">
+      <header className="flex items-baseline gap-4">
+        <Link href="/" className="font-display text-2xl">DryRun</Link>
+        <Link href="/" className="text-sm text-ink-2 hover:text-ink">← Your meetings</Link>
+      </header>
+      <section className="flex flex-col gap-2">
+        <h1 className="font-display text-4xl leading-tight">Add a meeting</h1>
+        <p className="text-ink-2">
+          Meetings on your Google Calendar are picked up by themselves. Use this for one that isn&apos;t there: n8n researches it and writes
+          your brief in about a minute.
+        </p>
+      </section>
+      <AddMeetingForm sample={SAMPLE} ownerEmail={process.env.DRYRUN_OWNER_EMAIL ?? ""} />
+    </div>
   );
-}
-
-// Picks up a panel that is still being drafted in the room
-async function BriefFromRoom() {
-  await connection();
-  const room = getRoom();
-  const brief = getBrief();
-  const resume =
-    room.phase === "drafting" && brief
-      ? { input: brief.input, draft: { draft_id: brief.draft_id, suggestions: brief.suggestions }, panel: room.panel }
-      : null;
-  return <Brief sample={demoBriefInput} resume={resume} nameCards={room.name_cards} />;
 }

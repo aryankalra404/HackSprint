@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.7).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.9).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -37,7 +37,9 @@ export interface Seating {
 export interface PanelMember extends Seating {
   gender: "male" | "female";
   why: string;
+  // "email": a real attendee from the invite; anything else is a hypothetical practice role
   source: "email" | "research" | "deck" | "typical";
+  will_push_on?: string;
 }
 
 export interface BriefInput {
@@ -180,6 +182,44 @@ export type DebriefedSession = SessionRecord & { telemetry: Telemetry; debrief: 
 
 export function isDebriefed(s: SessionRecord): s is DebriefedSession {
   return s.telemetry != null && s.debrief != null;
+}
+
+// A meeting n8n picked up from the calendar (or the web app added), with its brief once ready (contract: Meetings and briefs)
+export interface Meeting {
+  id: string;
+  title: string;
+  start: string;
+  company: string;
+  why: string;
+  status: "researching" | "ready" | "practised" | "done";
+  attendees: { name: string; email: string }[];
+}
+
+// Only facts: real attendees, sourced news. Hypothetical roles live in the proposal's practice panel.
+export interface MeetingBrief {
+  summary: string;
+  company: { what_they_do: string; recent_news: { text: string; date: string }[] };
+  attendees: { name: string; email: string; role: string; likely_focus: string }[];
+  questions: { question: string; asked_by: string; why: string; suggested_answer: string }[];
+  risks: string[];
+  sources: { title: string; url: string }[];
+}
+
+export interface MeetingDetail {
+  meeting: Meeting;
+  brief: MeetingBrief | null;
+  proposal: PanelProposal | null;
+}
+
+export interface NewMeeting {
+  id: string;
+  title: string;
+  start?: string;
+  company: string;
+  website: string;
+  context: string;
+  attendees: { name: string; email: string }[];
+  owner_email: string;
 }
 
 // The one room, held by the laptop (contract: Room API). The headset seats `panel` live.

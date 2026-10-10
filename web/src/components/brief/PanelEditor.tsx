@@ -56,8 +56,8 @@ function Overview({ company, members, suggestions, onSelect, onAdd }: Props) {
       <div>
         <h2 className="font-display text-xl">The panel</h2>
         <p className="mt-1 text-sm text-ink-2">
-          Who will be in the room at {company}, as n8n reads it. Click anyone to edit them, drag them to another chair, or press + on an empty
-          chair to add someone. Up to {MAX_PANEL} people.
+          The people coming from {company}, plus practice roles to rehearse against. Click anyone to edit them, drag them to another chair,
+          or press + on an empty chair to add someone. Up to {MAX_PANEL} people.
         </p>
       </div>
       <ul className="flex flex-col divide-y divide-line">
@@ -168,7 +168,7 @@ function PersonEditor({ member, members, onChange, onMove, onRemove, onSelect }:
 
       {member.why && (
         <div className="rounded-xl bg-paper p-3">
-          <p className="text-xs font-semibold text-ink-2">Why n8n seated them{member.source && `: ${SOURCE_LABEL[member.source].toLowerCase()}`}</p>
+          <p className="text-xs font-semibold text-ink-2">{member.source ? SOURCE_LABEL[member.source] : "Why they're here"}</p>
           <p className="mt-1 text-sm">{member.why}</p>
         </div>
       )}

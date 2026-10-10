@@ -7,8 +7,13 @@ Next.js 16 app: brief a rehearsal, rehearse in the browser, and read the debrief
 npm install
 npm run dev
 ```
+Pages:
+- http://localhost:3000/: your meetings (from n8n), with a pop-up for the next one whose brief is ready
+- http://localhost:3000/m/<id>: a meeting's brief; "Set up the practice panel" seats it in the room (and the headset)
+- http://localhost:3000/new: add a meeting by hand; n8n researches it and the brief page fills in about a minute later
+- http://localhost:3000/about: what DryRun is
+
 Sample sessions:
-- http://localhost:3000/new: brief a rehearsal; n8n proposes the panel and you edit it on the table (the sample proposal is served without n8n)
 - http://localhost:3000/s/demo-prep: dashboard, room briefed and waiting for the presenter
 - http://localhost:3000/s/demo: dashboard after the session
 - http://localhost:3000/s/demo/report: the full report (also what the report email links to)
@@ -26,7 +31,7 @@ It runs `adb reverse tcp:3000 tcp:3000` and, if [scrcpy](https://github.com/Geny
 Over USB the headset reaches the app at `http://localhost:3000`. It uses USB whenever Wi-Fi isn't answering, and moves to Wi-Fi when it is. Either way it keeps `GET /api/room?since=<version>&client=headset` open and seats the panel as it's edited on the Brief screen; `/api/turn` and `/api/debrief` forward to n8n. The room is saved to `.room.json` (not committed). See Room API in `docs/CONTRACT.md`.
 
 ## Connecting to n8n
-Set `DRYRUN_N8N_URL` (for example `https://<host>/webhook/dryrun`) in `.env.local`. Without it, the app serves the sample session in `src/lib/mock/session.ts`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
+Set `DRYRUN_N8N_URL=https://aryankalra.app.n8n.cloud/webhook/dryrun` and `DRYRUN_OWNER_EMAIL=<where briefs go>` in `.env.local`. Without it, the app serves the sample session in `src/lib/mock/session.ts`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
 
 ## Layout
 - `src/app/new`: the Brief screen (meeting details → proposed panel → edit → brief); `actions.ts` calls n8n `/panel` and `/prep`
