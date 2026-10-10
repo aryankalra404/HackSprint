@@ -13,6 +13,13 @@ Sample sessions:
 - http://localhost:3000/s/demo: dashboard after the session
 - http://localhost:3000/s/demo/report: the full report (also what the report email links to)
 
+## The headset
+The laptop is the hub: the headset only talks to this app, never to n8n directly. Connect the Quest by USB (or wireless adb) and run:
+```bash
+adb reverse tcp:3000 tcp:3000
+```
+The headset then reaches the app at `http://localhost:3000`. It keeps `GET /api/room?since=<version>&client=headset` open and seats the panel as it's edited on the Brief screen; `/api/turn` and `/api/debrief` forward to n8n. The room is saved to `.room.json` (not committed). See Room API in `docs/CONTRACT.md`.
+
 ## Connecting to n8n
 Set `DRYRUN_N8N_URL` (for example `https://<host>/webhook/dryrun`) in `.env.local`. Without it, the app serves the sample session in `src/lib/mock/session.ts`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
 
