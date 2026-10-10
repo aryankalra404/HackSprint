@@ -9,6 +9,7 @@ import { MeetingStatus } from "@/components/meetings/MeetingStatus";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
 import { LiveProgress } from "@/components/meetings/LiveProgress";
+import { PrepareAnyway } from "@/components/meetings/PrepareAnyway";
 
 export const metadata = { title: "DryRun brief" };
 
@@ -40,14 +41,24 @@ async function Meeting({ id }: { id: string }) {
 
       <section className="flex flex-col gap-2">
         <p className="text-sm text-ink-2">
-          {meeting.company}, {meetingWhen(meeting.start)} ({untilLabel(meeting.start)})
+          {meeting.company !== meeting.title && `${meeting.company}, `}
+          {meetingWhen(meeting.start)} ({untilLabel(meeting.start)})
         </p>
         <h1 className="font-display text-4xl leading-tight">{meeting.title}</h1>
         {meeting.why && <p className="max-w-3xl text-ink-2">{meeting.why}</p>}
         {brief && meeting.progress && meeting.progress.length > 0 && <HowPrepared meeting={meeting} />}
       </section>
 
-      {!brief ? (
+      {meeting.status === "skipped" ? (
+        <section className="flex flex-col items-start gap-3 rounded-2xl border border-line bg-surface p-6">
+          <h2 className="font-display text-2xl">n8n skipped this one</h2>
+          <p className="max-w-2xl text-sm text-ink-2">
+            It read the invite and decided it isn&apos;t worth a brief or a rehearsal, for the reason above. If it matters to you, n8n will
+            research it and brief you like any other meeting.
+          </p>
+          <PrepareAnyway meetingId={meeting.id} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-60" />
+        </section>
+      ) : !brief ? (
         meeting.progress && meeting.progress.length > 0 ? (
           <>
             {meeting.status === "researching" && <RefreshWhileResearching />}

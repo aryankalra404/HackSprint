@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.14).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.15).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -190,8 +190,10 @@ export interface Meeting {
   title: string;
   start: string;
   company: string;
+  // n8n's reason for its decision: what's at stake, or why it isn't worth preparing
   why: string;
-  status: "researching" | "ready" | "practised" | "done" | "failed";
+  // skipped: n8n decided it isn't worth preparing; it can still be prepared anyway (POST /add-meeting with the same id)
+  status: "researching" | "ready" | "practised" | "done" | "failed" | "skipped";
   attendees: { name: string; email: string }[];
   // Where n8n is in preparing it, saved by the workflow after each stage
   progress?: PrepStep[];

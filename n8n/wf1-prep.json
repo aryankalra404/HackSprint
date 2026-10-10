@@ -73,7 +73,7 @@
         "nodeCredentialType": "googlePalmApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"You decide which calendar events are worth preparing a rehearsal for. The presenter is the attendee marked \\\"self\\\".\\nPrepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:\\nsales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,\\n1:1s with colleagues, personal events and anything with no external attendee.\\n\\\"why\\\" is one specific sentence for the presenter: who is coming and what is at stake.\\n\\nEvent:\\n\" + JSON.stringify($json, null, 1) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"prepare\": {\"type\": \"boolean\"}, \"why\": {\"type\": \"string\"}, \"company\": {\"type\": \"string\", \"description\": \"The external organisation, or empty\"}, \"company_domain\": {\"type\": \"string\", \"description\": \"Their email or web domain, or empty\"}, \"kind\": {\"type\": \"string\", \"enum\": [\"sales_pitch\", \"investor_pitch\", \"interview\", \"client_review\", \"partnership\", \"internal\", \"personal\", \"other\"]} }, \"required\": [\"prepare\", \"why\", \"company\", \"company_domain\", \"kind\"]} } }) }}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"You decide which calendar events are worth preparing a rehearsal for. The presenter is the attendee marked \\\"self\\\".\\nPrepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:\\nsales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,\\n1:1s with colleagues, personal events and anything with no external attendee.\\n\\\"why\\\" is one specific sentence for the presenter. If it is worth preparing: who is coming and what is at stake. If not: why it\\nisn't worth preparing (e.g. \\\"Internal weekly sync, no one from outside\\\"); the presenter sees it and can prepare it anyway.\\n\\nEvent:\\n\" + JSON.stringify($json, null, 1) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"prepare\": {\"type\": \"boolean\"}, \"why\": {\"type\": \"string\"}, \"company\": {\"type\": \"string\", \"description\": \"The external organisation, or empty\"}, \"company_domain\": {\"type\": \"string\", \"description\": \"Their email or web domain, or empty\"}, \"kind\": {\"type\": \"string\", \"enum\": [\"sales_pitch\", \"investor_pitch\", \"interview\", \"client_review\", \"partnership\", \"internal\", \"personal\", \"other\"]} }, \"required\": [\"prepare\", \"why\", \"company\", \"company_domain\", \"kind\"]} } }) }}",
         "options": {
           "timeout": 120000
         }
@@ -127,7 +127,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The model's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const d = JSON.parse(replyText(item.json) || '{}');\n  const m = shaped[i].json;\n  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';\n  return { json: { ...m, prepare: m.from_web || !!d.prepare, why: d.why || '', company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };\n});"
+        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The model's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const d = JSON.parse(replyText(item.json) || '{}');\n  const m = shaped[i].json;\n  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';\n  // Added by hand (or \"Prepare anyway\"): always prepared, and the reason says so when n8n would have skipped it\n  const why = m.from_web && !d.prepare ? \"Prepared because you asked. n8n's view: \" + (d.why || 'not a high-stakes meeting') : (d.why || '');\n  return { json: { ...m, prepare: m.from_web || !!d.prepare, why, company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };\n});"
       }
     },
     {
@@ -618,17 +618,6 @@
       }
     },
     {
-      "id": "f0f80e92-94ce-49e8-a44f-825a3996cce5",
-      "name": "Not worth it",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        1584,
-        0
-      ],
-      "parameters": {}
-    },
-    {
       "id": "2a8eda13-039d-4ffe-9a34-d61d5bd849b5",
       "name": "If a run fails",
       "type": "n8n-nodes-base.errorTrigger",
@@ -803,7 +792,7 @@
         "nodeCredentialType": "groqApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const j = ($('Shape the event').isExecuted ? $('Shape the event') : $('Shape the request')).item.json; return JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: (\"You decide which calendar events are worth preparing a rehearsal for. The presenter is the attendee marked \\\"self\\\".\\nPrepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:\\nsales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,\\n1:1s with colleagues, personal events and anything with no external attendee.\\n\\\"why\\\" is one specific sentence for the presenter: who is coming and what is at stake.\\n\\nEvent:\\n\" + JSON.stringify(j, null, 1)) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"prepare\": {\"type\": \"boolean\"}, \"why\": {\"type\": \"string\"}, \"company\": {\"type\": \"string\", \"description\": \"The external organisation, or empty\"}, \"company_domain\": {\"type\": \"string\", \"description\": \"Their email or web domain, or empty\"}, \"kind\": {\"type\": \"string\", \"enum\": [\"sales_pitch\", \"investor_pitch\", \"interview\", \"client_review\", \"partnership\", \"internal\", \"personal\", \"other\"]} }, \"required\": [\"prepare\", \"why\", \"company\", \"company_domain\", \"kind\"]}) }], response_format: { type: 'json_object' } }); })() }}",
+        "jsonBody": "={{ (() => { const j = ($('Shape the event').isExecuted ? $('Shape the event') : $('Shape the request')).item.json; return JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: (\"You decide which calendar events are worth preparing a rehearsal for. The presenter is the attendee marked \\\"self\\\".\\nPrepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:\\nsales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,\\n1:1s with colleagues, personal events and anything with no external attendee.\\n\\\"why\\\" is one specific sentence for the presenter. If it is worth preparing: who is coming and what is at stake. If not: why it\\nisn't worth preparing (e.g. \\\"Internal weekly sync, no one from outside\\\"); the presenter sees it and can prepare it anyway.\\n\\nEvent:\\n\" + JSON.stringify(j, null, 1)) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"prepare\": {\"type\": \"boolean\"}, \"why\": {\"type\": \"string\"}, \"company\": {\"type\": \"string\", \"description\": \"The external organisation, or empty\"}, \"company_domain\": {\"type\": \"string\", \"description\": \"Their email or web domain, or empty\"}, \"kind\": {\"type\": \"string\", \"enum\": [\"sales_pitch\", \"investor_pitch\", \"interview\", \"client_review\", \"partnership\", \"internal\", \"personal\", \"other\"]} }, \"required\": [\"prepare\", \"why\", \"company\", \"company_domain\", \"kind\"]}) }], response_format: { type: 'json_object' } }); })() }}",
         "options": {
           "timeout": 120000
         }
@@ -861,6 +850,55 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000
+    },
+    {
+      "id": "b0721328-4dde-4fb7-b7d6-ada2f08ba4e2",
+      "name": "Row: skipped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Not worth preparing: keep it in the table with n8n's reason, so the web app can list it and offer \"Prepare anyway\"\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'skipped',\n  brief: '', proposal: '', progress: '[]', started_at: '', updated_at: new Date().toISOString(),\n  execution_id: String($execution.id), workflow_id: String($workflow.id),\n} }));"
+      }
+    },
+    {
+      "id": "10f61135-8913-4c01-b2b7-eec27f2bdafe",
+      "name": "Save: skipped",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1808,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "86BWrDlUXrOWFgqc",
+          "cachedResultName": "DryRun meetings"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "meeting_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.meeting_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null
+        }
+      }
     }
   ],
   "connections": {
@@ -948,7 +986,7 @@
         ],
         [
           {
-            "node": "Not worth it",
+            "node": "Row: skipped",
             "type": "main",
             "index": 0
           }
@@ -1278,6 +1316,17 @@
         [
           {
             "node": "Seat the panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Row: skipped": {
+      "main": [
+        [
+          {
+            "node": "Save: skipped",
             "type": "main",
             "index": 0
           }

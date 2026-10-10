@@ -241,7 +241,9 @@ return $input.all().map((item, i) => {
   const d = JSON.parse(replyText(item.json) || '{}');
   const m = shaped[i].json;
   const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';
-  return { json: { ...m, prepare: m.from_web || !!d.prepare, why: d.why || '', company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };
+  // Added by hand (or "Prepare anyway"): always prepared, and the reason says so when n8n would have skipped it
+  const why = m.from_web && !d.prepare ? "Prepared because you asked. n8n's view: " + (d.why || 'not a high-stakes meeting') : (d.why || '');
+  return { json: { ...m, prepare: m.from_web || !!d.prepare, why, company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };
 });""", [{**MEETING, "prepare": True, "why": "", "company": "Delhivery", "company_domain": "delhivery.com", "kind": "sales_pitch"}])
     c += make_node("prepareIt", "ifElse", "n8n-nodes-base.if", 2.3, "Prepare it?", {
         "conditions": {
@@ -251,7 +253,16 @@ return $input.all().map((item, i) => {
             "combinator": "and",
         }, "options": {},
     }, [{"prepare": True}])
-    c += make_node("skip", "node", "n8n-nodes-base.noOp", 1, "Not worth it", {}, [{}])
+    # Skipped meetings are kept, with the reason, so the presenter sees every decision and can prepare one anyway
+    c += code_node("rowSkipped", "Row: skipped", """
+// Not worth preparing: keep it in the table with n8n's reason, so the web app can list it and offer "Prepare anyway"
+return $input.all().map(({ json: m }) => ({ json: {
+  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,
+  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'skipped',
+  brief: '', proposal: '', progress: '[]', started_at: '', updated_at: new Date().toISOString(),
+  execution_id: String($execution.id), workflow_id: String($workflow.id),
+} }));""", [{"meeting_id": "evt123", "status": "skipped"}])
+    c += upsert_node("saveSkipped", "Save: skipped", [{"id": 1}])
     c += code_node("rowResearching", "Row: researching", """
 // The meeting as a row in the DryRun meetings table, while n8n works on it
 """ + PROGRESS_JS + """
@@ -451,13 +462,14 @@ return $input.all().map(({ json: row }) => {
     .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(progressEmails.to(saveProgressEmails.to(news.to(website.to(gatherSources.to(enoughNews
       .onTrue(research.to(readResearch.to(progressResearch.to(saveProgressResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief.to(progressEmailed.to(saveProgressEmailed)))))))))))
       .onFalse(searchWeb.to(addWeb.to(research)))))))))))))
-    .onFalse(skip))
+    .onFalse(rowSkipped.to(saveSkipped)))
   .add(research.onError(researchGroq))
   .add(researchGroq)
   .to(readResearch)
   .add(brief.onError(briefGroq))
   .add(briefGroq)
   .to(seatPanel)
+  .group('Skipped', [rowSkipped, saveSkipped], { description: 'Keeps meetings that are not worth preparing, with the reason, so you can prepare them anyway' })
   .group('Decide', [readDecision], { description: 'Gemini decides whether this meeting is worth preparing for, and why' })
   .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, enoughNews, searchWeb, addWeb, research, researchGroq, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your emails with the attendees, the company news and website (searching the web if news is thin), saving progress as it goes' })
   .add(onFailure)

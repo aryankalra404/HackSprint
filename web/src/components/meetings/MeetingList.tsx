@@ -23,7 +23,7 @@ export function MeetingList({ meetings }: { meetings: Meeting[] }) {
               <span className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="font-display text-lg leading-tight">{m.title}</span>
-                  <span className="text-sm text-ink-2">{m.company}</span>
+                  {m.company !== m.title && <span className="text-sm text-ink-2">{m.company}</span>}
                 </span>
                 <span className="text-sm text-muted">
                   {meetingWhen(m.start)}

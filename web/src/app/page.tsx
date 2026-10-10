@@ -6,6 +6,7 @@ import type { Meeting } from "@/lib/contract";
 import { MeetingList } from "@/components/meetings/MeetingList";
 import { PreparePopup } from "@/components/meetings/PreparePopup";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
+import { SkippedList } from "@/components/meetings/SkippedList";
 
 // Home: the meetings n8n is preparing you for
 export default function Home() {
@@ -44,21 +45,28 @@ async function Meetings() {
       </p>
     );
   }
-  if (meetings.length === 0) {
+  // Every decision n8n made is listed: the meetings it's preparing, then the ones it skipped (with why)
+  const skipped = meetings.filter((m) => m.status === "skipped");
+  const prepared = meetings.filter((m) => m.status !== "skipped");
+  if (prepared.length === 0) {
     return (
-      <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-line bg-surface p-8 text-center">
-        <p className="font-display text-xl">No meetings to prepare yet</p>
-        <p className="mx-auto max-w-md text-sm text-ink-2">
+      <>
+        <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-line bg-surface p-8 text-center">
+          <p className="font-display text-xl">No meetings to prepare yet</p>
+          <p className="mx-auto max-w-md text-sm text-ink-2">
           Add an event with someone from outside your organisation to your Google Calendar, and n8n will pick it up within a couple of
           minutes. Or <Link href="/new" className="underline">add a meeting here</Link>.
-        </p>
-      </div>
+          </p>
+        </div>
+        <SkippedList meetings={skipped} />
+      </>
     );
   }
   return (
     <>
       {meetings.some((m) => m.status === "researching") && <RefreshWhileResearching />}
-      <MeetingList meetings={meetings} />
+      <MeetingList meetings={prepared} />
+      <SkippedList meetings={skipped} />
       <PreparePopup meetings={meetings} />
     </>
   );

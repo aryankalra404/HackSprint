@@ -18,6 +18,19 @@ export const demoMeeting: Meeting = {
   ],
 };
 
+// One meeting n8n decided not to prepare, so the sample shows the "Skipped by n8n" list
+const tomorrow = new Date(Date.now() + 86400000);
+tomorrow.setHours(10, 0, 0, 0);
+export const demoSkippedMeeting: Meeting = {
+  id: "demo-skipped",
+  title: "Weekly product sync",
+  start: tomorrow.toISOString(),
+  company: "Weekly product sync",
+  why: "Internal weekly sync with your own team, nothing to persuade anyone of.",
+  status: "skipped",
+  attendees: [{ name: "Ritika", email: "ritika@example.com" }],
+};
+
 export const demoMeetingDetail: MeetingDetail = {
   meeting: demoMeeting,
   brief: {

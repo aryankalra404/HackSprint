@@ -6,6 +6,7 @@ const LOOK: Record<Meeting["status"], { label: string; dot: string }> = {
   practised: { label: "Practised", dot: "bg-ink" },
   done: { label: "Done", dot: "bg-axis" },
   failed: { label: "Couldn't prepare", dot: "bg-bad" },
+  skipped: { label: "Skipped by n8n", dot: "bg-axis" },
 };
 
 export function MeetingStatus({ status }: { status: Meeting["status"] }) {

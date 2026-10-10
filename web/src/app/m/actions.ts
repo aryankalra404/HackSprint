@@ -27,7 +27,8 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
   redirect(`/m/${encodeURIComponent(meeting.id)}/practise`);
 }
 
-// Runs n8n's preparation again for a meeting whose run failed, under the same id so its page carries on
+// Runs n8n's preparation for a meeting whose run failed, or that n8n skipped and the presenter wants anyway, under the same id so
+// its page carries on. Meetings sent this way are always prepared.
 export async function retryMeetingAction(meetingId: string): Promise<Result<null>> {
   const detail = await getMeeting(meetingId);
   if (!detail) return { ok: false, error: "That meeting isn't in n8n's table any more." };
@@ -37,9 +38,10 @@ export async function retryMeetingAction(meetingId: string): Promise<Result<null
       id: m.id,
       title: m.title,
       start: m.start,
-      company: m.company,
+      // A skipped meeting's company may just be its title, and its "why" is the reason it was skipped: neither helps the research
+      company: m.company === m.title ? "" : m.company,
       website: "",
-      context: m.why,
+      context: m.status === "skipped" ? "" : m.why,
       attendees: m.attendees,
       owner_email: process.env.DRYRUN_OWNER_EMAIL ?? "",
     });

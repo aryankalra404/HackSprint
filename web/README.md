@@ -8,7 +8,7 @@ npm install
 npm run dev
 ```
 Pages:
-- http://localhost:3000/: your upcoming meetings (from n8n), with a "prepare for this meeting?" pop-up for the next one whose brief is ready
+- http://localhost:3000/: your upcoming meetings (from n8n), with a "prepare for this meeting?" pop-up for the next one whose brief is ready, and the meetings n8n skipped (with its reason and "Prepare anyway")
 - http://localhost:3000/m/<id>: a meeting's brief (facts only). While n8n is still preparing it, the page shows each step live, with a link to the run in n8n
 - http://localhost:3000/m/<id>/practise: the practice panel (the attendees plus practice roles), editable on a drawing of the table and live in the headset; your deck under it (upload, page through, replace); "Start the rehearsal" briefs the panel and opens the dashboard
 - http://localhost:3000/new: add a meeting by hand; n8n prepares it in about 20 seconds

@@ -1,5 +1,5 @@
 import type { Bundle, BriefInput, DraftMember, Meeting, MeetingDetail, NewMeeting, SessionRecord } from "./contract";
-import { demoMeeting, demoMeetingDetail } from "./mock/meetings";
+import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meetings";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
 import { getRoom } from "./room";
@@ -41,7 +41,7 @@ export async function postToN8n<T>(path: string, body: unknown): Promise<T> {
 
 // Upcoming meetings n8n has picked up (contract: GET /meetings)
 export async function listMeetings(): Promise<Meeting[]> {
-  if (!N8N_URL) return [demoMeeting];
+  if (!N8N_URL) return [demoSkippedMeeting, demoMeeting].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const res = await fetch(`${N8N_URL}/meetings`, { cache: "no-store" });
   if (!res.ok) throw new Error(`n8n /meetings failed: ${res.status}`);
   return ((await res.json()) as { meetings: Meeting[] }).meetings ?? [];
@@ -49,7 +49,7 @@ export async function listMeetings(): Promise<Meeting[]> {
 
 // One meeting with its brief and practice panel (contract: GET /meeting)
 export async function getMeeting(id: string): Promise<MeetingDetail | null> {
-  if (!N8N_URL) return id === demoMeeting.id ? demoMeetingDetail : null;
+  if (!N8N_URL) return id === demoMeeting.id ? demoMeetingDetail : id === demoSkippedMeeting.id ? { meeting: demoSkippedMeeting, brief: null, proposal: null } : null;
   const res = await fetch(`${N8N_URL}/meeting?id=${encodeURIComponent(id)}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`n8n /meeting failed: ${res.status}`);
   const detail = (await res.json()) as MeetingDetail & { error?: string };

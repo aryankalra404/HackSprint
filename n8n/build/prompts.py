@@ -6,7 +6,8 @@ TRIAGE_PROMPT = """You decide which calendar events are worth preparing a rehear
 Prepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:
 sales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,
 1:1s with colleagues, personal events and anything with no external attendee.
-"why" is one specific sentence for the presenter: who is coming and what is at stake.
+"why" is one specific sentence for the presenter. If it is worth preparing: who is coming and what is at stake. If not: why it
+isn't worth preparing (e.g. "Internal weekly sync, no one from outside"); the presenter sees it and can prepare it anyway.
 
 Event:
 """
