@@ -1,184 +1,475 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { TelemetryEvent } from "@/lib/contract";
-import { demoSession } from "@/lib/mock/session";
-import { portraitOf, colorOf, personaById } from "@/lib/personas";
-import { PersonaAvatar } from "@/components/ui";
+import type { ReactNode } from "react";
+import type { PanelMember } from "@/lib/contract";
+import { demoMeetingDetail } from "@/lib/mock/meetings";
+import { demoProposal } from "@/lib/mock/panel";
+import { PersonaAvatar, RoleTag, StatusIcon } from "@/components/ui";
 
 export const metadata = {
   title: "About DryRun",
-  description: "Meet your buyers before you meet your buyers. DryRun prepares you for every important meeting and rehearses you against the people in it. Built with n8n.",
+  description:
+    "DryRun watches your calendar, researches the people you're about to meet, emails you a sourced brief and lets you rehearse the pitch in front of them. Built with n8n.",
 };
 
-// The sample panel and one question from the sample session (a fictional prospect)
-const { bundle, telemetry } = demoSession;
-const PANEL = [...bundle.personas].sort((a, b) => a.seat - b.seat);
-const QUESTION = (telemetry?.events ?? []).find(
-  (e): e is Extract<TelemetryEvent, { type: "turn" }> => e.type === "turn" && e.mode === "slide_end" && !!e.reaction,
-)?.reaction;
-const ASKER = QUESTION ? personaById(bundle.personas, QUESTION.persona_id) : undefined;
+// Everything shown in the product previews is the sample meeting (a fictional prospect)
+const { meeting, brief } = demoMeetingDetail;
+const PANEL = [...demoProposal.members].sort((a, b) => a.seat - b.seat);
 
-const STAGES = [
-  { name: "Pre-flight", line: "Spots the meeting on your calendar, researches the people and briefs you." },
-  { name: "Live", line: "You pitch. The room interrupts. If you freeze, the Rescue Agent cues you." },
-  { name: "Post-flight", line: "Scores you with evidence, then books a drill on your weakest moment." },
-  { name: "After", line: "Drafts the follow-up and remembers what each person cared about." },
-];
+// The same labels as the practice page: real attendees come from the invite, everyone else is practice
+const SOURCE: Record<PanelMember["source"], string> = {
+  email: "In the invite",
+  research: "Practice role",
+  deck: "Practice role",
+  typical: "Practice role",
+};
 
 export default function About() {
   return (
-    <main className="bg-ink text-surface">
-      <Hero />
-      <Cast />
-      <Still />
-      <Stages />
-      <Closing />
-    </main>
+    <div className="bg-paper text-ink">
+      <Nav />
+      <main>
+        <Hero />
+        <Steps />
+        <Feature
+          id="meetings"
+          eyebrow="Your calendar"
+          title="It picks the meetings worth preparing for."
+          body="Every new Google Calendar event goes to n8n. Gemini reads the invite and who's coming, decides whether it needs preparing and tells you why. You can also add a meeting by hand."
+          points={["Runs on its own, no button to press", "You watch each step live, with a link to the n8n run"]}
+          visual={<ProgressPreview />}
+        />
+        <Feature
+          id="brief"
+          eyebrow="The brief"
+          title="A brief that only states facts."
+          body="n8n reads your recent emails with the attendees, the company's news and its website, and searches the web when the news is thin. Then it writes who's coming, what each of them cares about, what they'll ask and where you're exposed. It lands in your inbox."
+          points={["Real attendees only, no guessed roles", "Every news item is dated and links to its source"]}
+          visual={<BriefPreview />}
+          flip
+        />
+        <Feature
+          id="panel"
+          eyebrow="The practice panel"
+          title="Rehearse with the people who'll be in the room."
+          body="n8n proposes a panel: the attendees from the invite, plus the people who usually sign off on a deal like this, each with a reason. Swap anyone, change a face or a chair, up to six people."
+          points={["Practice roles are always labelled as practice", "Every change shows up in the headset straight away"]}
+          visual={<PanelPreview />}
+        />
+        <Room />
+        <Pipeline />
+        <Next />
+        <Closing />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+function Nav() {
+  return (
+    <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/85 backdrop-blur">
+      <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6">
+        <Link href="/about" className="font-display text-xl">
+          DryRun
+        </Link>
+        <div className="hidden items-center gap-7 text-sm text-ink-2 md:flex">
+          <a href="#how" className="hover:text-ink">How it works</a>
+          <a href="#room" className="hover:text-ink">The room</a>
+          <a href="#n8n" className="hover:text-ink">n8n workflow</a>
+          <a href="#next" className="hover:text-ink">What&apos;s next</a>
+        </div>
+        <Link href="/" className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface hover:bg-ink-2">
+          Open DryRun
+        </Link>
+      </nav>
+    </header>
   );
 }
 
 function Hero() {
   return (
-    <section className="relative isolate flex h-dvh min-h-[560px] flex-col overflow-hidden">
-      <Image
-        src="/vr/room_wide.jpg"
-        alt="The VR boardroom from the presenter's spot: five stakeholders seated around a long table."
-        fill
-        priority
-        sizes="100vw"
-        className="-z-10 object-cover object-[center_70%]"
-      />
-      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-t from-ink via-ink/40 to-ink/30" />
-
-      <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-5 sm:px-8">
-        <span className="font-display text-2xl">DryRun</span>
-        <Link href="/" className="rounded-full bg-surface/10 px-4 py-2 text-sm backdrop-blur hover:bg-surface/20">
-          Open DryRun
-        </Link>
-      </header>
-
-      <div className="mx-auto mt-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-20 sm:px-8 sm:pb-24">
-        <h1 className="max-w-5xl text-balance font-display text-5xl leading-[0.98] sm:text-8xl">
-          Meet your buyers before you meet your buyers.
-        </h1>
-        <p className="max-w-lg text-base text-surface/75 sm:text-lg">
-          Rehearse your next pitch in front of the people who will question it.
+    <section className="mx-auto max-w-6xl px-4 pt-16 sm:px-6 sm:pt-24">
+      <div className="max-w-3xl">
+        <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-[#ea4b71]" />
+          Built with n8n for HackSprint 2026
         </p>
-        <div className="flex flex-wrap gap-3">
-          <Link href="/" className="rounded-full bg-surface px-6 py-3 text-sm font-medium text-ink hover:bg-paper">Get started</Link>
-          <Link href="/s/demo/report" className="rounded-full border border-surface/40 px-6 py-3 text-sm hover:border-surface">
-            See a sample report
+        <h1 className="mt-6 text-balance font-display text-4xl leading-[1.05] sm:text-6xl">
+          Know the hard questions before the meeting starts.
+        </h1>
+        <p className="mt-6 max-w-2xl text-pretty text-lg text-ink-2">
+          DryRun watches your calendar. For each meeting that matters, an n8n agent researches the people and the company,
+          emails you a brief with sources, and seats them around a table in VR so you can practise the pitch.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Link href="/" className="rounded-full bg-ink px-6 py-3 text-sm font-medium text-surface hover:bg-ink-2">
+            Open DryRun
           </Link>
+          <a href="#how" className="rounded-full border border-line bg-surface px-6 py-3 text-sm hover:border-ink">
+            See how it works
+          </a>
         </div>
       </div>
 
-      <a href="#cast" aria-label="Scroll down" className="absolute bottom-6 left-1/2 hidden -translate-x-1/2 text-surface/60 hover:text-surface sm:block">
-        <svg viewBox="0 0 24 24" className="size-6 motion-safe:animate-bounce" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </a>
+      <div className="relative mt-14 sm:mt-16">
+        <div className="relative aspect-[16/10] overflow-hidden rounded-3xl bg-ink sm:aspect-[16/8]">
+          <Image
+            src="/vr/room_wide.jpg"
+            alt="The VR boardroom from where you stand: the practice panel seated around a long table."
+            fill
+            preload
+            sizes="(min-width: 1152px) 1104px, 100vw"
+            className="object-cover object-[center_65%]"
+          />
+          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-ink/50 via-transparent to-transparent" />
+        </div>
+        {/* The step that starts it all: n8n has prepared a meeting and asks if you want to practise */}
+        <div className="relative -mt-10 px-3 sm:absolute sm:bottom-6 sm:left-6 sm:mt-0 sm:w-[380px] sm:px-0">
+          <div className="rounded-2xl border border-line bg-surface p-5 shadow-xl shadow-ink/10">
+            <p className="text-xs text-muted">In 2 days, 3:00 pm</p>
+            <p className="mt-1 font-display text-lg">Prepare for {meeting.title}?</p>
+            <p className="mt-2 text-sm text-ink-2">{meeting.why} n8n has written your brief.</p>
+            <div className="mt-4 flex gap-2 text-sm">
+              <span className="rounded-full bg-ink px-4 py-2 text-surface">Read the brief</span>
+              <span className="rounded-full border border-line px-4 py-2">Practise now</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
 
-function Cast() {
+const STEPS = [
+  { title: "n8n spots the meeting", line: "A new event on your Google Calendar starts the workflow. No forms to fill." },
+  { title: "You get a brief", line: "Attendees, the questions they'll ask and sourced news, in your inbox." },
+  { title: "You rehearse", line: "Edit the practice panel on the web, then pitch to it in the VR boardroom." },
+];
+
+function Steps() {
   return (
-    <section id="cast" className="mx-auto max-w-7xl px-4 py-24 sm:px-8 sm:py-32">
-      <h2 className="max-w-2xl text-balance font-display text-4xl leading-tight sm:text-6xl">Your buyers, briefed.</h2>
-      <p className="mt-4 max-w-md text-surface/60">
-        Real attendees from the invite, plus the roles that sign off. Each one knows your deck and their company.
-      </p>
-      <ul className="mt-14 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4 sm:grid sm:grid-cols-5 sm:overflow-visible sm:pb-0">
-        {PANEL.map((p) => (
-          <li key={p.id} className="group w-[62vw] shrink-0 snap-start sm:w-auto">
-            <div className="relative aspect-[3/4] overflow-hidden rounded-2xl bg-ink-2">
-              <Image
-                src={portraitOf(p.avatar) ?? ""}
-                alt=""
-                fill
-                sizes="(min-width: 640px) 20vw, 62vw"
-                className="object-cover transition duration-500 group-hover:scale-105"
-              />
-              <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-ink/90 via-ink/0 to-ink/0" />
-              {p.objections[0] && (
-                <p className="absolute inset-x-0 bottom-0 p-4 text-sm leading-snug opacity-0 transition duration-300 group-hover:opacity-100">
-                  &ldquo;{p.objections[0].text}&rdquo;
-                </p>
-              )}
-              <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1" style={{ background: colorOf(p.color) }} />
+    <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-24 sm:px-6 sm:pt-32">
+      <SectionHead eyebrow="How it works" title="From calendar invite to rehearsal, without asking." />
+      <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3">
+        {STEPS.map((s, i) => (
+          <li key={s.title} className="bg-surface p-6">
+            <span className="font-display text-sm text-muted">0{i + 1}</span>
+            <h3 className="mt-3 font-display text-lg">{s.title}</h3>
+            <p className="mt-2 text-sm text-ink-2">{s.line}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function Feature({ id, eyebrow, title, body, points, visual, flip = false }: {
+  id: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  points: string[];
+  visual: ReactNode;
+  flip?: boolean;
+}) {
+  return (
+    <section id={id} className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-24 sm:px-6 sm:pt-32">
+      <div className="grid items-center gap-10 lg:grid-cols-[5fr_7fr] lg:gap-16">
+        <div className={`min-w-0 ${flip ? "lg:order-2" : ""}`}>
+          <SectionHead eyebrow={eyebrow} title={title} />
+          <p className="mt-5 text-pretty text-ink-2">{body}</p>
+          <ul className="mt-6 flex flex-col gap-3 text-sm">
+            {points.map((p) => (
+              <li key={p} className="flex items-start gap-2.5">
+                <StatusIcon tone="good" className="mt-0.5 size-4 shrink-0 text-good-ink" />
+                {p}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className={`min-w-0 ${flip ? "lg:order-1" : ""}`}>{visual}</div>
+      </div>
+    </section>
+  );
+}
+
+function SectionHead({ eyebrow, title, invert = false }: { eyebrow: string; title: string; invert?: boolean }) {
+  return (
+    <div>
+      <p className={`text-sm font-medium ${invert ? "text-surface/60" : "text-muted"}`}>{eyebrow}</p>
+      <h2 className="mt-3 max-w-2xl text-balance font-display text-3xl leading-tight sm:text-4xl">{title}</h2>
+    </div>
+  );
+}
+
+// A product screen in a window frame, so it reads as the app and not as decoration
+function Window({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <figure className="overflow-hidden rounded-2xl border border-line bg-surface shadow-xl shadow-ink/5">
+      <div className="flex items-center gap-1.5 border-b border-line px-4 py-3">
+        {[0, 1, 2].map((i) => (
+          <span key={i} aria-hidden="true" className="size-2.5 rounded-full bg-line" />
+        ))}
+        <span className="ml-3 truncate text-xs text-muted">{label}</span>
+      </div>
+      <div className="p-5 sm:p-6">{children}</div>
+      <figcaption className="border-t border-line px-5 py-2.5 text-xs text-muted sm:px-6">Sample meeting with a fictional prospect</figcaption>
+    </figure>
+  );
+}
+
+const PROGRESS: { label: string; detail: string; state: "done" | "running" | "pending" }[] = [
+  { label: "Decide", detail: "Worth preparing: the CFO wants a payback number", state: "done" },
+  { label: "Emails", detail: "Read 4 recent emails with Priya Nair and Rajiv Menon", state: "done" },
+  { label: "Research", detail: "Reading the news about Kaveri Freight and their website", state: "running" },
+  { label: "Brief", detail: "Writing your brief and the hardest questions", state: "pending" },
+  { label: "Panel", detail: "Seating the practice panel", state: "pending" },
+  { label: "Email", detail: "Emailing you the brief", state: "pending" },
+];
+
+function ProgressPreview() {
+  return (
+    <Window label="Your meetings">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-display text-lg">
+            {meeting.title} <span className="font-sans text-sm font-normal text-muted">{meeting.company}</span>
+          </p>
+          <p className="mt-1 text-sm text-ink-2">With {meeting.attendees.map((a) => a.name).join(", ")}</p>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs">
+          <span aria-hidden="true" className="size-2 rounded-full bg-warn motion-safe:animate-pulse" />
+          n8n is researching
+        </span>
+      </div>
+      <ol className="mt-6 flex flex-col">
+        {PROGRESS.map((s, i) => (
+          <li key={s.label} className="relative flex gap-3 pb-4 last:pb-0">
+            {i < PROGRESS.length - 1 && <span aria-hidden="true" className="absolute top-5 bottom-0 left-[9px] w-px bg-line" />}
+            <StepDot state={s.state} />
+            <div className="min-w-0">
+              <p className={`text-sm font-medium ${s.state === "pending" ? "text-muted" : ""}`}>{s.label}</p>
+              <p className={`text-sm ${s.state === "pending" ? "text-muted" : "text-ink-2"}`}>{s.detail}</p>
             </div>
-            <p className="mt-3 font-display text-base">{p.display_name}</p>
-            <p className="text-sm text-surface/60">{p.role}</p>
+          </li>
+        ))}
+      </ol>
+    </Window>
+  );
+}
+
+function StepDot({ state }: { state: "done" | "running" | "pending" }) {
+  if (state === "done")
+    return (
+      <span className="relative flex size-[19px] shrink-0 items-center justify-center rounded-full bg-ink text-surface">
+        <StatusIcon tone="good" className="size-3" />
+      </span>
+    );
+  if (state === "running")
+    return (
+      <span className="relative flex size-[19px] shrink-0 items-center justify-center rounded-full border-2 border-ink bg-surface">
+        <span className="size-1.5 rounded-full bg-ink motion-safe:animate-pulse" />
+      </span>
+    );
+  return <span className="relative size-[19px] shrink-0 rounded-full border-2 border-line bg-surface" />;
+}
+
+function BriefPreview() {
+  if (!brief) return null;
+  return (
+    <Window label={`Brief: ${meeting.title}, ${meeting.company}`}>
+      <p className="text-sm text-ink-2">{brief.summary}</p>
+      <h3 className="mt-6 text-xs font-medium text-muted">Who&apos;s coming</h3>
+      <ul className="mt-2 divide-y divide-line">
+        {brief.attendees.map((a) => (
+          <li key={a.email} className="py-2.5 text-sm">
+            <span className="font-medium">{a.name}</span>
+            <span className="text-muted">, {a.role}</span>
+            <p className="text-ink-2">{a.likely_focus}</p>
           </li>
         ))}
       </ul>
-      <p className="mt-6 text-xs text-surface/40">Sample practice panel for a fictional prospect.</p>
-    </section>
+      <h3 className="mt-5 text-xs font-medium text-muted">They&apos;ll likely ask</h3>
+      <div className="mt-2 rounded-xl bg-paper p-4">
+        <p className="font-medium">&ldquo;{brief.questions[0].question}&rdquo;</p>
+        <p className="mt-1 text-sm text-muted">
+          {brief.questions[0].asked_by}, because {brief.questions[0].why.charAt(0).toLowerCase() + brief.questions[0].why.slice(1)}
+        </p>
+        <p className="mt-3 text-sm">
+          <span className="font-medium">Suggested answer: </span>
+          {brief.questions[0].suggested_answer}
+        </p>
+      </div>
+      <h3 className="mt-5 text-xs font-medium text-muted">Where you&apos;re exposed</h3>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {brief.risks.map((r) => (
+          <li key={r} className="inline-flex items-center gap-1 rounded-full bg-warn/15 px-2.5 py-1 text-xs font-medium text-warn-ink">
+            <StatusIcon tone="warn" />
+            {r}
+          </li>
+        ))}
+      </ul>
+    </Window>
   );
 }
 
-function Still() {
+function PanelPreview() {
   return (
-    <section className="relative isolate flex min-h-[80dvh] items-end overflow-hidden sm:min-h-dvh">
-      <Image
-        src="/vr/room_top.jpg"
-        alt="The boardroom from above, with the stakeholders seated around the table."
-        fill
-        sizes="100vw"
-        className="-z-10 object-cover"
-      />
-      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-t from-ink via-ink/30 to-ink/50" />
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 pb-16 sm:px-8 sm:pb-24">
-        <h2 className="max-w-3xl text-balance font-display text-4xl leading-tight sm:text-6xl">They ask what the real room would ask.</h2>
-        {QUESTION && ASKER && (
-          <figure className="flex max-w-xl gap-4 rounded-2xl bg-ink/70 p-5 backdrop-blur-md">
-            <PersonaAvatar persona={ASKER} size={48} />
-            <div>
-              <blockquote className="font-display text-lg leading-snug sm:text-xl">{QUESTION.text}</blockquote>
-              <figcaption className="mt-2 text-sm text-surface/60">
-                {ASKER.display_name}, {ASKER.role}
-              </figcaption>
+    <Window label={`Practice panel: ${meeting.title}`}>
+      <ul className="divide-y divide-line">
+        {PANEL.map((m) => (
+          <li key={m.id} className="flex items-center gap-3 py-3 first:pt-0">
+            <PersonaAvatar persona={m} size={40} />
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                <span className="font-medium">{m.display_name}</span>
+                <RoleTag persona={m} />
+              </p>
+              <p className="truncate text-xs text-muted">{m.why}</p>
             </div>
-          </figure>
-        )}
+            <span
+              className={`hidden shrink-0 rounded-full px-2.5 py-1 text-xs sm:inline ${
+                m.source === "email" ? "bg-ink text-surface" : "border border-line text-ink-2"
+              }`}
+            >
+              {SOURCE[m.source]}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4 text-xs">
+        <span className="text-muted">n8n also suggests</span>
+        {demoProposal.suggestions.map((s) => (
+          <span key={s.role} className="rounded-full border border-dashed border-axis px-2.5 py-1 text-ink-2">
+            + {s.role_short}
+          </span>
+        ))}
+      </div>
+    </Window>
+  );
+}
+
+function Room() {
+  return (
+    <section id="room" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-24 sm:px-6 sm:pt-32">
+      <div className="relative isolate overflow-hidden rounded-3xl bg-ink text-surface">
+        <Image
+          src="/vr/room_top.jpg"
+          alt="The boardroom from above, with the practice panel seated around the table."
+          fill
+          sizes="(min-width: 1152px) 1104px, 100vw"
+          className="-z-10 object-cover object-[75%_50%]"
+        />
+        <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-r from-ink via-ink/75 to-transparent" />
+        <div className="max-w-lg p-8 sm:p-14">
+          <SectionHead eyebrow="The room" title="Then pitch to them in VR." invert />
+          <p className="mt-5 text-surface/75">
+            Put on a Meta Quest and you&apos;re at the head of the table, with the panel in the chairs you chose. Start
+            talking and the session starts; they turn to look at you. The big screen shows what you see, so your team
+            can watch along.
+          </p>
+          <p className="mt-6 text-sm text-surface/50">No headset? The practice page runs the same room on your laptop.</p>
+        </div>
       </div>
     </section>
   );
 }
 
-function Stages() {
+const NODES = [
+  { tool: "Google Calendar", step: "A new event starts the run" },
+  { tool: "Gemini", step: "Decides if it's worth preparing" },
+  { tool: "Gmail", step: "Reads your threads with the attendees" },
+  { tool: "News and website", step: "Researches the company, searches the web if news is thin" },
+  { tool: "Gemini", step: "Writes the brief and seats the panel" },
+  { tool: "Data table and Gmail", step: "Saves it for the app and emails you" },
+];
+
+function Pipeline() {
   return (
-    <section className="bg-paper text-ink">
-      <div className="mx-auto max-w-7xl px-4 py-24 sm:px-8 sm:py-32">
-        <h2 className="max-w-2xl text-balance font-display text-4xl leading-tight sm:text-6xl">n8n does the rest.</h2>
-        <ol className="mt-14 grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
-          {STAGES.map((s, i) => (
-            <li key={s.name} className="flex flex-col gap-3 border-t border-ink pt-5">
-              <span className="font-display text-5xl text-axis">{i + 1}</span>
-              <h3 className="font-display text-2xl">{s.name}</h3>
-              <p className="text-ink-2">{s.line}</p>
+    <section id="n8n" className="mt-24 scroll-mt-16 bg-ink text-surface sm:mt-32">
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+        <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+          <SectionHead eyebrow="Under the hood" title="Every decision runs in n8n." invert />
+          <p className="max-w-md text-surface/65">
+            The web app and the headset only show things and capture your voice. n8n decides, researches, writes and sends,
+            and reports every step back as it goes. If a step fails, you get told instead of left waiting.
+          </p>
+        </div>
+        <ol className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          {NODES.map((n, i) => (
+            <li key={i} className="relative flex flex-col gap-2 rounded-2xl border border-surface/15 bg-surface/5 p-5">
+              <span className="font-display text-xs text-surface/40">{String(i + 1).padStart(2, "0")}</span>
+              <p className="font-display text-sm">{n.tool}</p>
+              <p className="text-sm text-surface/65">{n.step}</p>
+              {i < NODES.length - 1 && (
+                <span aria-hidden="true" className="absolute top-1/2 -right-3 z-10 hidden size-3 -translate-y-1/2 rotate-45 border-t border-r border-surface/40 lg:block" />
+              )}
             </li>
           ))}
         </ol>
+        <p className="mt-8 text-sm text-surface/45">
+          Two live workflows on n8n Cloud: DryRun prep (above) and DryRun meetings API, which serves the web app.
+        </p>
       </div>
+    </section>
+  );
+}
+
+const NEXT = [
+  { title: "They interrupt", line: "The panel asks questions mid-pitch, by voice, grounded in the brief and your slides." },
+  { title: "A rescue when you freeze", line: "Go quiet and a cue appears. It's written in advance, so it never waits on the network." },
+  { title: "A debrief that pushes back", line: "n8n scores each answer with evidence, then makes the next run harder where you were weak." },
+];
+
+function Next() {
+  return (
+    <section id="next" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-24 sm:px-6 sm:pt-32">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <SectionHead eyebrow="Being built" title="What's next for the room." />
+        <Link href="/s/demo/report" className="text-sm underline underline-offset-4 hover:text-ink-2">
+          Preview the debrief with sample data
+        </Link>
+      </div>
+      <ul className="mt-12 grid gap-4 sm:grid-cols-3">
+        {NEXT.map((n) => (
+          <li key={n.title} className="rounded-2xl border border-line bg-surface p-6">
+            <span className="rounded-full bg-paper px-2.5 py-1 text-xs text-ink-2">In progress</span>
+            <h3 className="mt-4 font-display text-lg">{n.title}</h3>
+            <p className="mt-2 text-sm text-ink-2">{n.line}</p>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
 
 function Closing() {
   return (
-    <section className="mx-auto flex max-w-7xl flex-col gap-10 px-4 py-24 sm:px-8 sm:py-32">
-      <h2 className="max-w-4xl text-balance font-display text-4xl leading-tight sm:text-7xl">Your next big meeting is already on your calendar.</h2>
-      <div className="flex flex-wrap gap-3">
-        <Link href="/" className="rounded-full bg-surface px-6 py-3 text-sm font-medium text-ink hover:bg-paper">Get started</Link>
-        <Link href="/s/demo" className="rounded-full border border-surface/40 px-6 py-3 text-sm hover:border-surface">
-          See a finished session
+    <section className="mx-auto max-w-6xl px-4 py-24 text-center sm:px-6 sm:py-32">
+      <h2 className="mx-auto max-w-2xl text-balance font-display text-3xl leading-tight sm:text-5xl">
+        Your next big meeting is already on your calendar.
+      </h2>
+      <p className="mx-auto mt-5 max-w-md text-ink-2">See what n8n has prepared for it, or add one by hand.</p>
+      <div className="mt-8 flex flex-wrap justify-center gap-3">
+        <Link href="/" className="rounded-full bg-ink px-6 py-3 text-sm font-medium text-surface hover:bg-ink-2">
+          Open DryRun
+        </Link>
+        <Link href="/new" className="rounded-full border border-line bg-surface px-6 py-3 text-sm hover:border-ink">
+          Add a meeting
         </Link>
       </div>
-      <footer className="mt-10 flex flex-col gap-2 border-t border-surface/15 pt-8 text-sm text-surface/50 sm:flex-row sm:justify-between">
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-line">
+      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-sm text-muted sm:flex-row sm:justify-between sm:px-6">
         <span>Built with n8n by Git Push and Pray</span>
         <span>HackSprint 2026, MAHE Bengaluru</span>
-      </footer>
-    </section>
+      </div>
+    </footer>
   );
 }
