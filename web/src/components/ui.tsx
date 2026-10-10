@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { PersonaId, StakeholderVerdict, Verdict } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
+import { PERSONA_PORTRAIT, PERSONA_STYLE } from "@/lib/personas";
 
 export function Card({ title, aside, children, className = "" }: { title?: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -16,19 +16,44 @@ export function Card({ title, aside, children, className = "" }: { title?: strin
   );
 }
 
-export function PersonaAvatar({ id, name, size = 40 }: { id: PersonaId; name: string; size?: number }) {
+// Portrait rendered from the VR avatar when there is one, initials otherwise.
+// With a stance, a small badge on the ring shows the verdict (the label sits next to it).
+export function PersonaAvatar({
+  id,
+  name,
+  size = 40,
+  stance,
+}: {
+  id: PersonaId;
+  name: string;
+  size?: number | string;
+  stance?: StakeholderVerdict["stance"];
+}) {
   const initials = name
     .split(" ")
     .map((w) => w[0])
     .join("")
     .slice(0, 2);
+  const portrait = PERSONA_PORTRAIT[id];
+  const tone = stance && STANCE[stance][0];
   return (
-    <span
-      aria-hidden="true"
-      className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface text-xs font-medium text-ink"
-      style={{ width: size, height: size, boxShadow: `inset 0 0 0 2px ${PERSONA_STYLE[id].color}` }}
-    >
-      {initials}
+    <span aria-hidden="true" className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
+      <span
+        className="inline-flex size-full items-center justify-center overflow-hidden rounded-full bg-surface text-xs font-medium text-ink"
+        style={{ boxShadow: `0 0 0 2px ${PERSONA_STYLE[id].color}` }}
+      >
+        {portrait ? (
+          // eslint-disable-next-line @next/next/no-img-element -- small static files, sized by the parent
+          <img src={portrait} alt="" className="size-full object-cover" />
+        ) : (
+          initials
+        )}
+      </span>
+      {tone && (
+        <span className={`absolute -right-[4%] -bottom-[4%] flex size-[36%] items-center justify-center rounded-full ring-2 ring-surface ${BADGE[tone]}`}>
+          <StatusIcon tone={tone} className="size-[70%]" />
+        </span>
+      )}
     </span>
   );
 }
@@ -49,6 +74,8 @@ const TONE: Record<Tone, { ink: string; bg: string }> = {
   warn: { ink: "text-warn-ink", bg: "bg-warn/15" },
   bad: { ink: "text-bad-ink", bg: "bg-bad/10" },
 };
+
+const BADGE: Record<Tone, string> = { good: "bg-good text-surface", warn: "bg-warn text-ink", bad: "bg-bad text-surface" };
 
 export function StatusIcon({ tone, className = "size-3.5" }: { tone: Tone; className?: string }) {
   const d = { good: "M3 8.5l3 3 7-7", warn: "M4 8h8", bad: "M4.5 4.5l7 7M11.5 4.5l-7 7" }[tone];

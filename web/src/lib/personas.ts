@@ -11,6 +11,10 @@ export const PERSONA_STYLE: Record<PersonaId, { role: string; short: string; col
   end_user_lead: { role: "End User Lead", short: "USER", color: "#008300" },
 };
 
+// Head shots rendered from the VR avatars (Unity: Tools > DryRun > Capture Web Shots).
+// Seats are fixed per role, so the portrait follows the role, not the generated name.
+export const PERSONA_PORTRAIT: Partial<Record<PersonaId, string>> = {};
+
 // Seat positions from the VR boardroom (world x, z in metres). See docs/VR_CLIENT.md.
 export const SEATS: Record<PersonaId, { x: number; z: number }> = {
   cfo: { x: -4.79, z: -1.52 },
