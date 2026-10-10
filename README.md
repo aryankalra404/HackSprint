@@ -22,7 +22,7 @@ Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built
 Stakeholders interrupting with grounded questions (in voice), the Rescue Agent that feeds you cues when you freeze, and an n8n debrief that scores the session with evidence and makes the next rehearsal harder where you were weak.
 
 ## Stack
-- n8n Cloud and Gemini
+- n8n Cloud, with Gemini (and Groq as the fallback)
 - Gmail and Google Calendar
 - Next.js web app
 - Unity 6.3 (URP, Meta XR SDK) on Meta Quest 3S

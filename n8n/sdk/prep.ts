@@ -142,9 +142,10 @@ const triage = node({
         "timeout": 120000
       }
     },
+    "onError": "continueErrorOutput",
     "retryOnFail": true,
-    "maxTries": 3,
-    "waitBetweenTries": 3000,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
     "credentials": { "googlePalmApi": newCredential("Gemini") },
     "output": [
   {
@@ -164,6 +165,41 @@ const triage = node({
   }
 });
 
+const triageGroq = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Worth preparing? (Groq)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialType": "groqApi",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": expr("{{ (() => { const j = ($('Shape the event').isExecuted ? $('Shape the event') : $('Shape the request')).item.json; return JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: (\"You decide which calendar events are worth preparing a rehearsal for. The presenter is the attendee marked \\\"self\\\".\\nPrepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:\\nsales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,\\n1:1s with colleagues, personal events and anything with no external attendee.\\n\\\"why\\\" is one specific sentence for the presenter: who is coming and what is at stake.\\n\\nEvent:\\n\" + JSON.stringify(j, null, 1)) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"prepare\": {\"type\": \"boolean\"}, \"why\": {\"type\": \"string\"}, \"company\": {\"type\": \"string\", \"description\": \"The external organisation, or empty\"}, \"company_domain\": {\"type\": \"string\", \"description\": \"Their email or web domain, or empty\"}, \"kind\": {\"type\": \"string\", \"enum\": [\"sales_pitch\", \"investor_pitch\", \"interview\", \"client_review\", \"partnership\", \"internal\", \"personal\", \"other\"]} }, \"required\": [\"prepare\", \"why\", \"company\", \"company_domain\", \"kind\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
+      "options": {
+        "timeout": 120000
+      }
+    },
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 5000,
+    "credentials": { "groqApi": newCredential("Groq") },
+    "output": [
+  {
+    "choices": [
+      {
+        "message": {
+          "content": "{}"
+        }
+      }
+    ]
+  }
+]
+  }
+});
+
 const readDecision = node({
   type: "n8n-nodes-base.code",
   version: 2,
@@ -172,7 +208,7 @@ const readDecision = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// Gemini's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const parts = (item.json.candidates && item.json.candidates[0] && item.json.candidates[0].content && item.json.candidates[0].content.parts) || [];\n  const d = JSON.parse(parts.map(p => p.text || '').join('') || '{}');\n  const m = shaped[i].json;\n  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';\n  return { json: { ...m, prepare: m.from_web || !!d.prepare, why: d.why || '', company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };\n});"
+      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The model's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const d = JSON.parse(replyText(item.json) || '{}');\n  const m = shaped[i].json;\n  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';\n  return { json: { ...m, prepare: m.from_web || !!d.prepare, why: d.why || '', company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };\n});"
     },
     "output": [
   {
@@ -666,9 +702,10 @@ const research = node({
         "timeout": 120000
       }
     },
+    "onError": "continueErrorOutput",
     "retryOnFail": true,
-    "maxTries": 3,
-    "waitBetweenTries": 3000,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
     "credentials": { "googlePalmApi": newCredential("Gemini") },
     "output": [
   {
@@ -688,6 +725,41 @@ const research = node({
   }
 });
 
+const researchGroq = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Research the company (Groq)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialType": "groqApi",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": expr("{{ (() => { const j = ((() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })() ? $('Add the web results') : $('Gather the sources')).first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: (\"Someone is about to meet {company}: a {kind} titled \\\"{title}\\\". Summarise what they should know, using ONLY the sources below.\\nIn under 200 words: what the company does and its scale (from its website), then the 3 to 5 developments from the news that the\\npeople in the meeting will most likely have on their minds (results, costs, leadership, strategy, problems), each with its date.\\nDo not add anything that is not in these sources. If the sources say little, say so. Plain text.\\n\\nRecent news headlines (date, publisher, headline):\\n{news}\\n\\nFrom their website:\\n{website}\\n\\nFrom a web search (only when the news had little; facts as reported, with dates):\\n{web}\".replace('{company}', j.meeting.company).replace('{kind}', j.meeting.kind).replace('{title}', j.meeting.title).replace('{news}', j.news.map(n => n.date + ' | ' + n.publisher + ' | ' + n.title).join('\\n') || 'None found.').replace('{website}', j.website || 'Not available.').replace('{web}', j.web_found || 'Not searched.')) }] }); })() }}"),
+      "options": {
+        "timeout": 120000
+      }
+    },
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 5000,
+    "credentials": { "groqApi": newCredential("Groq") },
+    "output": [
+  {
+    "choices": [
+      {
+        "message": {
+          "content": "{}"
+        }
+      }
+    ]
+  }
+]
+  }
+});
+
 const readResearch = node({
   type: "n8n-nodes-base.code",
   version: 2,
@@ -696,7 +768,7 @@ const readResearch = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// The research summary, with the news it was written from as sources\nconst parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];\nconst research = parts.map(p => p.text || '').join('');\n// Came straight from the news, or through the web search when the news had little\nconst searched = (() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })();\nconst prev = searched ? $('Add the web results').first().json : $('Gather the sources').first().json;\nconst web = prev.web || [];\nconst sources = prev.news.slice(0, 8).map(n => ({ title: (n.publisher ? n.publisher + ': ' : '') + n.title, url: n.url, date: n.date, site: n.site }))\n  .concat(web.map(w => ({ title: w.title, url: w.url, site: w.site })));\nreturn [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources, news_count: prev.news.length, has_website: !!prev.website,\n                  web_searched: searched, web_count: web.length, web_error: prev.web_error || '' } }];"
+      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The research summary, with the news it was written from as sources\nconst research = replyText($json);\n// Came straight from the news, or through the web search when the news had little\nconst searched = (() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })();\nconst prev = searched ? $('Add the web results').first().json : $('Gather the sources').first().json;\nconst web = prev.web || [];\nconst sources = prev.news.slice(0, 8).map(n => ({ title: (n.publisher ? n.publisher + ': ' : '') + n.title, url: n.url, date: n.date, site: n.site }))\n  .concat(web.map(w => ({ title: w.title, url: w.url, site: w.site })));\nreturn [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources, news_count: prev.news.length, has_website: !!prev.website,\n                  web_searched: searched, web_count: web.length, web_error: prev.web_error || '' } }];"
     },
     "output": [
   {
@@ -804,9 +876,10 @@ const brief = node({
         "timeout": 120000
       }
     },
+    "onError": "continueErrorOutput",
     "retryOnFail": true,
-    "maxTries": 3,
-    "waitBetweenTries": 3000,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
     "credentials": { "googlePalmApi": newCredential("Gemini") },
     "output": [
   {
@@ -826,6 +899,41 @@ const brief = node({
   }
 });
 
+const briefGroq = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Write the brief and panel (Groq)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialType": "groqApi",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": expr("{{ (() => { const j = $json; return JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: (\"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from the news, their website and a web search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 1 to 4 extra people for a rehearsal only, playing the roles that usually influence a decision like this at a company\\n  like this (e.g. CTO, procurement). Give them invented, realistic Indian names. Never use the names of real people found in the research.\\n  These are clearly hypothetical and are never presented as attendees.\\n- questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting, in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails).replace('{research}', $('Read the research').first().json.research)) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"suggestions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"role\", \"role_short\", \"why\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} } }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"suggestions\", \"questions\", \"risks\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
+      "options": {
+        "timeout": 120000
+      }
+    },
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 5000,
+    "credentials": { "groqApi": newCredential("Groq") },
+    "output": [
+  {
+    "choices": [
+      {
+        "message": {
+          "content": "{}"
+        }
+      }
+    ]
+  }
+]
+  }
+});
+
 const seatPanel = node({
   type: "n8n-nodes-base.code",
   version: 2,
@@ -834,7 +942,7 @@ const seatPanel = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// The brief keeps only real attendees; the practice panel (attendees plus hypothetical roles) is for rehearsal in the web app.\n// Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).\nconst prev = $('Read the research').first().json;\nconst parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];\nconst b = JSON.parse(parts.map(p => p.text || '').join('') || '{}');\nconst attendees = (b.attendees || []).filter(a => a.name);\nconst practice = (b.practice_panel || []).slice(0, Math.max(0, 6 - attendees.length));\nconst SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];\nconst FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],\n                male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };\nconst used = { female: 0, male: 0 };\nconst face = gender => {\n  let g = gender === 'female' ? 'female' : 'male';\n  if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';\n  const f = FACES[g][used[g]];\n  used[g] += 1;\n  return f;\n};\nconst short = role => (role || 'Guest').length <= 12 ? (role || 'Guest') : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);\nconst people = attendees.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || 'Attendee', role_short: short(a.role), gender: a.gender,\n  why: 'In the meeting invite', source: 'email', will_push_on: a.likely_focus }));\nconst extra = practice.map(p => ({ display_name: p.name, role: p.role, role_short: p.role_short, gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on }));\nconst members = people.concat(extra).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));\nconst brief = {\n  summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },\n  attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),\n  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 12),\n};\nconst proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [] };\nreturn [{ json: { meeting: prev.meeting, brief, proposal } }];"
+      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The brief keeps only real attendees; the practice panel (attendees plus hypothetical roles) is for rehearsal in the web app.\n// Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).\nconst prev = $('Read the research').first().json;\nconst b = JSON.parse(replyText($json) || '{}');\nconst attendees = (b.attendees || []).filter(a => a.name);\nconst practice = (b.practice_panel || []).slice(0, Math.max(0, 6 - attendees.length));\nconst SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];\nconst FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],\n                male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };\nconst used = { female: 0, male: 0 };\nconst face = gender => {\n  let g = gender === 'female' ? 'female' : 'male';\n  if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';\n  const f = FACES[g][used[g]];\n  used[g] += 1;\n  return f;\n};\nconst short = role => (role || 'Guest').length <= 12 ? (role || 'Guest') : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);\nconst people = attendees.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || 'Attendee', role_short: short(a.role), gender: a.gender,\n  why: 'In the meeting invite', source: 'email', will_push_on: a.likely_focus }));\nconst extra = practice.map(p => ({ display_name: p.name, role: p.role, role_short: p.role_short, gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on }));\nconst members = people.concat(extra).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));\nconst brief = {\n  summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },\n  attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),\n  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 12),\n};\nconst proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [] };\nreturn [{ json: { meeting: prev.meeting, brief, proposal } }];"
     },
     "output": [
   {
@@ -1066,7 +1174,7 @@ const markFailed = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// Show where it stopped and why, instead of leaving the page on \"researching\" forever\nconst failure = $('If a run fails').first().json.execution || {};\nconst message = (failure.error && (failure.error.description || failure.error.message)) || 'Something went wrong';\nconst reason = /quota|too many requests|rate limit/i.test(message)\n  ? \"Gemini's daily free limit is used up. Try again later, or switch to a paid key.\"\n  : message.split('\\n')[0].slice(0, 160);\nreturn $input.all().map(({ json: row }) => {\n  let progress = [];\n  try { progress = JSON.parse(row.progress || '[]'); } catch (e) { progress = []; }\n  const stuck = progress.find(s => s.state === 'running') || progress.find(s => s.state === 'pending');\n  if (stuck) Object.assign(stuck, { state: 'error', detail: reason });\n  return { json: { meeting_id: row.meeting_id, status: 'failed', progress: JSON.stringify(progress), updated_at: new Date().toISOString() } };\n});"
+      "jsCode": "// Show where it stopped and why, instead of leaving the page on \"researching\" forever\nconst failure = $('If a run fails').first().json.execution || {};\nconst message = (failure.error && (failure.error.description || failure.error.message)) || 'Something went wrong';\nconst reason = /quota|too many requests|rate limit/i.test(message)\n  ? \"Gemini and the Groq fallback are both out of quota. Try again in a minute, or turn on billing for Gemini.\"\n  : message.split('\\n')[0].slice(0, 160);\nreturn $input.all().map(({ json: row }) => {\n  let progress = [];\n  try { progress = JSON.parse(row.progress || '[]'); } catch (e) { progress = []; }\n  const stuck = progress.find(s => s.state === 'running') || progress.find(s => s.state === 'pending');\n  if (stuck) Object.assign(stuck, { state: 'error', detail: reason });\n  return { json: { meeting_id: row.meeting_id, status: 'failed', progress: JSON.stringify(progress), updated_at: new Date().toISOString() } };\n});"
     },
     "output": [
   {
@@ -1126,16 +1234,25 @@ export default workflow('dryrun-prep', 'DryRun prep')
   .to(triage)
   .add(triage)
   .to(readDecision)
+  .add(triage.onError(triageGroq))
+  .add(triageGroq)
+  .to(readDecision)
   .to(prepareIt
     .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(progressEmails.to(saveProgressEmails.to(news.to(website.to(gatherSources.to(enoughNews
       .onTrue(research.to(readResearch.to(progressResearch.to(saveProgressResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief.to(progressEmailed.to(saveProgressEmailed)))))))))))
       .onFalse(searchWeb.to(addWeb.to(research)))))))))))))
     .onFalse(skip))
+  .add(research.onError(researchGroq))
+  .add(researchGroq)
+  .to(readResearch)
+  .add(brief.onError(briefGroq))
+  .add(briefGroq)
+  .to(seatPanel)
   .group('Decide', [readDecision], { description: 'Gemini decides whether this meeting is worth preparing for, and why' })
-  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, enoughNews, searchWeb, addWeb, research, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your emails with the attendees, the company news and website (searching the web if news is thin), saving progress as it goes' })
+  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, enoughNews, searchWeb, addWeb, research, researchGroq, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your emails with the attendees, the company news and website (searching the web if news is thin), saving progress as it goes' })
   .add(onFailure)
   .to(findRun)
   .to(markFailed)
   .to(saveFailed)
   .group('If it fails', [findRun, markFailed, saveFailed], { description: 'Marks the meeting as failed, with where it stopped and why, so the web app never waits forever' })
-  .group('Brief', [brief, seatPanel, rowReady, saveReady, emailBrief, progressEmailed, saveProgressEmailed], { description: 'Writes the brief, seats the panel, saves it and emails you' });
+  .group('Brief', [brief, briefGroq, seatPanel, rowReady, saveReady, emailBrief, progressEmailed, saveProgressEmailed], { description: 'Writes the brief, seats the panel, saves it and emails you' });

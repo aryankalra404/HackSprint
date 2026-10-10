@@ -15,6 +15,10 @@ OUT = Path(__file__).resolve().parent.parent / "sdk"
 # One model for every Gemini step. Free-tier limits are per model (gemini-2.5-flash allows 20 requests a day).
 GEMINI_MODEL = "gemini-3-flash-preview"
 GEMINI = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+# When Gemini fails (quota, billing, an outage), the same prompt goes to an open model on Groq's free tier.
+# Groq has no web search, so "Search the web" stays Gemini-only (it already carries on without it).
+GROQ = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "openai/gpt-oss-120b"
 APP_URL = "http://localhost:3000"
 # Fewer news stories than this and n8n also searches the web (Gemini with Google Search, which needs billing on the key)
 MIN_NEWS = 3
@@ -89,6 +93,33 @@ def gemini_node(var, name, body_expr, output, extra=None):
     }, output, credentials={"googlePalmApi": "Gemini"}, extra=extra or {"retryOnFail": True, "maxTries": 3, "waitBetweenTries": 3000})
 
 
+def llm_nodes(var, name, prompt, output, schema=None, source="$json"):
+    """A Gemini call with a Groq fallback on its error output: `var` (Gemini) and `var + 'Groq'`.
+    `prompt` is a JS expression for the prompt text using $json. The Groq node gets Gemini's error item, not its input,
+    so `source` says where to read that input instead (an expression for the same item)."""
+    config = (", generationConfig: { responseMimeType: 'application/json', responseSchema: " + js_obj(schema) + " }") if schema else ""
+    gemini = gemini_node(var, name, "{{ JSON.stringify({ contents: [{ parts: [{ text: " + prompt + " }] }]" + config + " }) }}", output,
+                         extra={"onError": "continueErrorOutput", "retryOnFail": True, "maxTries": 2, "waitBetweenTries": 2000})
+    # Groq's JSON mode takes no schema, so the schema goes in the prompt
+    ask = ("(" + prompt.replace("$json", "j") + ")" + (" + " + json.dumps("\n\nReply with only a JSON object that follows this JSON schema:\n") +
+           " + JSON.stringify(" + js_obj(schema) + ")" if schema else ""))
+    body = ("{{ (() => { const j = " + source + "; return JSON.stringify({ model: '" + GROQ_MODEL + "', messages: [{ role: 'user', content: " + ask + " }]" +
+            (", response_format: { type: 'json_object' }" if schema else "") + " }); })() }}")
+    groq = make_node(var + "Groq", "node", "n8n-nodes-base.httpRequest", 4.5, name + " (Groq)", {
+        "method": "POST",
+        "url": GROQ,
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendBody": True,
+        "specifyBody": "json",
+        "jsonBody": Expr(body),
+        "options": {"timeout": 120000},
+    }, [{"choices": [{"message": {"content": "{}"}}]}], credentials={"groqApi": "Groq"},
+        # Groq's free tier allows 8,000 tokens a minute, so wait out a burst rather than fail
+        extra={"retryOnFail": True, "maxTries": 3, "waitBetweenTries": 5000})
+    return gemini + groq
+
+
 def upsert_node(var, name, output):
     return make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name, {
         "resource": "row", "operation": "upsert", "dataTableId": MEETINGS_TABLE, "matchType": "allConditions",
@@ -136,6 +167,14 @@ const progress = [
 ];
 if (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: "Couldn't email the brief" });
 const progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };
+"""
+
+
+# The model's text, from Gemini or (when Gemini failed) the Groq fallback
+REPLY_JS = """
+const replyText = j => j.choices
+  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')
+  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');
 """
 
 
@@ -193,15 +232,13 @@ return $input.all().map(({ json }) => {
     from_web: true,
   } };
 });""", [{**MEETING, "meeting_id": "web-1", "from_web": True}])
-    c += gemini_node("triage", "Worth preparing?", "{{ JSON.stringify({ contents: [{ parts: [{ text: " + json.dumps(TRIAGE_PROMPT) +
-                     " + JSON.stringify($json, null, 1) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: " +
-                     js_obj(TRIAGE_SCHEMA) + " } }) }}", GEMINI_REPLY)
-    c += code_node("readDecision", "Read the decision", """
-// Gemini's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.
+    c += llm_nodes("triage", "Worth preparing?", json.dumps(TRIAGE_PROMPT) + " + JSON.stringify($json, null, 1)", GEMINI_REPLY, schema=TRIAGE_SCHEMA,
+                   source="($('Shape the event').isExecuted ? $('Shape the event') : $('Shape the request')).item.json")
+    c += code_node("readDecision", "Read the decision", REPLY_JS + """
+// The model's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.
 const shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();
 return $input.all().map((item, i) => {
-  const parts = (item.json.candidates && item.json.candidates[0] && item.json.candidates[0].content && item.json.candidates[0].content.parts) || [];
-  const d = JSON.parse(parts.map(p => p.text || '').join('') || '{}');
+  const d = JSON.parse(replyText(item.json) || '{}');
   const m = shaped[i].json;
   const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';
   return { json: { ...m, prepare: m.from_web || !!d.prepare, why: d.why || '', company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };
@@ -293,14 +330,14 @@ const web = found ? pages.slice(0, 6).map(w => ({ title: w.title || 'Web page', 
 const error = $json.error ? ($json.error.message || String($json.error)).split('\\n')[0].slice(0, 160) : '';
 return [{ json: { ...prev, web_searched: true, web_found: found ? text : '', web, web_error: error } }];""",
                    [{"meeting": MEETING, "emails": "", "news": [], "website": "", "web_searched": True, "web_found": "", "web": [], "web_error": ""}])
-    c += gemini_node("research", "Research the company", "{{ JSON.stringify({ contents: [{ parts: [{ text: " + json.dumps(RESEARCH_PROMPT) +
-                     ".replace('{company}', $json.meeting.company).replace('{kind}', $json.meeting.kind).replace('{title}', $json.meeting.title)"
-                     ".replace('{news}', $json.news.map(n => n.date + ' | ' + n.publisher + ' | ' + n.title).join('\\n') || 'None found.')"
-                     ".replace('{website}', $json.website || 'Not available.').replace('{web}', $json.web_found || 'Not searched.') }] }] }) }}", GEMINI_REPLY)
-    c += code_node("readResearch", "Read the research", """
+    c += llm_nodes("research", "Research the company", json.dumps(RESEARCH_PROMPT) +
+                   ".replace('{company}', $json.meeting.company).replace('{kind}', $json.meeting.kind).replace('{title}', $json.meeting.title)"
+                   ".replace('{news}', $json.news.map(n => n.date + ' | ' + n.publisher + ' | ' + n.title).join('\\n') || 'None found.')"
+                   ".replace('{website}', $json.website || 'Not available.').replace('{web}', $json.web_found || 'Not searched.')", GEMINI_REPLY,
+                   source="((() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })() ? $('Add the web results') : $('Gather the sources')).first().json")
+    c += code_node("readResearch", "Read the research", REPLY_JS + """
 // The research summary, with the news it was written from as sources
-const parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];
-const research = parts.map(p => p.text || '').join('');
+const research = replyText($json);
 // Came straight from the news, or through the web search when the news had little
 const searched = (() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })();
 const prev = searched ? $('Add the web results').first().json : $('Gather the sources').first().json;
@@ -313,16 +350,14 @@ return [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources,
                      "web_searched": False, "web_count": 0, "web_error": ""}])
     c += progress_node("progressResearch", "Progress: researched")
     c += upsert_node("saveProgressResearch", "Save progress: research", [{"id": 1}])
-    c += gemini_node("brief", "Write the brief and panel", "{{ JSON.stringify({ contents: [{ parts: [{ text: " + json.dumps(BRIEF_PROMPT) +
-                     ".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails)"
-                     ".replace('{research}', $('Read the research').first().json.research) }] }], "
-                     "generationConfig: { responseMimeType: 'application/json', responseSchema: " + js_obj(BRIEF_SCHEMA) + " } }) }}", GEMINI_REPLY)
-    c += code_node("seatPanel", "Seat the panel", """
+    c += llm_nodes("brief", "Write the brief and panel", json.dumps(BRIEF_PROMPT) +
+                   ".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails)"
+                   ".replace('{research}', $('Read the research').first().json.research)", GEMINI_REPLY, schema=BRIEF_SCHEMA)
+    c += code_node("seatPanel", "Seat the panel", REPLY_JS + """
 // The brief keeps only real attendees; the practice panel (attendees plus hypothetical roles) is for rehearsal in the web app.
 // Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).
 const prev = $('Read the research').first().json;
-const parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];
-const b = JSON.parse(parts.map(p => p.text || '').join('') || '{}');
+const b = JSON.parse(replyText($json) || '{}');
 const attendees = (b.attendees || []).filter(a => a.name);
 const practice = (b.practice_panel || []).slice(0, Math.max(0, 6 - attendees.length));
 const SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];
@@ -386,7 +421,7 @@ return [{ json: { meeting_id: s.meeting.meeting_id, status: 'ready', brief: JSON
 const failure = $('If a run fails').first().json.execution || {};
 const message = (failure.error && (failure.error.description || failure.error.message)) || 'Something went wrong';
 const reason = /quota|too many requests|rate limit/i.test(message)
-  ? "Gemini's daily free limit is used up. Try again later, or switch to a paid key."
+  ? "Gemini and the Groq fallback are both out of quota. Try again in a minute, or turn on billing for Gemini."
   : message.split('\\n')[0].slice(0, 160);
 return $input.all().map(({ json: row }) => {
   let progress = [];
@@ -409,19 +444,28 @@ return $input.all().map(({ json: row }) => {
   .to(triage)
   .add(triage)
   .to(readDecision)
+  .add(triage.onError(triageGroq))
+  .add(triageGroq)
+  .to(readDecision)
   .to(prepareIt
     .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(progressEmails.to(saveProgressEmails.to(news.to(website.to(gatherSources.to(enoughNews
       .onTrue(research.to(readResearch.to(progressResearch.to(saveProgressResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief.to(progressEmailed.to(saveProgressEmailed)))))))))))
       .onFalse(searchWeb.to(addWeb.to(research)))))))))))))
     .onFalse(skip))
+  .add(research.onError(researchGroq))
+  .add(researchGroq)
+  .to(readResearch)
+  .add(brief.onError(briefGroq))
+  .add(briefGroq)
+  .to(seatPanel)
   .group('Decide', [readDecision], { description: 'Gemini decides whether this meeting is worth preparing for, and why' })
-  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, enoughNews, searchWeb, addWeb, research, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your emails with the attendees, the company news and website (searching the web if news is thin), saving progress as it goes' })
+  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, enoughNews, searchWeb, addWeb, research, researchGroq, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your emails with the attendees, the company news and website (searching the web if news is thin), saving progress as it goes' })
   .add(onFailure)
   .to(findRun)
   .to(markFailed)
   .to(saveFailed)
   .group('If it fails', [findRun, markFailed, saveFailed], { description: 'Marks the meeting as failed, with where it stopped and why, so the web app never waits forever' })
-  .group('Brief', [brief, seatPanel, rowReady, saveReady, emailBrief, progressEmailed, saveProgressEmailed], { description: 'Writes the brief, seats the panel, saves it and emails you' });
+  .group('Brief', [brief, briefGroq, seatPanel, rowReady, saveReady, emailBrief, progressEmailed, saveProgressEmailed], { description: 'Writes the brief, seats the panel, saves it and emails you' });
 """
     return c
 
