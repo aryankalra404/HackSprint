@@ -31,20 +31,20 @@ export const ALL_SEATS: Seat[] = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 export const PRESENTER_SEAT = { x: -4.54, z: -7.6 };
 export const TABLE = { xMin: -5.1, xMax: -3.98, zMin: -6.95, zMax: -1.74 };
 
-// The avatar pool: the Rocketbox business models. Portraits are rendered from VR
-// (Unity: Tools > DryRun > Capture Web Shots); a model without one isn't in the VR project yet.
+// The avatar pool: the 11 Rocketbox business models, all in the VR project.
+// Portraits are rendered from VR (Unity: Tools > DryRun > Capture Web Shots), each in the same chair and light.
 export const AVATARS: { id: AvatarId; gender: "female" | "male"; portrait?: string }[] = [
   { id: "business_female_01", gender: "female", portrait: "/vr/business_female_01.jpg" },
   { id: "business_female_02", gender: "female", portrait: "/vr/business_female_02.jpg" },
-  { id: "business_female_03", gender: "female" },
-  { id: "business_female_04", gender: "female" },
+  { id: "business_female_03", gender: "female", portrait: "/vr/business_female_03.jpg" },
+  { id: "business_female_04", gender: "female", portrait: "/vr/business_female_04.jpg" },
   { id: "business_male_01", gender: "male", portrait: "/vr/business_male_01.jpg" },
   { id: "business_male_02", gender: "male", portrait: "/vr/business_male_02.jpg" },
-  { id: "business_male_03", gender: "male" },
+  { id: "business_male_03", gender: "male", portrait: "/vr/business_male_03.jpg" },
   { id: "business_male_04", gender: "male", portrait: "/vr/business_male_04.jpg" },
-  { id: "business_male_05", gender: "male" },
-  { id: "business_male_06", gender: "male" },
-  { id: "business_male_07", gender: "male" },
+  { id: "business_male_05", gender: "male", portrait: "/vr/business_male_05.jpg" },
+  { id: "business_male_06", gender: "male", portrait: "/vr/business_male_06.jpg" },
+  { id: "business_male_07", gender: "male", portrait: "/vr/business_male_07.jpg" },
 ];
 export const portraitOf = (avatar: AvatarId) => AVATARS.find((a) => a.id === avatar)?.portrait;
 
