@@ -73,6 +73,27 @@ export const demoSession: SessionRecord = {
     ],
     drill: null,
   },
+  status: {
+    done: true,
+    steps: [
+      { id: "deck", label: "Read the deck", state: "done", detail: "7 slides, 3 claims without numbers" },
+      {
+        id: "research",
+        label: "Researched Kaveri Freight",
+        state: "done",
+        detail: "4 sources",
+        sources: [
+          { title: "Company website: fleet and network", url: "" },
+          { title: "Annual report: fuel cost share", url: "" },
+          { title: "News: festive-season volume peak", url: "" },
+          { title: "Job posting: SAP TM administrator", url: "" },
+        ],
+      },
+      { id: "personas", label: "Briefed the panel", state: "done", detail: "5 stakeholders, 5 objections" },
+      { id: "history", label: "Loaded weak spots from session 2", state: "done", detail: "Pricing model" },
+      { id: "rescue", label: "Prepared rescue cues", state: "done", detail: "21 cues across 7 slides" },
+    ],
+  },
   telemetry: {
     session_id: "demo",
     client: "vr",
@@ -262,4 +283,12 @@ export const demoSession: SessionRecord = {
     { session_id: "s1", at: "2026-10-08T18:30:00+05:30", overall: 54 },
     { session_id: "s2", at: "2026-10-09T19:05:00+05:30", overall: 63 },
   ],
+};
+
+// The same session before it has been rehearsed: briefed, waiting for the presenter.
+export const demoPrepSession: SessionRecord = {
+  ...demoSession,
+  bundle: { ...demoSession.bundle, session_id: "demo-prep" },
+  telemetry: null,
+  debrief: null,
 };

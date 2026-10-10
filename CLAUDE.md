@@ -29,12 +29,15 @@ When a task changes something these files describe, update the file in the same 
 ## Web client conventions
 - Next.js 16 differs from older versions. Read the relevant guide in `web/node_modules/next/dist/docs/` before writing Next.js code (see `web/AGENTS.md`).
 - Types for the contract live in `web/src/lib/contract.ts`; keep them in step with `docs/CONTRACT.md`.
+- Two screens: the dashboard (`/s/[id]`, one screen, no scrolling, for the big display during the VR session) and the report (`/s/[id]/report`, the detailed read afterwards). Keep the dashboard sparse; detail belongs in the report or the persona drawer.
 - With `DRYRUN_N8N_URL` unset, the app serves sample data from `web/src/lib/mock/`, so screens can be built before the workflows exist.
 - Visual style: briefing-file look (paper, ink, serif display headings, mono for data); tokens in `web/src/app/globals.css`. Each stakeholder has a fixed colour in `web/src/lib/personas.ts`, always paired with a role label (colour alone can't tell five apart). Status colours (good, warn, bad) always come with an icon and a label.
 
 ## Git
 - Commit messages are one line, written like a person would write them (e.g. "add debrief screen with sample data").
 - No "Co-Authored-By: Claude" or any other AI attribution in commits or PRs.
+- Commit often, without asking each time: after each working step (a screen, a workflow, a fix), once it builds. Keep each commit to one change.
+- Never commit `docs/` (kept local) or `databse/` (not part of this project). Stage files by path, not with `git add -A`.
 
 ## Gotchas
 - Disk is nearly full (about 4.5 GB free on 10 Oct). Unity builds fail and crash when it's low, so check `df -h ~` before builds or big imports.

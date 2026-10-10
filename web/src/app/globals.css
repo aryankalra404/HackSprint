@@ -31,6 +31,25 @@ body {
   color: var(--color-ink);
 }
 
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  body {
+    background: var(--color-surface);
+  }
+  section {
+    break-inside: avoid;
+  }
+  [role="tooltip"] {
+    display: none !important;
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--color-ink);
   outline-offset: 2px;

@@ -99,9 +99,30 @@ export interface Debrief {
   actions_taken: string[];
 }
 
+export interface PrepStep {
+  id: string;
+  label: string;
+  state: "pending" | "running" | "done" | "error";
+  detail?: string;
+  sources?: { title: string; url: string }[];
+}
+
+export interface PrepStatus {
+  done: boolean;
+  steps: PrepStep[];
+}
+
 export interface SessionRecord {
   bundle: Bundle;
-  telemetry: Telemetry;
-  debrief: Debrief;
+  status: PrepStatus;
+  // Null until the session has been rehearsed and debriefed.
+  telemetry: Telemetry | null;
+  debrief: Debrief | null;
   history: { session_id: string; at: string; overall: number }[];
+}
+
+export type DebriefedSession = SessionRecord & { telemetry: Telemetry; debrief: Debrief };
+
+export function isDebriefed(s: SessionRecord): s is DebriefedSession {
+  return s.telemetry != null && s.debrief != null;
 }

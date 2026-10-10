@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { SessionRecord } from "@/lib/contract";
+import type { DebriefedSession } from "@/lib/contract";
 import { exchanges, freezes, slideSegments } from "@/lib/timeline";
 import { Verdict } from "./Verdict";
 import { Stakeholders } from "./Stakeholders";
@@ -11,7 +11,7 @@ import { Metrics } from "./Metrics";
 import { GazeMap } from "./GazeMap";
 import { Actions } from "./Actions";
 
-export function DebriefView({ session }: { session: SessionRecord }) {
+export function DebriefView({ session }: { session: DebriefedSession }) {
   const { bundle, telemetry, debrief, history } = session;
 
   const data = useMemo(() => {
@@ -47,6 +47,14 @@ export function DebriefView({ session }: { session: SessionRecord }) {
         <p className="font-mono text-xs text-ink-2">
           Pitch to {bundle.prospect.company} · Session {sessionNumber} · {telemetry.client === "vr" ? "VR boardroom" : "Browser"}
         </p>
+        <nav className="flex gap-2 print:hidden">
+          <Link href={`/s/${bundle.session_id}`} className="rounded-full border border-line bg-surface px-4 py-2 text-sm hover:border-ink">
+            Dashboard
+          </Link>
+          <button type="button" onClick={() => window.print()} className="rounded-full bg-ink px-4 py-2 text-sm text-surface">
+            Save as PDF
+          </button>
+        </nav>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
