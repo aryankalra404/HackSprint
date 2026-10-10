@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.10).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.11).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
