@@ -3,155 +3,142 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## DryRun meetings API\nThe web app reads your meetings and briefs from the Meetings sheet: `GET /webhook/dryrun/meetings` and `GET /webhook/dryrun/meeting?id=` (docs/CONTRACT.md).",
-        "width": 520,
-        "height": 160
+        "content": "## DryRun meetings API\nThe web app reads your meetings and briefs from the DryRun meetings table: GET /webhook/dryrun/meetings and GET /webhook/dryrun/meeting?id= (docs/CONTRACT.md).",
+        "color": 4
       },
-      "id": "2ca548a9-9d9b-483b-b3b0-3f3f7bdea8d9",
-      "name": "Note 52d7",
+      "id": "13d75fd8-b4e2-4ce0-8393-111c721dd79c",
+      "name": "Sticky Note 45214215",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -80,
-        -260
+        272,
+        416
       ]
     },
     {
       "parameters": {
-        "httpMethod": "GET",
         "path": "dryrun/meetings",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "4e42b62d-6689-4494-9082-0a6974c9ea25",
+      "id": "4cbce296-2416-4c18-b180-ef1716487b4e",
       "name": "GET /meetings",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "typeVersion": 2.2,
       "position": [
         0,
         0
       ],
-      "webhookId": "0b9be56c-3294-4166-9504-6a9c09043761"
+      "webhookId": "3c1b77ca-39c5-4474-813b-1676a362d5da"
     },
     {
       "parameters": {
-        "operation": "read",
-        "documentId": {
+        "operation": "get",
+        "dataTableId": {
           "__rl": true,
-          "value": "",
-          "mode": "url"
+          "mode": "id",
+          "value": "86BWrDlUXrOWFgqc",
+          "cachedResultName": "DryRun meetings"
         },
-        "sheetName": {
-          "__rl": true,
-          "value": "Meetings",
-          "mode": "name"
-        },
-        "options": {}
+        "returnAll": true
       },
-      "id": "f94dd00c-bc22-46a4-934a-b495a8573187",
+      "id": "2da239b8-4481-4584-b004-0634444f12f0",
       "name": "Read meetings",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
       "position": [
-        220,
+        224,
         0
-      ]
+      ],
+      "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// Upcoming (and today's) meetings, soonest first\nconst since = Date.now() - 12 * 3600 * 1000;\nconst meetings = $input.all().map(i => i.json).filter(r => r.id && (!r.start || Date.parse(r.start) >= since))\n  .sort((a, b) => Date.parse(a.start || 0) - Date.parse(b.start || 0))\n  .map(r => ({ id: String(r.id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status,\n               attendees: (() => { try { return JSON.parse(r.attendees || '[]'); } catch { return []; } })() }));\nreturn [{ json: { meetings } }];"
+        "jsCode": "// Upcoming (and today's) meetings, soonest first (docs/CONTRACT.md, GET /meetings)\nconst since = Date.now() - 12 * 3600 * 1000;\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nconst meetings = $input.all().map(i => i.json).filter(r => r.meeting_id && (!r.start || Date.parse(r.start) >= since))\n  .sort((a, b) => Date.parse(a.start || 0) - Date.parse(b.start || 0))\n  .map(r => ({ id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [] }));\nreturn [{ json: { meetings } }];"
       },
-      "id": "2c92456c-7dbc-45e1-9b38-c8a502b89abc",
+      "id": "d1967945-c216-4312-86e8-90cf73615e12",
       "name": "Upcoming meetings",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
-        0
-      ],
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "respondWith": "firstIncomingItem",
-        "options": {}
-      },
-      "id": "e0f15480-28a8-459c-88f3-e9ee8cd2e9fa",
-      "name": "Send meetings",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        660,
+        448,
         0
       ]
     },
     {
       "parameters": {
-        "httpMethod": "GET",
+        "options": {}
+      },
+      "id": "a8c1ea26-064b-4fd8-9e28-4f056a505f45",
+      "name": "Send meetings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "path": "dryrun/meeting",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "837c4a74-7184-42dc-acfa-7ec7862448c1",
+      "id": "b5dec0c8-f13c-489d-923e-1a3590636d09",
       "name": "GET /meeting",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "typeVersion": 2.2,
       "position": [
         0,
-        240
+        224
       ],
-      "webhookId": "abdab1e1-c002-4a9f-8ffd-4caba87a6900"
+      "webhookId": "76b3ea13-36b0-4347-aaa4-ba5033886d63"
     },
     {
       "parameters": {
-        "operation": "read",
-        "documentId": {
+        "operation": "get",
+        "dataTableId": {
           "__rl": true,
-          "value": "",
-          "mode": "url"
+          "mode": "id",
+          "value": "86BWrDlUXrOWFgqc",
+          "cachedResultName": "DryRun meetings"
         },
-        "sheetName": {
-          "__rl": true,
-          "value": "Meetings",
-          "mode": "name"
-        },
-        "options": {}
+        "returnAll": true
       },
-      "id": "4d85288c-2d1e-46dc-9c4f-bf419536ec3b",
+      "id": "2aa1e136-cd7e-4440-a05f-f5cba2bd4c28",
       "name": "Read meeting",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
       "position": [
-        220,
-        240
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// One meeting by id, with its brief and proposed panel\nconst id = $('GET /meeting').first().json.query.id;\nconst r = $input.all().map(i => i.json).find(r => String(r.id) === String(id));\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };\nif (!r) return [{ json: { error: 'not found' } }];\nreturn [{ json: {\n  meeting: { id: String(r.id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [] },\n  brief: parse(r.brief), proposal: parse(r.proposal),\n} }];"
-      },
-      "id": "73c2e0b7-bbb9-440a-847f-63c18a9a7825",
-      "name": "The meeting and its brief",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        440,
-        240
+        224,
+        224
       ],
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "respondWith": "firstIncomingItem",
+        "jsCode": "// One meeting by id, with its brief and proposed panel (docs/CONTRACT.md, GET /meeting)\nconst id = $('GET /meeting').first().json.query.id;\nconst r = $input.all().map(i => i.json).find(r => String(r.meeting_id) === String(id));\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nif (!r) return [{ json: { error: 'not found' } }];\nreturn [{ json: {\n  meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [] },\n  brief: parse(r.brief), proposal: parse(r.proposal),\n} }];"
+      },
+      "id": "7c6894eb-b8b1-426d-ae61-2dd4c20ef66d",
+      "name": "The meeting and its brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        224
+      ]
+    },
+    {
+      "parameters": {
         "options": {}
       },
-      "id": "cc4cba05-da7b-4b69-b170-d73eb4762dff",
+      "id": "db1812d9-5ebd-47b7-8dc4-d6b1bb98c205",
       "name": "Send the meeting",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
+      "typeVersion": 1.5,
       "position": [
-        660,
-        240
+        672,
+        224
       ]
     }
   ],
@@ -225,6 +212,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "pinData": {}
+  }
 }

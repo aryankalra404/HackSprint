@@ -2,21 +2,28 @@
   "name": "DryRun prep",
   "nodes": [
     {
-      "parameters": {
-        "content": "## DryRun prep\nSpots important meetings on your calendar and prepares you for them: decides if it's worth it, reads your emails with the attendees, researches the company, writes the brief, proposes the panel, saves it to the Meetings sheet and emails you.\n\nThe web app can also add a meeting by hand (webhook).",
-        "width": 520,
-        "height": 220
-      },
-      "id": "fc14db77-7ec0-49fb-9a04-8a881e2abdc4",
-      "name": "Note 148f",
+      "id": "05fa253e-8be0-4ff3-9266-0447dc8c55cb",
+      "name": "Sticky Note 278a2e0d",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -80,
-        -360
-      ]
+        1376,
+        320
+      ],
+      "parameters": {
+        "content": "## DryRun prep\nSpots important meetings on your calendar and prepares you for them: decides if it is worth it, reads your emails with the attendees, researches the company, writes the brief, proposes the panel, saves it to the DryRun meetings table and emails you. The web app can also add a meeting by hand.",
+        "color": 4
+      }
     },
     {
+      "id": "7c428cd2-114d-4498-8db6-6b42ce91d6a6",
+      "name": "New calendar event",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "pollTimes": {
           "item": [
@@ -27,71 +34,43 @@
         },
         "calendarId": {
           "__rl": true,
-          "value": "primary",
           "mode": "list",
+          "value": "primary",
           "cachedResultName": "primary"
         },
         "triggerOn": "eventCreated",
         "options": {}
-      },
-      "id": "b0385a30-6f04-40a0-9295-466847611802",
-      "name": "New calendar event",
-      "type": "n8n-nodes-base.googleCalendarTrigger",
-      "typeVersion": 1,
-      "position": [
-        0,
-        0
-      ]
+      }
     },
     {
-      "parameters": {
-        "jsCode": "// One meeting per calendar event, in the shape the rest of the workflow (and docs/CONTRACT.md) uses\nreturn $input.all().map(({ json: e }) => {\n  const attendees = (e.attendees || []).map(a => ({ name: a.displayName || a.email.split('@')[0], email: a.email, self: !!a.self }));\n  const self = attendees.find(a => a.self) || { email: e.creator?.email || e.organizer?.email || '' };\n  return { json: {\n    id: e.id,\n    title: e.summary || 'Untitled meeting',\n    start: e.start?.dateTime || e.start?.date || '',\n    description: (e.description || '').replace(/<[^>]+>/g, ' ').slice(0, 2000),\n    attendees: attendees.filter(a => !a.self).map(({ name, email }) => ({ name, email })),\n    owner_email: self.email,\n    from_web: false,\n  } };\n});"
-      },
-      "id": "9fe88da8-b1ba-4064-9837-e4c60409ee60",
+      "id": "16ac8b8d-ed66-441e-8189-b427dfc8b006",
       "name": "Shape the event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
+        224,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "dryrun/add-meeting",
-        "responseMode": "onReceived",
-        "options": {}
-      },
-      "id": "ea587fbe-e76c-43bb-ae2c-6e66da9249b7",
-      "name": "Add a meeting (web app)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        0,
-        220
       ],
-      "webhookId": "2ea65ee9-b099-43a0-af38-b380003c72ab"
-    },
-    {
       "parameters": {
-        "jsCode": "// The web app sends { title, start, company, website, context, attendees: [{ name, email }], owner_email }\nreturn $input.all().map(({ json }) => {\n  const b = json.body || {};\n  return { json: {\n    id: 'web-' + Date.now(),\n    title: b.title || ('Meeting with ' + (b.company || 'a prospect')),\n    start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),\n    description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.context].filter(Boolean).join('\\n').slice(0, 4000),\n    attendees: b.attendees || [],\n    owner_email: b.owner_email || '',\n    from_web: true,\n  } };\n});"
-      },
-      "id": "97080c4f-7be5-42f9-be9a-7f8d7d0c3d24",
-      "name": "Shape the request",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        220,
-        220
-      ]
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// One meeting per calendar event, in the shape the rest of the workflow (and docs/CONTRACT.md) uses\nreturn $input.all().map(({ json: e }) => {\n  const attendees = (e.attendees || []).map(a => ({ name: a.displayName || a.email.split('@')[0], email: a.email, self: !!a.self }));\n  const self = attendees.find(a => a.self) || { email: (e.creator && e.creator.email) || (e.organizer && e.organizer.email) || '' };\n  return { json: {\n    meeting_id: e.id,\n    title: e.summary || 'Untitled meeting',\n    start: (e.start && (e.start.dateTime || e.start.date)) || '',\n    description: (e.description || '').replace(/<[^>]+>/g, ' ').slice(0, 2000),\n    attendees: attendees.filter(a => !a.self).map(a => ({ name: a.name, email: a.email })),\n    owner_email: self.email,\n    from_web: false,\n  } };\n});"
+      }
     },
     {
+      "id": "48bf7f54-4eeb-42ad-abef-58e3c21b9f5a",
+      "name": "Worth preparing?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        96
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"You decide which calendar events are worth preparing a rehearsal for. The presenter is the attendee marked \\\"self\\\".\\nPrepare for high-stakes conversations with people outside the presenter's organisation where they must persuade or perform:\\nsales pitches and demos, investor pitches, interviews, client reviews, partnership talks. Skip internal syncs, standups,\\n1:1s with colleagues, personal events and anything with no external attendee.\\n\\\"why\\\" is one specific sentence for the presenter: who is coming and what is at stake.\\n\\nEvent:\\n\" + JSON.stringify($json, null, 1) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"prepare\": {\"type\": \"boolean\"}, \"why\": {\"type\": \"string\"}, \"company\": {\"type\": \"string\", \"description\": \"The external organisation, or empty\"}, \"company_domain\": {\"type\": \"string\", \"description\": \"Their email or web domain, or empty\"}, \"kind\": {\"type\": \"string\", \"enum\": [\"sales_pitch\", \"investor_pitch\", \"interview\", \"client_review\", \"partnership\", \"internal\", \"personal\", \"other\"]} }, \"required\": [\"prepare\", \"why\", \"company\", \"company_domain\", \"kind\"]} } }) }}",
@@ -99,32 +78,66 @@
           "timeout": 120000
         }
       },
-      "id": "afe18020-52ec-4b9c-9908-401a6b07f17f",
-      "name": "Worth preparing?",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        460,
-        100
-      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000
     },
     {
+      "id": "3154d30e-2c78-494f-b3c4-b816a56b4c6a",
+      "name": "Add a meeting (web app)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        192
+      ],
       "parameters": {
-        "jsCode": "// Gemini's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const text = item.json.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '{}';\n  const d = JSON.parse(text);\n  const m = shaped[i].json;\n  const domain = d.company_domain || (m.attendees[0]?.email || '').split('@')[1] || '';\n  return { json: { ...m, prepare: m.from_web || d.prepare, why: d.why, company: d.company || m.title, company_domain: domain, kind: d.kind } };\n});"
+        "httpMethod": "POST",
+        "path": "dryrun/add-meeting",
+        "responseMode": "onReceived",
+        "options": {}
       },
-      "id": "0601b246-35f5-4ac8-995a-c5228c8f1e11",
+      "webhookId": "6e420d98-4ecd-418f-a42a-623bedc6d116"
+    },
+    {
+      "id": "076ca225-1d5e-44c0-9efd-4a020bfb25df",
+      "name": "Shape the request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The web app sends { title, start, company, website, context, attendees: [{ name, email }], owner_email }\nreturn $input.all().map(({ json }) => {\n  const b = json.body || json;\n  return { json: {\n    meeting_id: 'web-' + Date.now(),\n    title: b.title || ('Meeting with ' + (b.company || 'a prospect')),\n    start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),\n    description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.context].filter(Boolean).join('\\n').slice(0, 4000),\n    attendees: b.attendees || [],\n    owner_email: b.owner_email || '',\n    from_web: true,\n  } };\n});"
+      }
+    },
+    {
+      "id": "b19ac2ee-6367-457b-a573-8ce55e6ccb0d",
       "name": "Read the decision",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        680,
-        100
-      ]
+        720,
+        224
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Gemini's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const parts = (item.json.candidates && item.json.candidates[0] && item.json.candidates[0].content && item.json.candidates[0].content.parts) || [];\n  const d = JSON.parse(parts.map(p => p.text || '').join('') || '{}');\n  const m = shaped[i].json;\n  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';\n  return { json: { ...m, prepare: m.from_web || !!d.prepare, why: d.why || '', company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };\n});"
+      }
     },
     {
+      "id": "20736f94-4fa3-4162-b1b5-5d1877383d41",
+      "name": "Prepare it?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        96
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -134,7 +147,6 @@
           },
           "conditions": [
             {
-              "id": "ba025efb-4c2f-4e7e-a06d-b59efe1e5b74",
               "leftValue": "={{ $json.prepare }}",
               "rightValue": true,
               "operator": {
@@ -147,110 +159,110 @@
           "combinator": "and"
         },
         "options": {}
-      },
-      "id": "534043c0-ba76-4fd4-86c3-f8d383270705",
-      "name": "Prepare it?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        900,
-        100
-      ]
+      }
     },
     {
-      "parameters": {},
-      "id": "014c4e3a-9699-4a7c-af4f-f6d62dd850d6",
-      "name": "Not worth it",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        1120,
-        240
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// The meeting as a row in the Meetings sheet, while n8n works on it\nreturn $input.all().map(({ json: m }) => ({ json: {\n  id: m.id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'researching',\n  brief: '', proposal: '', updated_at: new Date().toISOString(),\n} }));"
-      },
-      "id": "95ea43a2-9bfa-45c2-b97a-64af369c1942",
+      "id": "9d49928d-fcc1-4088-b3d3-0596bf01385a",
       "name": "Row: researching",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1120,
-        0
-      ]
+        1472,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The meeting as a row in the DryRun meetings table, while n8n works on it\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'researching',\n  brief: '', proposal: '', updated_at: new Date().toISOString(),\n} }));"
+      }
     },
     {
+      "id": "03611328-7fef-434c-a2f9-bc620b41c429",
+      "name": "Save: researching",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1696,
+        320
+      ],
       "parameters": {
-        "operation": "appendOrUpdate",
-        "documentId": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
           "__rl": true,
-          "value": "",
-          "mode": "url"
+          "mode": "id",
+          "value": "86BWrDlUXrOWFgqc",
+          "cachedResultName": "DryRun meetings"
         },
-        "sheetName": {
-          "__rl": true,
-          "value": "Meetings",
-          "mode": "name"
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "meeting_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.meeting_id }}"
+            }
+          ]
         },
-        "options": {},
         "columns": {
           "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [
-            "id"
-          ],
-          "schema": []
+          "value": null
         }
-      },
-      "id": "fef865ab-a391-445f-8041-946d1f9a26fa",
-      "name": "Save: researching",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        1340,
-        0
-      ]
+      }
     },
     {
+      "id": "c7dcb5a8-b3f9-4fe2-8c25-c5da688296f5",
+      "name": "Emails with them",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        320
+      ],
       "parameters": {
+        "resource": "message",
         "operation": "getAll",
         "returnAll": false,
         "limit": 10,
+        "simple": true,
         "filters": {
+          "readStatus": "both",
           "q": "={{ (() => { const m = $('Read the decision').item.json; const who = m.attendees.map(a => a.email).filter(Boolean); return who.length ? '(' + who.map(e => 'from:' + e + ' OR to:' + e).join(' OR ') + ') newer_than:120d' : 'from:nobody@invalid'; })() }}"
         }
       },
-      "id": "210bfe77-c852-4b1d-9130-20ffc153d75d",
-      "name": "Emails with them",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        1560,
-        0
-      ],
-      "alwaysOutputData": true
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "webhookId": "4bd7dc68-4b20-4ece-b3b6-910e4b58d548"
     },
     {
-      "parameters": {
-        "jsCode": "// The recent thread with the attendees, as short text for the brief\nconst msgs = $input.all().map(i => i.json).filter(m => m.snippet || m.text);\nconst meeting = $('Read the decision').first().json;\nconst emails = msgs.slice(0, 10).map(m => `From ${m.From || m.from?.text || ''}, ${m.date || m.Date || ''}: ${(m.snippet || m.text || '').slice(0, 400)}`).join('\\n') || 'No recent emails.';\nreturn [{ json: { meeting, emails } }];"
-      },
-      "id": "5679671b-673b-4be1-961f-a6aa4863979f",
+      "id": "226f240d-1f8e-4ce1-9fb9-f8dbb9e3cb92",
       "name": "Summarise the emails",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1780,
-        0
-      ]
+        2144,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The recent thread with the attendees, as short text for the brief\nconst msgs = $input.all().map(i => i.json).filter(m => m.snippet);\nconst meeting = $('Read the decision').first().json;\nconst emails = msgs.slice(0, 10).map(m => 'From ' + (m.From || '') + ' (' + (m.Subject || '') + '): ' + (m.snippet || '').slice(0, 400)).join('\\n') || 'No recent emails.';\nreturn [{ json: { meeting, emails } }];"
+      }
     },
     {
+      "id": "5e667796-0040-434d-bfe5-1c30aeada04f",
+      "name": "Research the company",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2368,
+        320
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"Research {company} ({domain}) for someone about to meet them: a {kind} titled \\\"{title}\\\".\\nIn under 200 words: what they do, their scale, and the 3 to 5 most relevant recent developments (with dates) that the people\\nin the meeting will have on their minds: results, costs, leadership, strategy, problems. Plain text.\".replace('{company}', $json.meeting.company).replace('{domain}', $json.meeting.company_domain).replace('{kind}', $json.meeting.kind).replace('{title}', $json.meeting.title) }] }], tools: [{ google_search: {} }] }) }}",
@@ -258,37 +270,39 @@
           "timeout": 120000
         }
       },
-      "id": "30504b3f-1d14-42d5-b8aa-58825f3cac62",
-      "name": "Research the company",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2000,
-        0
-      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000
     },
     {
-      "parameters": {
-        "jsCode": "// The grounded research text and its web sources\nconst c = $json.candidates?.[0] || {};\nconst research = (c.content?.parts || []).map(p => p.text || '').join('');\nconst sources = (c.groundingMetadata?.groundingChunks || []).filter(g => g.web).map(g => ({ title: g.web.title || '', url: g.web.uri }));\nconst prev = $('Summarise the emails').first().json;\nreturn [{ json: { ...prev, research, sources } }];"
-      },
-      "id": "ae5e2327-4871-451c-a3b3-ca81f5356f68",
+      "id": "ca8b40be-2237-4616-b154-318632a68690",
       "name": "Read the research",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2220,
-        0
-      ]
+        2592,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The grounded research text and its web sources\nconst c = ($json.candidates && $json.candidates[0]) || {};\nconst research = ((c.content && c.content.parts) || []).map(p => p.text || '').join('');\nconst sources = ((c.groundingMetadata && c.groundingMetadata.groundingChunks) || []).filter(g => g.web).map(g => ({ title: g.web.title || '', url: g.web.uri }));\nconst prev = $('Summarise the emails').first().json;\nreturn [{ json: { ...prev, research, sources } }];"
+      }
     },
     {
+      "id": "93017244-f6fb-477e-9d1e-927542fcb2c8",
+      "name": "Write the brief and panel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2000,
+        320
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"You prepare a presenter for a high-stakes meeting. Write their brief and decide who will be in the room.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company:\\n{research}\\n\\nRules:\\n- panel: 4 to 6 people. Real attendees from the invite and the emails come first, with their real names (source \\\"email\\\").\\n  Then add the roles that usually decide a deal like this at a company like this (source \\\"research\\\" or \\\"typical\\\") with\\n  invented, realistic Indian names. Never use the names of real people found in the research, and never invent facts about real attendees beyond their role.\\n- Each person's will_push_on must be specific to this meeting, citing the research or emails where possible, not generic.\\n- questions: the 5 hardest questions they will ask, each with asked_by (a panel name), why they will ask it, and a short suggested answer.\\n- suggestions: 2 or 3 more roles that could be in the room, with why.\\n- risks: what could lose this meeting, in short phrases.\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($json.meeting)).replace('{emails}', $json.emails).replace('{research}', $json.research) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why they will be in the room, one sentence\"}, \"source\": {\"type\": \"string\", \"enum\": [\"email\", \"research\", \"deck\", \"typical\"]}, \"cares_about\": {\"type\": \"string\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"source\", \"cares_about\", \"will_push_on\"]} }, \"suggestions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"role\", \"role_short\", \"why\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} } }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"panel\", \"suggestions\", \"questions\", \"risks\"]} } }) }}",
@@ -296,94 +310,106 @@
           "timeout": 120000
         }
       },
-      "id": "89b0fc3e-abab-4ae1-81a2-d59a08175610",
-      "name": "Write the brief and panel",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2440,
-        0
-      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000
     },
     {
-      "parameters": {
-        "jsCode": "// Give everyone a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md)\nconst prev = $('Read the research').first().json;\nconst b = JSON.parse(($json.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('') || '{}');\nconst SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];\nconst FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],\n                male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };\nconst used = { female: 0, male: 0 };\nconst members = (b.panel || []).slice(0, 6).map((p, i) => {\n  const g = p.gender === 'female' ? 'female' : 'male';\n  const pool = FACES[g].length > used[g] ? FACES[g] : FACES[g === 'female' ? 'male' : 'female'];\n  const avatar = pool[used[pool === FACES.female ? 'female' : 'male']++];\n  return { id: 'p' + (i + 1), seat: SEATS[i], color: i, role: p.role, role_short: p.role_short, display_name: p.name,\n           gender: g, avatar, why: p.why, source: p.source, cares_about: p.cares_about, will_push_on: p.will_push_on };\n});\nconst brief = {\n  summary: b.summary, company: { what_they_do: b.what_they_do, recent_news: b.recent_news || [] },\n  people: members.map(m => ({ name: m.display_name, role: m.role, cares_about: m.cares_about, will_push_on: m.will_push_on })),\n  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 8),\n};\nconst proposal = { draft_id: prev.meeting.id, members, suggestions: b.suggestions || [] };\nreturn [{ json: { meeting: prev.meeting, brief, proposal } }];"
-      },
-      "id": "a28dcbbc-9ef2-401d-b720-383aaab5f1ad",
+      "id": "a446e19b-c271-426c-ae8f-7799edf15233",
       "name": "Seat the panel",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2660,
-        0
-      ]
+        2224,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Give everyone a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md)\nconst prev = $('Read the research').first().json;\nconst parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];\nconst b = JSON.parse(parts.map(p => p.text || '').join('') || '{}');\nconst SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];\nconst FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],\n                male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };\nconst used = { female: 0, male: 0 };\nconst members = (b.panel || []).slice(0, 6).map((p, i) => {\n  let g = p.gender === 'female' ? 'female' : 'male';\n  if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';\n  const avatar = FACES[g][used[g]];\n  used[g] += 1;\n  return { id: 'p' + (i + 1), seat: SEATS[i], color: i, role: p.role, role_short: p.role_short, display_name: p.name,\n           gender: p.gender, avatar, why: p.why, source: p.source, cares_about: p.cares_about, will_push_on: p.will_push_on };\n});\nconst brief = {\n  summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },\n  people: members.map(m => ({ name: m.display_name, role: m.role, cares_about: m.cares_about, will_push_on: m.will_push_on })),\n  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 8),\n};\nconst proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [] };\nreturn [{ json: { meeting: prev.meeting, brief, proposal } }];"
+      }
     },
     {
-      "parameters": {
-        "jsCode": "const { meeting: m, brief, proposal } = $json;\nreturn [{ json: { id: m.id, status: 'ready', brief: JSON.stringify(brief), proposal: JSON.stringify(proposal), updated_at: new Date().toISOString() } }];"
-      },
-      "id": "9d37dccd-7272-4ba4-97aa-5eb3f2e99905",
+      "id": "4f81e1d1-d90b-445b-8feb-c9480cc085a6",
       "name": "Row: ready",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2880,
-        0
-      ]
+        2448,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const m = $json.meeting;\nreturn [{ json: { meeting_id: m.meeting_id, status: 'ready', brief: JSON.stringify($json.brief), proposal: JSON.stringify($json.proposal), updated_at: new Date().toISOString() } }];"
+      }
     },
     {
+      "id": "8e5c2f49-b4ff-49a2-9b08-b4da6722fe33",
+      "name": "Save: brief ready",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2672,
+        320
+      ],
       "parameters": {
-        "operation": "appendOrUpdate",
-        "documentId": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
           "__rl": true,
-          "value": "",
-          "mode": "url"
+          "mode": "id",
+          "value": "86BWrDlUXrOWFgqc",
+          "cachedResultName": "DryRun meetings"
         },
-        "sheetName": {
-          "__rl": true,
-          "value": "Meetings",
-          "mode": "name"
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "meeting_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.meeting_id }}"
+            }
+          ]
         },
-        "options": {},
         "columns": {
           "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [
-            "id"
-          ],
-          "schema": []
+          "value": null
         }
-      },
-      "id": "1307dffc-b7bf-4a9d-8d20-8b465c37f2be",
-      "name": "Save: brief ready",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [
-        3100,
-        0
-      ]
+      }
     },
     {
+      "id": "2d67e8e9-d371-44ad-bc76-0ae4efa439cd",
+      "name": "Email the brief",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2896,
+        320
+      ],
       "parameters": {
+        "resource": "message",
+        "operation": "send",
         "sendTo": "={{ $('Seat the panel').first().json.meeting.owner_email }}",
         "subject": "=Your brief for {{ $('Seat the panel').first().json.meeting.title }} is ready",
         "emailType": "html",
-        "message": "={{ (() => { const { meeting: m, brief: b } = $('Seat the panel').first().json; const li = xs => '<ul>' + xs.map(x => '<li>' + x + '</li>').join('') + '</ul>'; return '<h2>' + m.title + ' with ' + m.company + '</h2><p>' + b.summary + '</p>' + '<h3>Who will push on what</h3>' + li(b.people.map(p => '<b>' + p.name + '</b> (' + p.role + '): ' + p.will_push_on)) + '<h3>The hardest questions</h3>' + li(b.questions.map(q => '<b>' + q.asked_by + ':</b> ' + q.question)) + '<h3>What could lose it</h3>' + li(b.risks) + '<p><a href=\"http://localhost:3000/m/' + encodeURIComponent(m.id) + '\">Open the brief and rehearse</a></p>'; })() }}",
+        "message": "={{ (() => { const s = $('Seat the panel').first().json; const m = s.meeting; const b = s.brief; const li = xs => '<ul>' + xs.map(x => '<li>' + x + '</li>').join('') + '</ul>'; return '<h2>' + m.title + ' with ' + m.company + '</h2><p>' + b.summary + '</p>' + '<h3>Who will push on what</h3>' + li(b.people.map(p => '<b>' + p.name + '</b> (' + p.role + '): ' + p.will_push_on)) + '<h3>The hardest questions</h3>' + li(b.questions.map(q => '<b>' + q.asked_by + ':</b> ' + q.question)) + '<h3>What could lose it</h3>' + li(b.risks) + '<p><a href=\"http://localhost:3000/m/' + encodeURIComponent(m.meeting_id) + '\">Open the brief and rehearse</a></p>'; })() }}",
         "options": {
           "appendAttribution": false
         }
       },
-      "id": "06ccde46-15f6-4dc5-8623-2ae91d3ebb96",
-      "name": "Email the brief",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
+      "webhookId": "0fcc51d4-f3ff-42b1-937d-febb34b61409"
+    },
+    {
+      "id": "f0f80e92-94ce-49e8-a44f-825a3996cce5",
+      "name": "Not worth it",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
       "position": [
-        3320,
+        1584,
         0
-      ]
+      ],
+      "parameters": {}
     }
   ],
   "connections": {
@@ -409,6 +435,17 @@
         ]
       ]
     },
+    "Worth preparing?": {
+      "main": [
+        [
+          {
+            "node": "Read the decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Add a meeting (web app)": {
       "main": [
         [
@@ -425,17 +462,6 @@
         [
           {
             "node": "Worth preparing?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Worth preparing?": {
-      "main": [
-        [
-          {
-            "node": "Read the decision",
             "type": "main",
             "index": 0
           }
@@ -583,7 +609,8 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
-  },
-  "pinData": {}
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata",
+    "timeSavedPerExecution": 45
+  }
 }
