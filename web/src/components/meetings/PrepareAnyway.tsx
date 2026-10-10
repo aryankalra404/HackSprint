@@ -10,10 +10,14 @@ export function PrepareAnyway({ meetingId, className }: { meetingId: string; cla
   const [starting, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
-  // n8n takes a moment to pick it up: check again until the page shows its progress (which unmounts this button)
+  // n8n takes a moment to pick it up: check again until the page shows its progress (which unmounts this button), for a minute at most
   useEffect(() => {
     if (!started) return;
-    const timer = setInterval(() => router.refresh(), 2000);
+    const until = Date.now() + 60_000;
+    const timer = setInterval(() => {
+      if (Date.now() > until) clearInterval(timer);
+      else router.refresh();
+    }, 3000);
     return () => clearInterval(timer);
   }, [started, router]);
   return (

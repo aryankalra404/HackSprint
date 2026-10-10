@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMeeting, n8nRunUrl } from "@/lib/api";
 import type { MeetingDetail } from "@/lib/contract";
-import { meetingWhen, untilLabel } from "@/lib/format";
+import { meetingWhen, stillResearching, untilLabel } from "@/lib/format";
 import { PersonaAvatar } from "@/components/ui";
 import { MeetingStatus } from "@/components/meetings/MeetingStatus";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
@@ -61,7 +61,7 @@ async function Meeting({ id }: { id: string }) {
       ) : !brief ? (
         meeting.progress && meeting.progress.length > 0 ? (
           <>
-            {meeting.status === "researching" && <RefreshWhileResearching />}
+            {stillResearching(meeting) && <RefreshWhileResearching />}
             <LiveProgress
               meetingId={meeting.id}
               title={meeting.title}

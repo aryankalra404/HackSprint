@@ -7,6 +7,7 @@ import { MeetingList } from "@/components/meetings/MeetingList";
 import { PreparePopup } from "@/components/meetings/PreparePopup";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
 import { SkippedList } from "@/components/meetings/SkippedList";
+import { stillResearching } from "@/lib/format";
 
 // Home: the meetings n8n is preparing you for
 export default function Home() {
@@ -64,7 +65,7 @@ async function Meetings() {
   }
   return (
     <>
-      {meetings.some((m) => m.status === "researching") && <RefreshWhileResearching />}
+      {meetings.some(stillResearching) && <RefreshWhileResearching />}
       <MeetingList meetings={prepared} />
       <SkippedList meetings={skipped} />
       <PreparePopup meetings={meetings} />

@@ -11,6 +11,14 @@ export function momentLabel(t: number, slideIndex: number): string {
   return `${slideLabel(slideIndex)} at ${clock(t)}`;
 }
 
+// Whether n8n is still working on a meeting: researching, and started in the last few minutes (a run takes under a minute).
+// A run that never finished stays "researching" in the table; pages stop re-reading it rather than call n8n forever.
+export function stillResearching(m: { status: string; started_at?: string | null }): boolean {
+  if (m.status !== "researching") return false;
+  if (!m.started_at) return true;
+  return Date.now() - Date.parse(m.started_at) < 5 * 60_000;
+}
+
 // "Thu 16 Oct, 3:00 pm", in Indian time
 export function meetingWhen(iso: string): string {
   const d = new Date(iso);
