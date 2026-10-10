@@ -16,7 +16,7 @@ Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built
 
   The web app shows each step live as n8n works, with a link to the run.
 - **The web app** lists your upcoming meetings and asks "prepare for this meeting?". It shows the brief, and you can edit the practice panel: up to 6 people, any chair, any face. Upload your deck (PDF, PowerPoint or Keynote) and it goes on the boardroom TV.
-- **The VR boardroom** seats that panel live as you edit it. The headset finds the laptop over Wi-Fi, with USB as the fallback. Your slides are on the TV behind you, with a speaker view on the monitor you face; a swipe of your thumb (or the controller's triggers) changes slides, no controllers needed. When you start speaking, the session starts and the panel turns to look at you. The dashboard shows the headset's view on the big screen. (Tested in the Unity editor; testing on the Quest this week.)
+- **The VR boardroom** seats that panel live as you edit it. The headset finds the laptop over Wi-Fi, with USB as the fallback. Your slides are on the TV behind you, with a speaker view on the monitor you face; a swipe of your thumb (or the controller's triggers) changes slides, no controllers needed. When you start speaking, the session starts and the panel turns to look at you; when you finish on your last slide, it wraps up by itself. The dashboard shows the headset's view on the big screen. (Tested in the Unity editor; testing on the Quest this week.)
 
 ## Being built
 Stakeholders interrupting with grounded questions (in voice), the Rescue Agent that feeds you cues when you freeze, and an n8n debrief that scores the session with evidence and makes the next rehearsal harder where you were weak.
