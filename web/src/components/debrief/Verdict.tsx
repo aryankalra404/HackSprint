@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Debrief, SessionRecord } from "@/lib/contract";
 
 export function Verdict({ debrief, history, sessionNumber }: { debrief: Debrief; history: SessionRecord["history"]; sessionNumber: number }) {
@@ -5,7 +6,9 @@ export function Verdict({ debrief, history, sessionNumber }: { debrief: Debrief;
   const trail = [...history.map((h) => h.overall), debrief.overall];
 
   return (
-    <section className="flex flex-col justify-between gap-8 rounded-2xl bg-ink p-6 text-surface sm:p-8">
+    <section className="relative isolate flex flex-col justify-between gap-8 overflow-hidden rounded-2xl bg-ink p-6 text-surface sm:p-8">
+      <Image src="/vr/room_wide.jpg" alt="" fill sizes="(min-width: 1024px) 800px, 100vw" className="-z-10 object-cover object-[center_70%] opacity-45" />
+      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-b from-ink via-ink/40 to-ink" />
       <div className="flex flex-col gap-4">
         <p className="text-sm text-axis">Session {sessionNumber} debrief</p>
         <h1 className="font-display text-3xl leading-tight sm:text-4xl">{debrief.headline}</h1>
