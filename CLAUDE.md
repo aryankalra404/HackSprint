@@ -37,7 +37,7 @@ When a task changes something these files describe, update the file in the same 
 - Commit messages are one line, written like a person would write them (e.g. "add debrief screen with sample data").
 - No "Co-Authored-By: Claude" or any other AI attribution in commits or PRs.
 - Commit often, without asking each time: after each working step (a screen, a workflow, a fix), once it builds. Keep each commit to one change.
-- Never commit `docs/` (kept local) or `databse/` (not part of this project). Stage files by path, not with `git add -A`.
+- Never commit `docs/` (kept local). Stage files by path, not with `git add -A`.
 
 ## Gotchas
 - Disk is nearly full (about 4.5 GB free on 10 Oct). Unity builds fail and crash when it's low, so check `df -h ~` before builds or big imports.
