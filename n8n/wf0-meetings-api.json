@@ -1,0 +1,230 @@
+{
+  "name": "DryRun meetings API",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## DryRun meetings API\nThe web app reads your meetings and briefs from the Meetings sheet: `GET /webhook/dryrun/meetings` and `GET /webhook/dryrun/meeting?id=` (docs/CONTRACT.md).",
+        "width": 520,
+        "height": 160
+      },
+      "id": "2ca548a9-9d9b-483b-b3b0-3f3f7bdea8d9",
+      "name": "Note 52d7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "dryrun/meetings",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4e42b62d-6689-4494-9082-0a6974c9ea25",
+      "name": "GET /meetings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "0b9be56c-3294-4166-9504-6a9c09043761"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Meetings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "f94dd00c-bc22-46a4-934a-b495a8573187",
+      "name": "Read meetings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Upcoming (and today's) meetings, soonest first\nconst since = Date.now() - 12 * 3600 * 1000;\nconst meetings = $input.all().map(i => i.json).filter(r => r.id && (!r.start || Date.parse(r.start) >= since))\n  .sort((a, b) => Date.parse(a.start || 0) - Date.parse(b.start || 0))\n  .map(r => ({ id: String(r.id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status,\n               attendees: (() => { try { return JSON.parse(r.attendees || '[]'); } catch { return []; } })() }));\nreturn [{ json: { meetings } }];"
+      },
+      "id": "2c92456c-7dbc-45e1-9b38-c8a502b89abc",
+      "name": "Upcoming meetings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "e0f15480-28a8-459c-88f3-e9ee8cd2e9fa",
+      "name": "Send meetings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "dryrun/meeting",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "837c4a74-7184-42dc-acfa-7ec7862448c1",
+      "name": "GET /meeting",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ],
+      "webhookId": "abdab1e1-c002-4a9f-8ffd-4caba87a6900"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Meetings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "4d85288c-2d1e-46dc-9c4f-bf419536ec3b",
+      "name": "Read meeting",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One meeting by id, with its brief and proposed panel\nconst id = $('GET /meeting').first().json.query.id;\nconst r = $input.all().map(i => i.json).find(r => String(r.id) === String(id));\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch { return null; } };\nif (!r) return [{ json: { error: 'not found' } }];\nreturn [{ json: {\n  meeting: { id: String(r.id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [] },\n  brief: parse(r.brief), proposal: parse(r.proposal),\n} }];"
+      },
+      "id": "73c2e0b7-bbb9-440a-847f-63c18a9a7825",
+      "name": "The meeting and its brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        240
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "cc4cba05-da7b-4b69-b170-d73eb4762dff",
+      "name": "Send the meeting",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "GET /meetings": {
+      "main": [
+        [
+          {
+            "node": "Read meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read meetings": {
+      "main": [
+        [
+          {
+            "node": "Upcoming meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upcoming meetings": {
+      "main": [
+        [
+          {
+            "node": "Send meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /meeting": {
+      "main": [
+        [
+          {
+            "node": "Read meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read meeting": {
+      "main": [
+        [
+          {
+            "node": "The meeting and its brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "The meeting and its brief": {
+      "main": [
+        [
+          {
+            "node": "Send the meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
