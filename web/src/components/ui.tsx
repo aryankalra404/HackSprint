@@ -23,7 +23,7 @@ export function PersonaAvatar({
   size = 40,
   stance,
 }: {
-  persona: Pick<Persona, "display_name" | "seat" | "avatar">;
+  persona: Pick<Persona, "display_name" | "seat"> & { avatar?: Persona["avatar"] };
   size?: number | string;
   stance?: StakeholderVerdict["stance"];
 }) {
@@ -32,7 +32,7 @@ export function PersonaAvatar({
     .map((w) => w[0])
     .join("")
     .slice(0, 2);
-  const portrait = portraitOf(persona.avatar);
+  const portrait = persona.avatar && portraitOf(persona.avatar);
   const tone = stance && STANCE[stance][0];
   return (
     <span aria-hidden="true" className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
@@ -43,8 +43,14 @@ export function PersonaAvatar({
         {portrait ? (
           // eslint-disable-next-line @next/next/no-img-element -- small static files, sized by the parent
           <img src={portrait} alt="" className="size-full object-cover" />
-        ) : (
+        ) : initials ? (
           initials
+        ) : (
+          // Not seated yet: n8n picks the face and name when it briefs the panel
+          <svg viewBox="0 0 24 24" className="size-[70%] translate-y-[12%] text-axis" fill="currentColor">
+            <circle cx="12" cy="8" r="4.5" />
+            <path d="M3 22c0-5 4-8.5 9-8.5s9 3.5 9 8.5z" />
+          </svg>
         )}
       </span>
       {tone && (

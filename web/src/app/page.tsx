@@ -12,7 +12,6 @@ const STEPS = [
   { n: "3", title: "Debrief", body: "n8n scores you with evidence, sends the report, books a drill on your weakest slide, and briefs the panel to press harder there next time." },
 ];
 
-// Placeholder until the Brief screen is built.
 export default function Home() {
   return (
     <main>
@@ -39,11 +38,11 @@ export default function Home() {
             why before the real meeting.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Link href="/s/demo" className="rounded-full bg-surface px-5 py-3 text-sm font-medium text-ink hover:bg-paper">
-              See a debriefed session
+            <Link href="/new" className="rounded-full bg-surface px-5 py-3 text-sm font-medium text-ink hover:bg-paper">
+              Start a rehearsal
             </Link>
-            <Link href="/s/demo-prep" className="rounded-full border border-surface/40 px-5 py-3 text-sm hover:border-surface">
-              See a briefed room
+            <Link href="/s/demo" className="rounded-full border border-surface/40 px-5 py-3 text-sm hover:border-surface">
+              See a finished session
             </Link>
           </div>
         </div>

@@ -32,6 +32,22 @@ export interface PanelMember extends Seating {
   source: "email" | "research" | "deck" | "typical";
 }
 
+export interface BriefInput {
+  presenter: { name: string; email: string };
+  deck: { pdf_url: string; slide_image_urls: string[] };
+  prospect: { company: string; website: string; context: string };
+}
+
+// A panel member after the presenter's edits, as sent to /prep.
+// People the presenter added have no avatar or gender yet, and may have no name: n8n fills those in.
+export interface DraftMember extends Omit<PanelMember, "avatar" | "gender" | "why" | "source"> {
+  avatar?: AvatarId;
+  gender?: PanelMember["gender"];
+  why?: string;
+  source?: PanelMember["source"];
+  difficulty: 1 | 2 | 3;
+}
+
 export interface PanelProposal {
   draft_id: string;
   members: PanelMember[];
