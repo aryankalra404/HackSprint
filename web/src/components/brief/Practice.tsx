@@ -9,6 +9,7 @@ import { PanelTable, type Selection } from "./PanelTable";
 import { PanelEditor } from "./PanelEditor";
 import { useRoom } from "@/lib/useRoom";
 import { NameCardsToggle } from "../room/NameCardsToggle";
+import { HeightControl } from "../room/HeightControl";
 import { DeckPanel } from "../room/DeckPanel";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
@@ -20,7 +21,7 @@ interface Props {
   draft: Draft;
   panel: DraftMember[];
   nameCards: boolean;
-  // The laptop's room, followed live for the deck (the headset's triggers change the slide)
+  // The laptop's room, followed live for the deck (the headset changes the slide too)
   room: Room;
 }
 
@@ -113,6 +114,7 @@ export function Practice({ meeting, input, draft, panel, nameCards, room: initia
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <NameCardsToggle initial={nameCards} />
+          <HeightControl initial={initialRoom.height_offset} />
           <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs" aria-live="polite">
             <span
               aria-hidden="true"

@@ -19,7 +19,7 @@ interface Store {
   headsetVia: "wifi" | "usb";
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0 };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0 };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };

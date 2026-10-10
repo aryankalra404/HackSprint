@@ -244,6 +244,8 @@ export interface Room {
   deck: Deck | null;
   // The slide on screen, from 0
   slide: number;
+  // Metres to raise (or lower, if negative) the presenter's eyes in VR, from -0.5 to 0.5; 0 unless moved on the web
+  height_offset: number;
 }
 
 // One slide image on the laptop: `image_url` is a path there (GET /api/deck/<id>/<n>.jpg)

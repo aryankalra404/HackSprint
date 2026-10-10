@@ -11,6 +11,7 @@ import { AgentFeed } from "./AgentFeed";
 import { BottomStrip } from "./BottomStrip";
 import { PersonaDrawer } from "./PersonaDrawer";
 import { NameCardsToggle } from "../room/NameCardsToggle";
+import { HeightControl } from "../room/HeightControl";
 import { SessionControls } from "./SessionControls";
 import { HeadsetView } from "./HeadsetView";
 import { DeckPanel } from "../room/DeckPanel";
@@ -21,7 +22,7 @@ type View = "headset" | "plan";
 // Prep (briefed, waiting) and debrief share the layout. For the session in the laptop's room, the dashboard follows the room:
 // the header starts, ends and restarts it, and the room panel shows the room plan while waiting and switches to what the
 // presenter sees in the headset once the session is live (the headset only streams while that view is open).
-export function Dashboard({ session, nameCards, room: initialRoom }: { session: SessionRecord; nameCards: boolean; room: Room | null }) {
+export function Dashboard({ session, nameCards, heightOffset, room: initialRoom }: { session: SessionRecord; nameCards: boolean; heightOffset: number; room: Room | null }) {
   const [open, setOpen] = useState<PersonaId | null>(null);
   const feed = useMemo(() => buildFeed(session), [session]);
   const room = useRoom(initialRoom);
@@ -43,6 +44,7 @@ export function Dashboard({ session, nameCards, room: initialRoom }: { session: 
         <div className="flex flex-wrap items-center gap-2">
           {room && !debrief && <DeckPanel room={room} compact />}
           <NameCardsToggle initial={nameCards} />
+          <HeightControl initial={heightOffset} />
           {room && !debrief ? (
             <SessionControls room={room} />
           ) : (
