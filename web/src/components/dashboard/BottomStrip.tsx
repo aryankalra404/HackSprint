@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { SessionRecord } from "@/lib/contract";
-import { personaTag, seatColor } from "@/lib/personas";
+import { personaTag, colorOf } from "@/lib/personas";
 import { clock } from "@/lib/format";
 import { exchanges, freezes, RESCUE_LABEL, slideSegments } from "@/lib/timeline";
 import { StatusIcon, verdictTone } from "../ui";
@@ -70,7 +70,7 @@ function PlannedStrip({ session }: { session: SessionRecord }) {
             <span className="flex min-h-5 flex-wrap gap-1">
               {pushers.map((p) => (
                 <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-surface px-1.5 py-0.5 text-[10px]">
-                  <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: seatColor(p.seat) }} />
+                  <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: colorOf(p.color) }} />
                   {p.role_short}
                 </span>
               ))}

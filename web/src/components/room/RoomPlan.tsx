@@ -20,13 +20,6 @@ const TABLE_BOX = { x: u(TABLE.zMin), y: v(TABLE.xMin), w: u(TABLE.zMax) - u(TAB
 const TABLE_MID = v((TABLE.xMin + TABLE.xMax) / 2);
 const HEAD_END = u(TABLE.zMax);
 
-// Chairs with no panel seat, so it reads as a real boardroom
-const SPARE_CHAIRS = [
-  { x: -5.4, z: -6.02 },
-  { x: -5.4, z: -3.8 },
-  { x: -3.67, z: -4.9 },
-];
-
 type Side = "top" | "bottom" | "head";
 const sideOf = (x: number, z: number): Side => (u(z) > HEAD_END ? "head" : v(x) < TABLE_MID ? "top" : "bottom");
 
@@ -69,9 +62,6 @@ export function RoomPlan({ occupied, lines, children }: Props) {
             Slides
           </text>
 
-          {SPARE_CHAIRS.map((c) => (
-            <Chair key={`${c.x},${c.z}`} cx={u(c.z)} cy={v(c.x)} side={sideOf(c.x, c.z)} empty />
-          ))}
           {ALL_SEATS.map((seat) => {
             const c = SEAT_POS[seat];
             return <Chair key={seat} cx={u(c.z)} cy={v(c.x)} side={sideOf(c.x, c.z)} empty={!occupied.includes(seat)} />;

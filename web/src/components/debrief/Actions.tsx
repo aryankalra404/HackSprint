@@ -20,7 +20,7 @@ export function Actions({ debrief, bundle }: { debrief: Debrief; bundle: Bundle 
         {personaTag(bundle.personas, drill.focus_persona).name} ({personaTag(bundle.personas, drill.focus_persona).role}).
       </p>
       <p className="mt-4 rounded-xl bg-paper px-4 py-3 text-sm">
-        In the headset, enter code <span className="text-base font-medium tracking-widest">{bundle.join_code}</span>
+        The panel will be waiting in the headset, briefed to press on exactly this.
       </p>
       <ul className="mt-4 flex flex-col gap-1.5 border-t border-line pt-4">
         {debrief.actions_taken.map((a) => (

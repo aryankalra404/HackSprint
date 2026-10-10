@@ -1,5 +1,5 @@
 import type { Persona, PersonaId } from "@/lib/contract";
-import { PRESENTER_SEAT, SEAT_POS, TABLE, seatColor } from "@/lib/personas";
+import { PRESENTER_SEAT, SEAT_POS, TABLE, colorOf } from "@/lib/personas";
 import { Card, StatusIcon } from "../ui";
 
 // Top-down view of the VR boardroom, presenter on the left. Room z runs left to right, x top to bottom.
@@ -38,7 +38,7 @@ export function GazeMap({ dwell, personas }: { dwell: Record<PersonaId, number>;
               y1={presenter.cy}
               x2={seat.cx}
               y2={seat.cy}
-              stroke={seatColor(r.seat)}
+              stroke={colorOf(r.color)}
               strokeOpacity={0.5}
               strokeWidth={1.5 + r.share * 18}
               strokeLinecap="round"
@@ -50,7 +50,7 @@ export function GazeMap({ dwell, personas }: { dwell: Record<PersonaId, number>;
           const above = SEAT_POS[r.seat].x < -5;
           return (
             <g key={r.id}>
-              <circle cx={seat.cx} cy={seat.cy} r={12} fill="var(--color-surface)" stroke={seatColor(r.seat)} strokeWidth={2.5} />
+              <circle cx={seat.cx} cy={seat.cy} r={12} fill="var(--color-surface)" stroke={colorOf(r.color)} strokeWidth={2.5} />
               <text
                 x={seat.cx}
                 y={above ? seat.cy - 20 : seat.cy + 29}
@@ -69,7 +69,7 @@ export function GazeMap({ dwell, personas }: { dwell: Record<PersonaId, number>;
       <ul className="mt-4 flex flex-col gap-1.5">
         {[...rows].sort((a, b) => b.share - a.share).map((r) => (
           <li key={r.id} className="flex items-center gap-2 text-sm">
-            <span aria-hidden="true" className="size-2 rounded-full" style={{ background: seatColor(r.seat) }} />
+            <span aria-hidden="true" className="size-2 rounded-full" style={{ background: colorOf(r.color) }} />
             <span className="flex-1">{r.display_name} <span className="text-muted">{r.role_short}</span></span>
             {r.share < LOW_SHARE && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-warn-ink">

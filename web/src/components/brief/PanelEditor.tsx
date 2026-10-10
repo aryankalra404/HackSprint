@@ -1,15 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import type { DraftMember, PanelProposal } from "@/lib/contract";
+import Image from "next/image";
+import type { DraftMember, PanelProposal, Seat } from "@/lib/contract";
+import { ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { PersonaAvatar } from "../ui";
-import { SOURCE_LABEL, type Selection } from "./PanelTable";
+import { SOURCE_LABEL, seatLabel, type Selection } from "./PanelTable";
 
 const TOUGHNESS: { value: DraftMember["difficulty"]; label: string }[] = [
   { value: 1, label: "Easy" },
   { value: 2, label: "Normal" },
   { value: 3, label: "Tough" },
 ];
+
+const FIELD = "rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-ink focus:outline-none";
 
 // A short label for the timeline chips, from a role the presenter typed: "Head of IT Security" → "HITS"
 export function shortRole(role: string): string {
@@ -30,29 +34,30 @@ interface Props {
   selection: Selection;
   onSelect: (s: Selection) => void;
   onChange: (id: string, patch: Partial<DraftMember>) => void;
+  onMove: (id: string, seat: Seat) => void;
   onRemove: (id: string) => void;
   onAdd: (role: string, roleShort: string, why?: string) => void;
 }
 
-// The side column of the Brief screen: the panel overview, or an editor for whoever is selected on the table
+// The side column of the Brief screen: the panel overview, or an editor for whatever is selected on the table
 export function PanelEditor(props: Props) {
   const { selection } = props;
   if (selection?.kind === "person") {
     const member = props.members.find((m) => m.id === selection.id);
     if (member) return <PersonEditor {...props} member={member} />;
   }
-  if (selection?.kind === "seat") return <AddToSeat {...props} />;
+  if (selection?.kind === "seat") return <AddToSeat {...props} seat={selection.seat} />;
   return <Overview {...props} />;
 }
 
 function Overview({ company, members, suggestions, onSelect, onAdd }: Props) {
-  const full = members.length >= 6;
   return (
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="font-display text-xl">The panel</h2>
         <p className="mt-1 text-sm text-ink-2">
-          Who will be in the room at {company}, as n8n reads it. Edit anyone, remove them, or add someone in an empty seat.
+          Who will be in the room at {company}, as n8n reads it. Click anyone to edit them, drag them to another chair, or press + on an empty
+          chair to add someone. Up to {MAX_PANEL} people.
         </p>
       </div>
       <ul className="flex flex-col divide-y divide-line">
@@ -69,7 +74,7 @@ function Overview({ company, members, suggestions, onSelect, onAdd }: Props) {
           </li>
         ))}
       </ul>
-      {suggestions.length > 0 && !full && (
+      {members.length < MAX_PANEL && suggestions.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-semibold text-ink-2">n8n also suggests</h3>
           <Suggestions suggestions={suggestions} members={members} onAdd={onAdd} />
@@ -103,14 +108,27 @@ function Suggestions({ suggestions, members, onAdd }: Pick<Props, "suggestions" 
   );
 }
 
-function AddToSeat({ suggestions, members, onAdd, onSelect }: Props) {
+function AddToSeat({ suggestions, members, onAdd, onSelect, seat }: Props & { seat: Seat }) {
   const [role, setRole] = useState("");
+  if (members.length >= MAX_PANEL) {
+    return (
+      <div className="flex flex-col gap-4">
+        <BackLink onSelect={onSelect} />
+        <h2 className="font-display text-xl">The table is full</h2>
+        <p className="text-sm text-ink-2">
+          A panel is at most {MAX_PANEL} people, so every voice gets a turn. Remove someone first, or drag someone into this chair.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-5">
       <BackLink onSelect={onSelect} />
       <div>
         <h2 className="font-display text-xl">Add someone</h2>
-        <p className="mt-1 text-sm text-ink-2">Pick one of n8n&apos;s suggestions, or name the role yourself. n8n gives them a name and a brief.</p>
+        <p className="mt-1 text-sm text-ink-2">
+          {seatLabel(seat)}. Pick one of n8n&apos;s suggestions, or name the role yourself. n8n writes their brief.
+        </p>
       </div>
       <Suggestions suggestions={suggestions} members={members} onAdd={onAdd} />
       <form
@@ -124,13 +142,7 @@ function AddToSeat({ suggestions, members, onAdd, onSelect }: Props) {
           Another role
         </label>
         <div className="flex gap-2">
-          <input
-            id="custom-role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            placeholder="e.g. Head of Legal"
-            className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-ink focus:outline-none"
-          />
+          <input id="custom-role" value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Head of Legal" className={`min-w-0 flex-1 ${FIELD}`} />
           <button type="submit" disabled={!role.trim()} className="rounded-lg bg-ink px-4 py-2 text-sm text-surface disabled:opacity-40">
             Add
           </button>
@@ -140,8 +152,9 @@ function AddToSeat({ suggestions, members, onAdd, onSelect }: Props) {
   );
 }
 
-function PersonEditor({ member, onChange, onRemove, onSelect }: Props & { member: DraftMember }) {
-  const field = "rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-ink focus:outline-none";
+function PersonEditor({ member, members, onChange, onMove, onRemove, onSelect }: Props & { member: DraftMember }) {
+  const taken = new Set(members.filter((m) => m.id !== member.id).map((m) => m.avatar));
+  const faces = AVATARS.filter((a) => a.portrait);
   return (
     <div className="flex flex-col gap-5">
       <BackLink onSelect={onSelect} />
@@ -167,19 +180,59 @@ function PersonEditor({ member, onChange, onRemove, onSelect }: Props & { member
           value={member.display_name}
           onChange={(e) => onChange(member.id, { display_name: e.target.value })}
           placeholder="Leave empty and n8n picks one"
-          className={field}
+          className={FIELD}
         />
       </div>
       <div className="flex flex-col gap-1.5">
         <label htmlFor="m-role" className="text-xs font-semibold text-ink-2">Role</label>
-        <input
-          id="m-role"
-          value={member.role}
-          onChange={(e) => onChange(member.id, { role: e.target.value, role_short: shortRole(e.target.value) })}
-          className={field}
-        />
+        <input id="m-role" value={member.role} onChange={(e) => onChange(member.id, { role: e.target.value, role_short: shortRole(e.target.value) })} className={FIELD} />
       </div>
-      <fieldset className="flex flex-col gap-1.5">
+
+      <fieldset>
+        <legend className="mb-1.5 text-xs font-semibold text-ink-2">Face</legend>
+        <div className="grid grid-cols-5 gap-2">
+          {faces.map((a) => {
+            const mine = member.avatar === a.id;
+            const used = taken.has(a.id);
+            return (
+              <label key={a.id} className={used ? "cursor-not-allowed" : "cursor-pointer"} title={used ? "Someone else has this face" : undefined}>
+                <input
+                  type="radio"
+                  name="face"
+                  value={a.id}
+                  checked={mine}
+                  disabled={used}
+                  onChange={() => onChange(member.id, { avatar: a.id })}
+                  className="peer sr-only"
+                />
+                <span
+                  className={`relative block aspect-square overflow-hidden rounded-full ring-2 peer-focus-visible:outline-2 ${mine ? "ring-ink" : "ring-transparent"} ${used ? "opacity-30 grayscale" : "hover:ring-axis"}`}
+                >
+                  <Image src={a.portrait!} alt={`${a.gender} avatar`} fill sizes="56px" className="object-cover" />
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-xs text-muted">The same face sits in the VR room.</p>
+      </fieldset>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="m-seat" className="text-xs font-semibold text-ink-2">Seat</label>
+        <select id="m-seat" value={member.seat} onChange={(e) => onMove(member.id, Number(e.target.value) as Seat)} className={FIELD}>
+          {ALL_SEATS.map((s) => {
+            const who = members.find((m) => m.seat === s && m.id !== member.id);
+            return (
+              <option key={s} value={s}>
+                {seatLabel(s)}
+                {who ? ` (swap with ${who.display_name || who.role})` : ""}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      <fieldset>
         <legend className="mb-1.5 text-xs font-semibold text-ink-2">How hard they push</legend>
         <div className="grid grid-cols-3 gap-1 rounded-lg bg-paper p-1">
           {TOUGHNESS.map((t) => (
@@ -200,11 +253,7 @@ function PersonEditor({ member, onChange, onRemove, onSelect }: Props & { member
         </div>
       </fieldset>
 
-      <button
-        type="button"
-        onClick={() => onRemove(member.id)}
-        className="self-start rounded-lg border border-bad/40 px-3 py-2 text-sm text-bad-ink hover:border-bad"
-      >
+      <button type="button" onClick={() => onRemove(member.id)} className="self-start rounded-lg border border-bad/40 px-3 py-2 text-sm text-bad-ink hover:border-bad">
         Remove from the panel
       </button>
     </div>

@@ -15,6 +15,7 @@ export const demoProposal: PanelProposal = {
   members: demoSession.bundle.personas.map((p) => ({
     id: p.id,
     seat: p.seat,
+    color: p.color,
     role: p.role,
     role_short: p.role_short,
     display_name: p.display_name,

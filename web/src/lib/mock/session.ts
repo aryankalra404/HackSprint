@@ -26,13 +26,13 @@ const slides: Slide[] = slideTitles.map((title, index) => ({
 export const demoSession: SessionRecord = {
   bundle: {
     session_id: "demo",
-    join_code: "4821",
     prospect: { company: "Kaveri Freight" },
     slides,
     personas: [
       {
         id: "p1",
         seat: 0,
+        color: 0,
         role: "Chief Financial Officer",
         role_short: "CFO",
         avatar: "business_male_01",
@@ -44,7 +44,8 @@ export const demoSession: SessionRecord = {
       },
       {
         id: "p3",
-        seat: 3,
+        seat: 6,
+        color: 3,
         role: "Chief Technology Officer",
         role_short: "CTO",
         avatar: "business_female_01",
@@ -57,6 +58,7 @@ export const demoSession: SessionRecord = {
       {
         id: "p2",
         seat: 1,
+        color: 1,
         role: "Head of Procurement",
         role_short: "Procurement",
         avatar: "business_male_02",
@@ -68,7 +70,8 @@ export const demoSession: SessionRecord = {
       },
       {
         id: "p4",
-        seat: 4,
+        seat: 3,
+        color: 4,
         role: "VP Operations",
         role_short: "VP Ops",
         avatar: "business_female_02",
@@ -80,7 +83,8 @@ export const demoSession: SessionRecord = {
       },
       {
         id: "p5",
-        seat: 5,
+        seat: 8,
+        color: 5,
         role: "Head of Fleet Operations",
         role_short: "Fleet",
         avatar: "business_male_04",

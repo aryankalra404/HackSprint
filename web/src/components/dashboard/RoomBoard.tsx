@@ -1,5 +1,5 @@
 import type { PersonaId, SessionRecord } from "@/lib/contract";
-import { seatColor } from "@/lib/personas";
+import { colorOf } from "@/lib/personas";
 import { PersonaAvatar, StanceText, StatusIcon } from "../ui";
 import { CARD_W, H, PRESENTER, RoomPlan, TABLE_CENTRE, W, cardPlacement, pct, seatPoint } from "../room/RoomPlan";
 
@@ -30,7 +30,7 @@ export function RoomBoard({ session, onOpen }: Props) {
         y1={PRESENTER.y}
         x2={to.x}
         y2={to.y}
-        stroke={seatColor(p.seat)}
+        stroke={colorOf(p.color)}
         strokeOpacity={0.5}
         strokeWidth={2 + s * 30}
         strokeLinecap="round"
@@ -49,11 +49,11 @@ export function RoomBoard({ session, onOpen }: Props) {
         </div>
       ) : (
         <p
-          className="absolute flex -translate-x-1/2 -translate-y-1/2 items-baseline gap-[1cqw] text-[1.2cqw] whitespace-nowrap text-[#6b5641]"
+          className="absolute -translate-x-1/2 -translate-y-1/2 text-center font-display text-[1.8cqw] leading-tight whitespace-nowrap text-[#4a3826]"
           style={{ left: pct(TABLE_CENTRE.x, W), top: pct(TABLE_CENTRE.y, H) }}
         >
-          Join code
-          <span className="font-display text-[3cqw] leading-none tracking-[0.2em] text-[#4a3826]">{bundle.join_code}</span>
+          The panel is seated
+          <span className="block font-sans text-[1.15cqw] text-[#6b5641]">Put on the headset to start</span>
         </p>
       )}
 

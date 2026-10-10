@@ -1,26 +1,78 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import type { BriefInput, DraftMember, PanelProposal, Seat } from "@/lib/contract";
-import { ALL_SEATS } from "@/lib/personas";
+import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction, proposePanelAction } from "@/app/new/actions";
 import { PanelTable, type Selection } from "./PanelTable";
 import { PanelEditor } from "./PanelEditor";
 
+type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
+
 interface Props {
   sample: { company: string; website: string; context: string };
+  // A panel still being drafted in the room, so a reload carries on where it left off
+  resume: { input: BriefInput; draft: Draft; panel: DraftMember[] } | null;
 }
 
 // New rehearsal: describe the meeting, let n8n propose the panel, edit it on the table, then brief it.
-export function Brief({ sample }: Props) {
-  const [form, setForm] = useState({ company: "", website: "", context: "", name: "", email: "" });
-  const [proposal, setProposal] = useState<PanelProposal | null>(null);
-  const [members, setMembers] = useState<DraftMember[]>([]);
+// Every edit is saved to the room on the laptop, and the headset seats the panel as it changes.
+export function Brief({ sample, resume }: Props) {
+  const [form, setForm] = useState({
+    company: resume?.input.prospect.company ?? "",
+    website: resume?.input.prospect.website ?? "",
+    context: resume?.input.prospect.context ?? "",
+    name: resume?.input.presenter.name ?? "",
+    email: resume?.input.presenter.email ?? "",
+  });
+  const [proposal, setProposal] = useState<Draft | null>(resume?.draft ?? null);
+  const [members, setMembers] = useState<DraftMember[]>(resume?.panel ?? []);
   const [selection, setSelection] = useState<Selection>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<"saved" | "saving" | "failed">("saved");
+  const [headset, setHeadset] = useState(false);
   const [proposing, startProposing] = useTransition();
   const [briefing, startBriefing] = useTransition();
+
+  // Is the headset following the room? Checked every few seconds while editing.
+  useEffect(() => {
+    if (!proposal) return;
+    let live = true;
+    const check = async () => {
+      try {
+        const { connected } = await (await fetch("/api/room/headset", { cache: "no-store" })).json();
+        if (live) setHeadset(connected);
+      } catch {
+        if (live) setHeadset(false);
+      }
+    };
+    check();
+    const timer = setInterval(check, 4000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [proposal]);
+
+  // Save edits to the room, a moment after the last change
+  const lastSaved = useRef(JSON.stringify(members));
+  useEffect(() => {
+    const body = JSON.stringify(members);
+    if (!proposal || body === lastSaved.current) return;
+    setSaved("saving");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/room/panel", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ panel: members }) });
+        if (!res.ok) throw new Error((await res.json()).error);
+        lastSaved.current = body;
+        setSaved("saved");
+      } catch {
+        setSaved("failed");
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [members, proposal]);
 
   const input: BriefInput = {
     presenter: { name: form.name, email: form.email },
@@ -34,8 +86,11 @@ export function Brief({ sample }: Props) {
     startProposing(async () => {
       const res = await proposePanelAction(input);
       if (!res.ok) return setError(res.error);
+      const panel = res.value.members.map((m) => ({ ...m, difficulty: 2 as const }));
+      lastSaved.current = JSON.stringify(panel);
       setProposal(res.value);
-      setMembers(res.value.members.map((m) => ({ ...m, difficulty: 2 })));
+      setMembers(panel);
+      setSaved("saved");
     });
   }
 
@@ -48,13 +103,26 @@ export function Brief({ sample }: Props) {
     });
   }
 
+  // Someone new gets the chosen chair, a free colour and a free face (one with a portrait if there is one)
   function add(role: string, roleShort: string, why?: string) {
-    const seat: Seat | undefined =
-      selection?.kind === "seat" ? selection.seat : ALL_SEATS.find((s) => !members.some((m) => m.seat === s));
-    if (seat == null) return;
+    if (members.length >= MAX_PANEL) return;
+    const seat = selection?.kind === "seat" ? selection.seat : ALL_SEATS.find((s) => !members.some((m) => m.seat === s));
+    const color = ALL_COLORS.find((c) => !members.some((m) => m.color === c));
+    const free = AVATARS.filter((a) => !members.some((m) => m.avatar === a.id));
+    const avatar = (free.find((a) => a.portrait) ?? free[0])?.id;
+    if (seat == null || color == null || !avatar) return;
     const id = `p${Math.max(0, ...members.map((m) => Number(m.id.slice(1)) || 0)) + 1}`;
-    setMembers((ms) => [...ms, { id, seat, role, role_short: roleShort, display_name: "", difficulty: 2, why }]);
+    setMembers((ms) => [...ms, { id, seat, color, avatar, role, role_short: roleShort, display_name: "", difficulty: 2, why }]);
     setSelection({ kind: "person", id });
+  }
+
+  // Move someone to a chair; whoever sat there takes their old chair
+  function move(id: string, seat: Seat) {
+    setMembers((ms) => {
+      const from = ms.find((m) => m.id === id)?.seat;
+      if (from == null || from === seat) return ms;
+      return ms.map((m) => (m.id === id ? { ...m, seat } : m.seat === seat ? { ...m, seat: from } : m));
+    });
   }
 
   return (
@@ -65,9 +133,24 @@ export function Brief({ sample }: Props) {
           <span className="text-sm text-ink-2">{proposal ? `Pitch to ${form.company}` : "New rehearsal"}</span>
         </div>
         {proposal && (
-          <button type="button" onClick={() => { setProposal(null); setSelection(null); }} className="text-sm text-ink-2 hover:text-ink">
-            ← Change the meeting details
-          </button>
+          <div className="flex items-center gap-4">
+            <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs" aria-live="polite">
+              <span
+                aria-hidden="true"
+                className={`size-2 rounded-full ${saved === "failed" ? "bg-bad" : saved === "saving" ? "animate-pulse bg-warn" : headset ? "bg-good" : "bg-axis"}`}
+              />
+              {saved === "failed"
+                ? "Couldn't save the table"
+                : saved === "saving"
+                  ? "Saving…"
+                  : headset
+                    ? "Live in the headset"
+                    : "Saved. Headset not connected"}
+            </p>
+            <button type="button" onClick={() => { setProposal(null); setSelection(null); }} className="text-sm text-ink-2 hover:text-ink">
+              ← Change the meeting details
+            </button>
+          </div>
         )}
       </header>
 
@@ -120,7 +203,7 @@ export function Brief({ sample }: Props) {
         <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
           <section className="flex min-h-0 flex-col rounded-2xl border border-line bg-surface p-4" aria-label="The table">
             <div className="hidden min-h-0 flex-1 md:block">
-              <PanelTable members={members} selection={selection} onSelect={setSelection} />
+              <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} />
             </div>
           </section>
           <aside className="flex min-h-0 flex-col rounded-2xl border border-line bg-surface">
@@ -132,6 +215,7 @@ export function Brief({ sample }: Props) {
                 selection={selection}
                 onSelect={setSelection}
                 onChange={(id, patch) => setMembers((ms) => ms.map((m) => (m.id === id ? { ...m, ...patch } : m)))}
+                onMove={move}
                 onRemove={(id) => {
                   setMembers((ms) => ms.filter((m) => m.id !== id));
                   setSelection(null);
@@ -149,7 +233,7 @@ export function Brief({ sample }: Props) {
               >
                 {briefing ? "Briefing the panel…" : `Brief the panel (${members.length})`}
               </button>
-              <p className="text-xs text-muted">n8n writes each person&apos;s priorities and objections, then gives you a join code for the headset.</p>
+              <p className="text-xs text-muted">n8n writes each person&apos;s priorities and objections. Then put on the headset: they&apos;re already seated.</p>
             </footer>
           </aside>
         </main>

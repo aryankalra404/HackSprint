@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Persona, StakeholderVerdict, Verdict } from "@/lib/contract";
-import { portraitOf, seatColor } from "@/lib/personas";
+import { portraitOf, colorOf } from "@/lib/personas";
 
 export function Card({ title, aside, children, className = "" }: { title?: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -23,7 +23,7 @@ export function PersonaAvatar({
   size = 40,
   stance,
 }: {
-  persona: Pick<Persona, "display_name" | "seat"> & { avatar?: Persona["avatar"] };
+  persona: Pick<Persona, "display_name" | "color"> & { avatar?: Persona["avatar"] };
   size?: number | string;
   stance?: StakeholderVerdict["stance"];
 }) {
@@ -38,7 +38,7 @@ export function PersonaAvatar({
     <span aria-hidden="true" className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
       <span
         className="inline-flex size-full items-center justify-center overflow-hidden rounded-full bg-surface text-xs font-medium text-ink"
-        style={{ boxShadow: `0 0 0 2px ${seatColor(persona.seat)}` }}
+        style={{ boxShadow: `0 0 0 2px ${colorOf(persona.color)}` }}
       >
         {portrait ? (
           // eslint-disable-next-line @next/next/no-img-element -- small static files, sized by the parent
@@ -62,10 +62,10 @@ export function PersonaAvatar({
   );
 }
 
-export function RoleTag({ persona }: { persona: Pick<Persona, "seat" | "role_short"> }) {
+export function RoleTag({ persona }: { persona: Pick<Persona, "color" | "role_short"> }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
-      <span aria-hidden="true" className="size-2 rounded-full" style={{ background: seatColor(persona.seat) }} />
+      <span aria-hidden="true" className="size-2 rounded-full" style={{ background: colorOf(persona.color) }} />
       {persona.role_short}
     </span>
   );

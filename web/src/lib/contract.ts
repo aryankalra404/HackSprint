@@ -1,25 +1,33 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.4).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.5).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
 export type PersonaId = string;
 
-// Six panel seats in the VR boardroom, numbered by seniority (0 is the head of the table).
-export type Seat = 0 | 1 | 2 | 3 | 4 | 5;
+// Every chair at the boardroom table: 0 is the head, 1–4 the wall side, 5–8 the window side.
+export type Seat = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+// One colour per person (0–5), kept wherever they sit
+export type ColorIndex = 0 | 1 | 2 | 3 | 4 | 5;
 
 export type AvatarId =
+  | "business_female_01"
+  | "business_female_02"
+  | "business_female_03"
+  | "business_female_04"
   | "business_male_01"
   | "business_male_02"
   | "business_male_03"
   | "business_male_04"
-  | "business_female_01"
-  | "business_female_02"
-  | "business_female_03";
+  | "business_male_05"
+  | "business_male_06"
+  | "business_male_07";
 
-// Who sits where: shared by the /panel proposal, the edited /prep panel and the bundle personas.
+// Who sits where: shared by the /panel proposal, the room, the /prep panel and the bundle personas.
 export interface Seating {
   id: PersonaId;
   seat: Seat;
+  color: ColorIndex;
   role: string;
   role_short: string;
   display_name: string;
@@ -38,10 +46,9 @@ export interface BriefInput {
   prospect: { company: string; website: string; context: string };
 }
 
-// A panel member after the presenter's edits, as sent to /prep.
-// People the presenter added have no avatar or gender yet, and may have no name: n8n fills those in.
-export interface DraftMember extends Omit<PanelMember, "avatar" | "gender" | "why" | "source"> {
-  avatar?: AvatarId;
+// A panel member after the presenter's edits: in the room while drafting, and sent to /prep.
+// People the presenter added have no gender and may have no name: n8n fills those in.
+export interface DraftMember extends Omit<PanelMember, "gender" | "why" | "source"> {
   gender?: PanelMember["gender"];
   why?: string;
   source?: PanelMember["source"];
@@ -79,7 +86,6 @@ export interface Drill {
 
 export interface Bundle {
   session_id: string;
-  join_code: string;
   prospect: { company: string };
   slides: Slide[];
   personas: Persona[];
@@ -174,4 +180,14 @@ export type DebriefedSession = SessionRecord & { telemetry: Telemetry; debrief: 
 
 export function isDebriefed(s: SessionRecord): s is DebriefedSession {
   return s.telemetry != null && s.debrief != null;
+}
+
+// The one room, held by the laptop (contract: Room API). The headset seats `panel` live.
+export interface Room {
+  version: number;
+  phase: "empty" | "drafting" | "briefed" | "live" | "done";
+  prospect: { company: string } | null;
+  panel: DraftMember[];
+  bundle: Bundle | null;
+  session_id: string | null;
 }

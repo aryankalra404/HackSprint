@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { demoSession } from "@/lib/mock/session";
-import { portraitOf, seatColor } from "@/lib/personas";
+import { portraitOf, colorOf } from "@/lib/personas";
 
 // An example panel, as n8n proposed it for the sample prospect
 const PANEL = [...demoSession.bundle.personas].sort((a, b) => a.seat - b.seat);
@@ -59,7 +59,7 @@ export default function Home() {
             <li key={p.id} className="flex flex-col gap-3">
               <span className="relative aspect-square overflow-hidden rounded-2xl bg-ink">
                 <Image src={portraitOf(p.avatar) ?? ""} alt="" fill sizes="(min-width: 1024px) 220px, 45vw" className="object-cover" />
-                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1" style={{ background: seatColor(p.seat) }} />
+                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1" style={{ background: colorOf(p.color) }} />
               </span>
               <span className="flex flex-col">
                 <span className="font-display text-base">{p.display_name}</span>
