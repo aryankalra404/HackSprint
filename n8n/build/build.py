@@ -128,11 +128,11 @@ return $input.all().map(({ json: e }) => {
         "httpMethod": "POST", "path": "dryrun/add-meeting", "responseMode": "onReceived", "options": {},
     }, [{"body": {"company": "Delhivery", "context": "", "attendees": []}}])
     c += code_node("shapeRequest", "Shape the request", """
-// The web app sends { title, start, company, website, context, attendees: [{ name, email }], owner_email }
+// The web app sends { id, title, start, company, website, context, attendees: [{ name, email }], owner_email }
 return $input.all().map(({ json }) => {
   const b = json.body || json;
   return { json: {
-    meeting_id: 'web-' + Date.now(),
+    meeting_id: b.id || ('web-' + Date.now()),
     title: b.title || ('Meeting with ' + (b.company || 'a prospect')),
     start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),
     description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.context].filter(Boolean).join('\\n').slice(0, 4000),
@@ -197,25 +197,32 @@ return [{ json: { ...prev, research, sources } }];""", [{"meeting": MEETING, "em
                      ".replace('{meeting}', JSON.stringify($json.meeting)).replace('{emails}', $json.emails).replace('{research}', $json.research) }] }], "
                      "generationConfig: { responseMimeType: 'application/json', responseSchema: " + js_obj(BRIEF_SCHEMA) + " } }) }}", GEMINI_REPLY)
     c += code_node("seatPanel", "Seat the panel", """
-// Give everyone a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md)
+// The brief keeps only real attendees; the practice panel (attendees plus hypothetical roles) is for rehearsal in the web app.
+// Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).
 const prev = $('Read the research').first().json;
 const parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];
 const b = JSON.parse(parts.map(p => p.text || '').join('') || '{}');
+const attendees = (b.attendees || []).filter(a => a.name);
+const practice = (b.practice_panel || []).slice(0, Math.max(0, 6 - attendees.length));
 const SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];
 const FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],
                 male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };
 const used = { female: 0, male: 0 };
-const members = (b.panel || []).slice(0, 6).map((p, i) => {
-  let g = p.gender === 'female' ? 'female' : 'male';
+const face = gender => {
+  let g = gender === 'female' ? 'female' : 'male';
   if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';
-  const avatar = FACES[g][used[g]];
+  const f = FACES[g][used[g]];
   used[g] += 1;
-  return { id: 'p' + (i + 1), seat: SEATS[i], color: i, role: p.role, role_short: p.role_short, display_name: p.name,
-           gender: p.gender, avatar, why: p.why, source: p.source, cares_about: p.cares_about, will_push_on: p.will_push_on };
-});
+  return f;
+};
+const short = role => (role || 'Guest').length <= 12 ? (role || 'Guest') : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);
+const people = attendees.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || 'Attendee', role_short: short(a.role), gender: a.gender,
+  why: 'In the meeting invite', source: 'email', will_push_on: a.likely_focus }));
+const extra = practice.map(p => ({ display_name: p.name, role: p.role, role_short: p.role_short, gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on }));
+const members = people.concat(extra).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));
 const brief = {
   summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },
-  people: members.map(m => ({ name: m.display_name, role: m.role, cares_about: m.cares_about, will_push_on: m.will_push_on })),
+  attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),
   questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 8),
 };
 const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [] };
@@ -231,12 +238,17 @@ return [{ json: { meeting_id: m.meeting_id, status: 'ready', brief: JSON.stringi
         "subject": Expr("Your brief for {{ $('Seat the panel').first().json.meeting.title }} is ready"),
         "emailType": "html",
         "message": Expr("{{ (() => { const s = $('Seat the panel').first().json; const m = s.meeting; const b = s.brief; "
-                        "const li = xs => '<ul>' + xs.map(x => '<li>' + x + '</li>').join('') + '</ul>'; "
-                        "return '<h2>' + m.title + ' with ' + m.company + '</h2><p>' + b.summary + '</p>'"
-                        " + '<h3>Who will push on what</h3>' + li(b.people.map(p => '<b>' + p.name + '</b> (' + p.role + '): ' + p.will_push_on))"
-                        " + '<h3>The hardest questions</h3>' + li(b.questions.map(q => '<b>' + q.asked_by + ':</b> ' + q.question))"
-                        " + '<h3>What could lose it</h3>' + li(b.risks)"
-                        " + '<p><a href=\"" + APP_URL + "/m/' + encodeURIComponent(m.meeting_id) + '\">Open the brief and rehearse</a></p>'; })() }}"),
+                        "const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); "
+                        "const li = xs => xs.length ? '<ul>' + xs.join('') + '</ul>' : '<p>None found.</p>'; "
+                        "const names = b.attendees.map(a => a.name); "
+                        "return '<h2>' + esc(m.title) + ' with ' + esc(m.company) + '</h2><p>' + esc(b.summary) + '</p>'"
+                        " + '<h3>Who is coming</h3>' + li(b.attendees.map(a => '<li><b>' + esc(a.name) + '</b>' + (a.role ? ' (' + esc(a.role) + ')' : '') + '. Likely focus: ' + esc(a.likely_focus) + '</li>'))"
+                        " + '<h3>Questions likely to come up</h3>' + li(b.questions.map(q => '<li>' + esc(q.question) + (names.includes(q.asked_by) ? ' <i>(likely from ' + esc(q.asked_by) + ')</i>' : '') + '<br><small>Suggested answer: ' + esc(q.suggested_answer) + '</small></li>'))"
+                        " + '<h3>What could lose it</h3>' + li(b.risks.map(r => '<li>' + esc(r) + '</li>'))"
+                        " + '<h3>Recent news about ' + esc(m.company) + '</h3>' + li(b.company.recent_news.map(n => '<li>' + esc(n.date) + ': ' + esc(n.text) + '</li>'))"
+                        " + '<p><small>Sources: ' + b.sources.map(x => '<a href=\"' + x.url + '\">' + esc(x.title || 'link') + '</a>').join(', ') + '</small></p>'"
+                        " + '<p><a href=\"" + APP_URL + "/m/' + encodeURIComponent(m.meeting_id) + '\">Open the brief and practise in DryRun</a>. "
+                        "The practice panel there adds hypothetical roles to rehearse against.</p>'; })() }}"),
         "options": {"appendAttribution": False},
     }, [{"id": "msg1"}], credentials={"gmailOAuth2": "Gmail"})
     c += ("const about = sticky('## DryRun prep\\nSpots important meetings on your calendar and prepares you for them: decides if it is worth it, "
