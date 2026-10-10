@@ -120,3 +120,14 @@ export function StancePill({ stance }: { stance: StakeholderVerdict["stance"] })
   const [tone, label] = STANCE[stance];
   return <Pill tone={tone}>{label}</Pill>;
 }
+
+// Compact form for tight spaces: icon and label in the status colour, sized by the parent
+export function StanceText({ stance }: { stance: StakeholderVerdict["stance"] }) {
+  const [tone, label] = STANCE[stance];
+  return (
+    <span className={`inline-flex items-center gap-[0.25em] font-medium ${TONE[tone].ink}`}>
+      <StatusIcon tone={tone} className="size-[1.1em]" />
+      {label}
+    </span>
+  );
+}

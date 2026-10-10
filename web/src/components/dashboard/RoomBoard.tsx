@@ -1,10 +1,11 @@
 import type { PersonaId, SessionRecord } from "@/lib/contract";
 import { PERSONA_STYLE, PRESENTER_SEAT, SEATS, TABLE } from "@/lib/personas";
-import { PersonaAvatar, StancePill, StatusIcon } from "../ui";
+import { PersonaAvatar, StanceText, StatusIcon } from "../ui";
 
 // Overhead plan of the VR boardroom, drawn on a fixed 1000 x 560 canvas that scales with the screen.
 // Room z runs left to right (presenter at the screen end), room x top to bottom.
 // The short axis is stretched a little so the name cards fit on the table.
+// Name cards are narrower than the gap between chairs, so every chair can be filled without overlap.
 const W = 1000;
 const H = 560;
 const Z = [-8.35, -0.75];
@@ -13,6 +14,7 @@ const u = (z: number) => ((z - Z[0]) / (Z[1] - Z[0])) * W;
 const v = (x: number) => ((x - X[0]) / (X[1] - X[0])) * H;
 const pct = (n: number, of: number) => `${(n / of) * 100}%`;
 const LOW_SHARE = 0.1;
+const CARD_W = 126;
 
 const TABLE_BOX = { x: u(TABLE.zMin), y: v(TABLE.xMin), w: u(TABLE.zMax) - u(TABLE.zMin), h: v(TABLE.xMax) - v(TABLE.xMin) };
 const TABLE_MID = v((TABLE.xMin + TABLE.xMax) / 2);
@@ -87,9 +89,12 @@ export function RoomBoard({ session, onOpen }: Props) {
         </svg>
 
         {debrief ? (
-          <p className="absolute top-0 left-0 font-display text-[2.6cqw] leading-none">
-            {backing} of {debrief.stakeholders.length} would back this
-          </p>
+          <div className="absolute top-0 left-0 flex flex-col gap-[0.6cqw]">
+            <p className="font-display text-[2.6cqw] leading-none">
+              {backing} of {debrief.stakeholders.length} would back this
+            </p>
+            {dwell && <p className="text-[1.1cqw] text-ink-2">Lines and percentages show where your eye contact went.</p>}
+          </div>
         ) : (
           <p
             className="absolute flex -translate-x-1/2 -translate-y-1/2 items-baseline gap-[1cqw] text-[1.2cqw] whitespace-nowrap text-[#6b5641]"
@@ -112,12 +117,13 @@ export function RoomBoard({ session, onOpen }: Props) {
           const side = sideOf(seat.x, seat.z);
           const verdict = debrief?.stakeholders.find((s) => s.persona_id === p.id);
           const s = share(p.id);
+          // Flush with the table edge in front of the seat; the head of the table gets it under the chair
           const card =
             side === "head"
-              ? { left: u(seat.z) - 10, top: v(seat.x) + 62, anchor: "-translate-x-1/2" }
+              ? { left: u(seat.z), top: v(seat.x) + 58, anchor: "-translate-x-1/2" }
               : side === "top"
-                ? { left: u(seat.z), top: TABLE_BOX.y + 14, anchor: "-translate-x-1/2" }
-                : { left: u(seat.z), top: TABLE_BOX.y + TABLE_BOX.h - 14, anchor: "-translate-x-1/2 -translate-y-full" };
+                ? { left: u(seat.z), top: TABLE_BOX.y + 10, anchor: "-translate-x-1/2" }
+                : { left: u(seat.z), top: TABLE_BOX.y + TABLE_BOX.h - 10, anchor: "-translate-x-1/2 -translate-y-full" };
           return (
             <div key={p.id}>
               <button
@@ -133,18 +139,18 @@ export function RoomBoard({ session, onOpen }: Props) {
               <button
                 type="button"
                 onClick={() => onOpen(p.id)}
-                className={`absolute flex w-[16cqw] flex-col gap-[0.35cqw] rounded-[0.6cqw] border border-[#d8c4a4] bg-surface/95 px-[0.9cqw] py-[0.7cqw] text-left shadow-[0_1px_0_#cdb48f] hover:border-ink ${card.anchor}`}
-                style={{ left: pct(card.left, W), top: pct(card.top, H) }}
+                className={`absolute flex flex-col gap-[0.2cqw] rounded-[0.6cqw] border border-[#d8c4a4] bg-surface/95 px-[0.8cqw] py-[0.6cqw] text-left shadow-[0_1px_0_#cdb48f] hover:border-ink ${card.anchor}`}
+                style={{ left: pct(card.left, W), top: pct(card.top, H), width: pct(CARD_W, W) }}
               >
-                <span className="truncate font-display text-[1.3cqw] leading-tight">{p.display_name}</span>
-                <span className="truncate text-[1.05cqw] leading-tight text-muted">{PERSONA_STYLE[p.id].role}</span>
+                <span className="truncate font-display text-[1.25cqw] leading-tight">{p.display_name}</span>
+                <span className="truncate text-[0.9cqw] leading-tight text-muted">{PERSONA_STYLE[p.id].role}</span>
                 {verdict && (
-                  <span className="flex flex-wrap items-center justify-between gap-[0.3cqw] text-[1.05cqw]">
-                    <StancePill stance={verdict.stance} />
+                  <span className="mt-[0.2cqw] flex items-center justify-between gap-[0.4cqw] text-[1cqw] leading-tight whitespace-nowrap">
+                    <StanceText stance={verdict.stance} />
                     {s != null && (
-                      <span className={`inline-flex items-center gap-1 ${s < LOW_SHARE ? "text-warn-ink" : "text-ink-2"}`}>
-                        {s < LOW_SHARE && <StatusIcon tone="warn" className="size-3" />}
-                        {Math.round(s * 100)}% eyes
+                      <span className={`inline-flex items-center gap-[0.2em] ${s < LOW_SHARE ? "text-warn-ink" : "text-ink-2"}`} title="Share of your eye contact">
+                        {s < LOW_SHARE && <StatusIcon tone="warn" className="size-[1em]" />}
+                        {Math.round(s * 100)}%
                       </span>
                     )}
                   </span>
