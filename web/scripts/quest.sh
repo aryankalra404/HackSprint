@@ -13,8 +13,8 @@ fi
 adb reverse tcp:3000 tcp:3000
 echo "Headset linked: it reaches this laptop at http://localhost:3000"
 if command -v scrcpy >/dev/null 2>&1; then
-  # Quest renders both eyes side by side; crop to the left eye for a normal-looking mirror
-  exec scrcpy --crop 1920:1832:0:0 --max-fps 60 --window-title "DryRun headset"
+  # Shows both eyes side by side. To show one eye, add --crop W:H:X:Y once tried on the headset.
+  exec scrcpy --max-fps 60 --window-title "DryRun headset"
 else
   echo "To mirror the headset on the big screen, install scrcpy (brew install scrcpy) and run this again."
 fi
