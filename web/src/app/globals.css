@@ -1,19 +1,16 @@
 @import "tailwindcss";
 
-/* DryRun visual system, taken from the VR boardroom: daylight through glass, slate, a walnut table.
-   One typeface (Archivo); its wide cut is for names, numbers and headings, like boardroom signage.
-   Light only: it projects best on a hall screen. */
+/* DryRun visual system: a briefing file. Paper, ink, one signal colour.
+   One typeface (Archivo); its wide cut is for names, numbers and headings.
+   Light only for now: it projects best on a hall screen. */
 @theme {
-  --color-paper: #e9edf0;
+  --color-paper: #f5f5f2;
   --color-surface: #ffffff;
-  --color-ink: #18212b;
-  --color-ink-2: #46525e;
-  --color-muted: #5c6874;
-  --color-line: #d3d9de;
-  --color-axis: #aeb7bf;
-  --color-walnut: #5b3b28;
-  --color-walnut-light: #e8d9cc;
-  --color-glass: #c4dbe8;
+  --color-ink: #0b0b0b;
+  --color-ink-2: #52514e;
+  --color-muted: #6f6d68;
+  --color-line: #e1e0d9;
+  --color-axis: #c3c2b7;
 
   /* Status: always shown with an icon and a label, never colour alone */
   --color-good: #0ca30c;
