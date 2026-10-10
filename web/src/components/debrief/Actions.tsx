@@ -21,7 +21,7 @@ export function Actions({ debrief, bundle }: { debrief: Debrief; bundle: Bundle 
         {focus?.display_name ?? PERSONA_STYLE[drill.focus_persona].short} ({PERSONA_STYLE[drill.focus_persona].role}).
       </p>
       <p className="mt-4 rounded-xl bg-paper px-4 py-3 text-sm">
-        In the headset, enter code <span className="font-mono text-base font-medium tracking-widest">{bundle.join_code}</span>
+        In the headset, enter code <span className="text-base font-medium tracking-widest">{bundle.join_code}</span>
       </p>
       <ul className="mt-4 flex flex-col gap-1.5 border-t border-line pt-4">
         {debrief.actions_taken.map((a) => (

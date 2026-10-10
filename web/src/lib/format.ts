@@ -6,3 +6,7 @@ export function clock(seconds: number): string {
 export function slideLabel(index: number): string {
   return `Slide ${index + 1}`;
 }
+
+export function momentLabel(t: number, slideIndex: number): string {
+  return `${slideLabel(slideIndex)} at ${clock(t)}`;
+}

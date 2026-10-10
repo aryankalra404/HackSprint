@@ -18,7 +18,7 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
   const presenter = px(PRESENTER_SEAT);
 
   return (
-    <Card title="Eye contact" aside={<span className="font-mono text-xs text-muted">VR only</span>}>
+    <Card title="Eye contact" aside={<span className="text-xs text-muted">VR only</span>}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Top-down map of the boardroom showing how your eye contact was shared. Values are listed below.">
         <rect
           x={(TABLE.zMin - Z0) * S}
@@ -55,7 +55,7 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
                 x={seat.cx}
                 y={above ? seat.cy - 20 : seat.cy + 29}
                 textAnchor="middle"
-                className="fill-ink font-mono text-[11px]"
+                className="fill-ink text-[11px]"
               >
                 {PERSONA_STYLE[r.id].short} {Math.round(r.share * 100)}%
               </text>
@@ -63,20 +63,20 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
           );
         })}
         <circle cx={presenter.cx} cy={presenter.cy} r={9} fill="var(--color-ink)" />
-        <text x={presenter.cx} y={presenter.cy + 26} textAnchor="middle" className="fill-ink-2 font-mono text-[11px]">You</text>
+        <text x={presenter.cx} y={presenter.cy + 26} textAnchor="middle" className="fill-ink-2 text-[11px]">You</text>
       </svg>
 
       <ul className="mt-4 flex flex-col gap-1.5">
         {[...rows].sort((a, b) => b.share - a.share).map((r) => (
           <li key={r.id} className="flex items-center gap-2 text-sm">
             <span aria-hidden="true" className="size-2 rounded-full" style={{ background: PERSONA_STYLE[r.id].color }} />
-            <span className="flex-1">{r.display_name} <span className="text-muted">· {PERSONA_STYLE[r.id].short}</span></span>
+            <span className="flex-1">{r.display_name} <span className="text-muted">{PERSONA_STYLE[r.id].short}</span></span>
             {r.share < LOW_SHARE && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-warn-ink">
                 <StatusIcon tone="warn" className="size-3" /> Barely looked
               </span>
             )}
-            <span className="w-10 text-right font-mono tabular-nums">{Math.round(r.share * 100)}%</span>
+            <span className="w-10 text-right tabular-nums">{Math.round(r.share * 100)}%</span>
           </li>
         ))}
       </ul>

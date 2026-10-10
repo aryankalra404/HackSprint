@@ -1,6 +1,6 @@
 import type { Bundle, StakeholderVerdict } from "@/lib/contract";
 import { PERSONA_STYLE } from "@/lib/personas";
-import { clock, slideLabel } from "@/lib/format";
+import { momentLabel } from "@/lib/format";
 import { Card, PersonaAvatar, StancePill } from "../ui";
 
 export function Stakeholders({
@@ -37,9 +37,9 @@ export function Stakeholders({
                   <button
                     type="button"
                     onClick={() => onSelect(s.deciding_moment!.t, s.deciding_moment!.quote)}
-                    className="w-fit font-mono text-xs text-ink-2 underline decoration-axis underline-offset-4 hover:text-ink hover:decoration-ink"
+                    className="w-fit text-xs text-ink-2 underline decoration-axis underline-offset-4 hover:text-ink hover:decoration-ink"
                   >
-                    {clock(s.deciding_moment.t)} · {slideLabel(s.deciding_moment.slide_index)}
+                    {momentLabel(s.deciding_moment.t, s.deciding_moment.slide_index)}
                   </button>
                 )}
               </div>

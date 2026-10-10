@@ -4,11 +4,11 @@ import { getSession } from "@/lib/api";
 import { isDebriefed } from "@/lib/contract";
 import { DebriefView } from "@/components/debrief/DebriefView";
 
-export const metadata = { title: "Report · DryRun" };
+export const metadata = { title: "DryRun report" };
 
 export default function ReportPage({ params }: PageProps<"/s/[sessionId]/report">) {
   return (
-    <Suspense fallback={<p className="px-8 py-24 font-mono text-sm text-muted">Loading report…</p>}>
+    <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Loading report…</p>}>
       {params.then(({ sessionId }) => (
         <Report sessionId={sessionId} />
       ))}

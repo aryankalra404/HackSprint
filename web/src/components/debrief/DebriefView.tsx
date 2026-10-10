@@ -44,8 +44,8 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
     <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-8 sm:py-10">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <Link href="/" className="font-display text-2xl">DryRun</Link>
-        <p className="font-mono text-xs text-ink-2">
-          Pitch to {bundle.prospect.company} · Session {sessionNumber} · {telemetry.client === "vr" ? "VR boardroom" : "Browser"}
+        <p className="text-xs text-ink-2">
+          Pitch to {bundle.prospect.company}, session {sessionNumber} {telemetry.client === "vr" ? "in the VR boardroom" : "in the browser"}
         </p>
         <nav className="flex gap-2 print:hidden">
           <Link href={`/s/${bundle.session_id}`} className="rounded-full border border-line bg-surface px-4 py-2 text-sm hover:border-ink">

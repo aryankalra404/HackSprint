@@ -30,11 +30,11 @@ export function RoomBoard({ session, onOpen }: Props) {
           y={top(TABLE.xMin)}
           width={left(TABLE.zMax) - left(TABLE.zMin)}
           height={top(TABLE.xMax) - top(TABLE.xMin)}
-          rx={1.5}
-          fill="var(--color-paper)"
-          stroke="var(--color-line)"
-          vectorEffect="non-scaling-stroke"
+          rx={2}
+          fill="var(--color-walnut)"
         />
+        {/* Window wall along the far side */}
+        <rect x={0} y={97.5} width={100} height={2.5} fill="var(--color-glass)" />
         {bundle.personas.map((p) => {
           const s = share(p.id);
           if (s == null) return null;
@@ -46,7 +46,7 @@ export function RoomBoard({ session, onOpen }: Props) {
               x2={left(SEATS[p.id].z)}
               y2={top(SEATS[p.id].x)}
               stroke={PERSONA_STYLE[p.id].color}
-              strokeOpacity={0.45}
+              strokeOpacity={0.6}
               strokeWidth={2 + s * 26}
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
@@ -61,10 +61,13 @@ export function RoomBoard({ session, onOpen }: Props) {
         style={{ left: `${(left(TABLE.zMin) + left(TABLE.zMax)) / 2 - 6}%`, top: `${(top(TABLE.xMin) + top(TABLE.xMax)) / 2}%` }}
       >
         {debrief ? (
-          <p className="rounded-lg bg-paper px-3 py-1 font-display text-2xl xl:text-3xl">{backing} of {debrief.stakeholders.length} would back this</p>
+          <p className="rounded-lg bg-walnut px-4 py-2 font-display text-2xl text-walnut-light xl:text-3xl">
+            {backing} of {debrief.stakeholders.length} would back this
+          </p>
         ) : (
-          <p className="font-mono text-xs uppercase tracking-widest text-muted">
-            Join code <span className="block font-mono text-3xl font-medium tracking-[0.3em] text-ink xl:text-4xl">{bundle.join_code}</span>
+          <p className="flex flex-col items-center gap-1 text-sm text-walnut-light">
+            Join in the headset with
+            <span className="font-display text-5xl tracking-[0.2em] text-surface xl:text-6xl">{bundle.join_code}</span>
           </p>
         )}
       </div>
@@ -72,7 +75,7 @@ export function RoomBoard({ session, onOpen }: Props) {
       {/* Presenter */}
       <div className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1" style={{ left: `${presenter.x}%`, top: `${presenter.y}%` }}>
         <span className="size-5 rounded-full bg-ink" aria-hidden="true" />
-        <span className="font-mono text-xs text-ink-2">You</span>
+        <span className="text-xs text-ink-2">You</span>
       </div>
 
       {/* Seats */}
@@ -85,21 +88,21 @@ export function RoomBoard({ session, onOpen }: Props) {
             key={p.id}
             type="button"
             onClick={() => onOpen(p.id)}
-            className="absolute flex w-[23%] max-w-60 -translate-x-1/2 -translate-y-1/2 flex-col gap-2 rounded-xl border border-line bg-surface p-3 text-left shadow-sm hover:border-ink"
+            className="absolute flex w-[23%] max-w-60 -translate-x-1/2 -translate-y-1/2 flex-col gap-2 rounded-md border border-line bg-surface p-3 text-left hover:border-ink"
             style={{ left: `${left(SEATS[p.id].z)}%`, top: `${top(SEATS[p.id].x)}%` }}
           >
             <span className="flex items-center gap-2">
               <PersonaAvatar id={p.id} name={p.display_name} size={32} />
               <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{p.display_name}</span>
-                <span className="block font-mono text-[11px] text-muted">{PERSONA_STYLE[p.id].short}</span>
+                <span className="block truncate font-display text-sm">{p.display_name}</span>
+                <span className="block truncate text-xs text-muted">{PERSONA_STYLE[p.id].role}</span>
               </span>
             </span>
             {verdict ? (
               <span className="flex flex-wrap items-center justify-between gap-1">
                 <StancePill stance={verdict.stance} />
                 {s != null && (
-                  <span className={`inline-flex items-center gap-1 font-mono text-[11px] ${s < LOW_SHARE ? "text-warn-ink" : "text-ink-2"}`}>
+                  <span className={`inline-flex items-center gap-1 text-[11px] ${s < LOW_SHARE ? "text-warn-ink" : "text-ink-2"}`}>
                     {s < LOW_SHARE && <StatusIcon tone="warn" className="size-3" />}
                     {Math.round(s * 100)}% eye contact
                   </span>

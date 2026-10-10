@@ -47,7 +47,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
             {personasPresent.map((id) => (
               <li key={id}><RoleTag id={id} /></li>
             ))}
-            <li className="inline-flex items-center gap-1.5 font-mono text-xs text-ink-2">
+            <li className="inline-flex items-center gap-1.5 text-xs text-ink-2">
               <span aria-hidden="true" className="h-2 w-4 rounded-sm bg-warn" /> Freeze + rescue cue
             </li>
           </ul>
@@ -55,7 +55,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
       >
         <div className="overflow-x-auto pt-2">
           <div className="flex min-w-[720px] gap-3">
-            <div className="flex w-20 shrink-0 flex-col font-mono text-xs text-muted" aria-hidden="true">
+            <div className="flex w-20 shrink-0 flex-col text-xs text-muted" aria-hidden="true">
               <span className="flex h-11 items-center">Slides</span>
               <span className="flex h-[84px] items-center">Questions</span>
               <span className="flex h-9 items-center">Freezes</span>
@@ -72,16 +72,16 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
                       key={s.slide_index}
                       type="button"
                       onClick={() => onSelect({ t: s.start, momentId: null })}
-                      title={`${slideLabel(s.slide_index)}: ${s.title} · ${clock(s.end - s.start)} (target ${clock(s.target)})`}
+                      title={`${slideLabel(s.slide_index)}: ${s.title}. ${clock(s.end - s.start)} against a ${clock(s.target)} target`}
                       className="absolute inset-y-0 flex items-center justify-between gap-1 overflow-hidden rounded-sm border-r-2 border-surface bg-paper px-2 text-left text-xs hover:bg-line"
                       style={{ left: pct(s.start, duration), width: `${width}%` }}
                     >
                       <span className="truncate">
-                        <span className="font-mono text-muted">{s.slide_index + 1}</span>
+                        <span className="text-muted">{s.slide_index + 1}</span>
                         {width > 11 && <span className="ml-1.5">{s.title}</span>}
                       </span>
                       {s.target > 0 && over > s.target * 0.3 && width > 7 && (
-                        <span className="shrink-0 font-mono text-warn-ink">+{Math.round(over)}s</span>
+                        <span className="shrink-0 text-warn-ink">+{Math.round(over)}s</span>
                       )}
                     </button>
                   );
@@ -104,7 +104,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
                         onClick={() => onSelect({ t: x.t, momentId: x.id })}
                         aria-label={`${clock(x.t)}: ${persona?.display_name ?? PERSONA_STYLE[x.persona_id].short} asked a question${x.answer?.verdict ? `, ${x.answer.verdict}` : ""}`}
                         aria-pressed={selected}
-                        className={`flex h-7 items-center gap-1.5 rounded-full border bg-surface px-2.5 font-mono text-xs ${selected ? "border-ink ring-2 ring-ink" : "border-line hover:border-ink"}`}
+                        className={`flex h-7 items-center gap-1.5 rounded-full border bg-surface px-2.5 text-xs ${selected ? "border-ink ring-2 ring-ink" : "border-line hover:border-ink"}`}
                       >
                         <span aria-hidden="true" className="size-2 rounded-full" style={{ background: PERSONA_STYLE[x.persona_id].color }} />
                         {PERSONA_STYLE[x.persona_id].short}
@@ -114,7 +114,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
                         role="tooltip"
                         className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden w-56 -translate-x-1/2 rounded-lg bg-ink px-3 py-2 text-xs text-surface group-hover:block"
                       >
-                        <span className="font-mono text-axis">{clock(x.t)}</span> {x.question}
+                        <span className="text-axis">{clock(x.t)}</span> {x.question}
                       </span>
                     </div>
                   );
@@ -142,7 +142,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
                         role="tooltip"
                         className="pointer-events-none absolute bottom-full left-0 z-10 mb-1.5 hidden w-48 rounded-lg bg-ink px-3 py-2 text-xs text-surface group-hover:block"
                       >
-                        <span className="font-mono text-axis">{clock(f.t)}</span> Froze {f.duration_s.toFixed(1)} s · {RESCUE_LABEL[f.rescue_level]}
+                        <span className="text-axis">{clock(f.t)}</span> Froze {f.duration_s.toFixed(1)} s, then {RESCUE_LABEL[f.rescue_level].toLowerCase()}
                       </span>
                     </div>
                   );
@@ -152,7 +152,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
               {/* Axis */}
               <div className="relative h-5 border-t border-axis" aria-hidden="true">
                 {ticks.map((t) => (
-                  <span key={t} className="absolute top-1 -translate-x-1/2 font-mono text-[11px] tabular-nums text-muted first:translate-x-0" style={{ left: pct(t, duration) }}>
+                  <span key={t} className="absolute top-1 -translate-x-1/2 text-[11px] tabular-nums text-muted first:translate-x-0" style={{ left: pct(t, duration) }}>
                     {clock(t)}
                   </span>
                 ))}
@@ -189,8 +189,8 @@ function Detail({ bundle, segments, exchanges, freezes, selection }: Omit<Props,
 
   return (
     <div className="mt-5 flex flex-col gap-4 border-t border-line pt-5" aria-live="polite">
-      <p className="font-mono text-xs text-ink-2">
-        {clock(selection.t)} · {slideLabel(slideIndex)} · {segment?.title}
+      <p className="text-xs text-ink-2">
+        {slideLabel(slideIndex)}: {segment?.title}, at {clock(selection.t)}
       </p>
 
       {exchange && <ExchangeDetail bundle={bundle} exchange={exchange} />}
@@ -234,13 +234,13 @@ function ExchangeDetail({ bundle, exchange }: { bundle: Bundle; exchange: Exchan
         </div>
         <p className="font-display text-2xl leading-snug">{exchange.question}</p>
         <div className="rounded-xl bg-paper p-3">
-          <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-muted">Why they asked</p>
+          <p className="mb-1 text-xs font-semibold text-ink-2">Why they asked</p>
           <p className="text-sm text-ink-2">{exchange.reason}</p>
         </div>
       </div>
       <div className="flex flex-col gap-3">
-        <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
-          Your answer{exchange.answer && ` · ${clock(exchange.answer.t)}`}
+        <p className="text-xs font-semibold text-ink-2">
+          Your answer{exchange.answer && `, at ${clock(exchange.answer.t)}`}
         </p>
         {exchange.answer ? (
           <>

@@ -7,7 +7,7 @@ export function Card({ title, aside, children, className = "" }: { title?: strin
     <section className={`rounded-2xl border border-line bg-surface p-5 sm:p-6 ${className}`}>
       {(title || aside) && (
         <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          {title && <h2 className="font-mono text-xs uppercase tracking-widest text-ink-2">{title}</h2>}
+          {title && <h2 className="text-sm font-semibold text-ink">{title}</h2>}
           {aside}
         </header>
       )}
@@ -25,7 +25,7 @@ export function PersonaAvatar({ id, name, size = 40 }: { id: PersonaId; name: st
   return (
     <span
       aria-hidden="true"
-      className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface font-mono text-xs font-medium text-ink"
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface text-xs font-medium text-ink"
       style={{ width: size, height: size, boxShadow: `inset 0 0 0 2px ${PERSONA_STYLE[id].color}` }}
     >
       {initials}
@@ -35,7 +35,7 @@ export function PersonaAvatar({ id, name, size = 40 }: { id: PersonaId; name: st
 
 export function RoleTag({ id }: { id: PersonaId }) {
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-xs text-ink-2">
+    <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
       <span aria-hidden="true" className="size-2 rounded-full" style={{ background: PERSONA_STYLE[id].color }} />
       {PERSONA_STYLE[id].short}
     </span>

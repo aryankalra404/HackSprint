@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { PersonaId, SessionRecord } from "@/lib/contract";
 import { PERSONA_STYLE } from "@/lib/personas";
-import { clock, slideLabel } from "@/lib/format";
+import { momentLabel, slideLabel } from "@/lib/format";
 import { exchanges } from "@/lib/timeline";
 import { PersonaAvatar, StancePill, VerdictPill } from "../ui";
 
@@ -49,7 +49,7 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
         )}
 
         <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted">Cares about</h3>
+          <h3 className="mb-2 text-xs font-semibold text-ink-2">Cares about</h3>
           <ul className="list-disc pl-5 text-sm">
             {persona.priorities.map((p) => (
               <li key={p}>{p}</li>
@@ -58,13 +58,13 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
         </section>
 
         <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted">Will push on</h3>
+          <h3 className="mb-2 text-xs font-semibold text-ink-2">Will push on</h3>
           <ul className="flex flex-col gap-3">
             {persona.objections.map((o) => (
               <li key={o.text} className="text-sm">
                 <p>{o.text}</p>
-                <p className="mt-0.5 font-mono text-[11px] text-muted">
-                  {slideLabel(o.slide_index)} · {SOURCE_LABEL[o.source]}
+                <p className="mt-0.5 text-[11px] text-muted">
+                  {SOURCE_LABEL[o.source]}, about {slideLabel(o.slide_index).toLowerCase()}
                 </p>
               </li>
             ))}
@@ -73,11 +73,11 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
 
         {asked.length > 0 && (
           <section>
-            <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted">In the session</h3>
+            <h3 className="mb-2 text-xs font-semibold text-ink-2">In the session</h3>
             <ul className="flex flex-col gap-4">
               {asked.map((x) => (
                 <li key={x.id} className="flex flex-col gap-1.5 text-sm">
-                  <p className="font-mono text-[11px] text-muted">{clock(x.t)} · {slideLabel(x.slide_index)}</p>
+                  <p className="text-[11px] text-muted">{momentLabel(x.t, x.slide_index)}</p>
                   <p className="font-display text-xl leading-snug">{x.question}</p>
                   {x.answer && <p className="text-ink-2">You: “{x.answer.transcript}”</p>}
                   {x.answer?.verdict && <span className="w-fit"><VerdictPill verdict={x.answer.verdict} /></span>}

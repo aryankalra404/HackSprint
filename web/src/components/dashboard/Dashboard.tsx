@@ -25,9 +25,9 @@ export function Dashboard({ session }: { session: SessionRecord }) {
           <Link href="/" className="font-display text-2xl">DryRun</Link>
           <span className="text-sm text-ink-2">Pitch to {bundle.prospect.company}</span>
         </div>
-        <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 font-mono text-xs">
+        <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
           <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
-          {debrief ? "Session complete · debrief ready" : `Room briefed · waiting for presenter · code ${bundle.join_code}`}
+          {debrief ? "Debrief ready" : "Waiting for the presenter"}
         </p>
       </header>
 

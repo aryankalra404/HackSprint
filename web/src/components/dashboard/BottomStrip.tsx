@@ -23,10 +23,10 @@ export function BottomStrip({ session }: { session: SessionRecord }) {
           <>
             <p className="flex items-baseline gap-1">
               <span className="font-display text-5xl leading-none">{debrief.overall}</span>
-              <span className="font-mono text-xs text-muted">/100</span>
+              <span className="text-xs text-muted">/100</span>
             </p>
             {debrief.previous_overall != null && (
-              <p className="font-mono text-sm text-good-ink">
+              <p className="text-sm text-good-ink">
                 ▲ {debrief.overall - debrief.previous_overall}
                 <span className="block text-[11px] text-muted">since last</span>
               </p>
@@ -36,7 +36,7 @@ export function BottomStrip({ session }: { session: SessionRecord }) {
             </Link>
           </>
         ) : (
-          <dl className="flex gap-6 font-mono text-xs text-ink-2">
+          <dl className="flex gap-6 text-xs text-ink-2">
             <div>
               <dt className="text-muted">Slides</dt>
               <dd className="text-xl text-ink">{bundle.slides.length}</dd>
@@ -65,11 +65,11 @@ function PlannedStrip({ session }: { session: SessionRecord }) {
         return (
           <li key={s.index} className="flex min-w-0 flex-col gap-2 rounded-sm bg-paper px-2 py-2" style={{ flex: s.target_seconds }}>
             <span className="truncate text-xs">
-              <span className="font-mono text-muted">{s.index + 1}</span> {s.title}
+              <span className="text-muted">{s.index + 1}</span> {s.title}
             </span>
             <span className="flex min-h-5 flex-wrap gap-1">
               {pushers.map((p) => (
-                <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-surface px-1.5 py-0.5 font-mono text-[10px]">
+                <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-surface px-1.5 py-0.5 text-[10px]">
                   <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: PERSONA_STYLE[p.id].color }} />
                   {PERSONA_STYLE[p.id].short}
                 </span>
@@ -95,9 +95,9 @@ function ActualStrip({ session }: { session: SessionRecord }) {
           key={s.slide_index}
           className="absolute top-0 h-7 truncate rounded-sm border-r-2 border-surface bg-paper px-1.5 py-1 text-xs"
           style={{ left: pct(s.start), width: pct(s.end - s.start) }}
-          title={`${s.title} · ${clock(s.end - s.start)}`}
+          title={`${s.title}, ${clock(s.end - s.start)}`}
         >
-          <span className="font-mono text-muted">{s.slide_index + 1}</span> {s.title}
+          <span className="text-muted">{s.slide_index + 1}</span> {s.title}
         </div>
       ))}
       {exchanges(telemetry).map((x) => {
@@ -106,7 +106,7 @@ function ActualStrip({ session }: { session: SessionRecord }) {
         return (
           <span
             key={x.id}
-            className="absolute top-9 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px]"
+            className="absolute top-9 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface px-1.5 py-0.5 text-[10px]"
             style={{ left: pct(x.t) }}
             title={`${clock(x.t)} ${x.question}`}
           >
@@ -121,7 +121,7 @@ function ActualStrip({ session }: { session: SessionRecord }) {
           key={f.id}
           className="absolute top-[38px] h-4 w-1.5 rounded-sm bg-warn"
           style={{ left: pct(f.t) }}
-          title={`${clock(f.t)} froze ${f.duration_s.toFixed(1)} s · ${RESCUE_LABEL[f.rescue_level]}`}
+          title={`${clock(f.t)} froze ${f.duration_s.toFixed(1)} s, then ${RESCUE_LABEL[f.rescue_level].toLowerCase()}`}
         />
       ))}
     </div>
