@@ -15,6 +15,7 @@ interface Store {
   // When the headset last had a poll open (it renews every 25 s)
   headsetSeen: number;
   headsetPolling: number;
+  headsetVia: "wifi" | "usb";
 }
 
 const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null };
@@ -30,7 +31,7 @@ function store(): Store {
     } catch {
       // No saved room yet
     }
-    g.__dryrunRoom = { ...saved, waiters: new Set(), headsetSeen: 0, headsetPolling: 0 };
+    g.__dryrunRoom = { ...saved, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb" };
   }
   return g.__dryrunRoom;
 }
@@ -74,8 +75,9 @@ export function waitForChange(since: number, timeoutMs: number, signal?: AbortSi
 }
 
 // The headset counts as connected while it has a poll open, or polled in the last 30 s
-export async function trackHeadset<T>(poll: () => Promise<T>): Promise<T> {
+export async function trackHeadset<T>(via: "wifi" | "usb", poll: () => Promise<T>): Promise<T> {
   const s = store();
+  s.headsetVia = via;
   s.headsetPolling++;
   s.headsetSeen = Date.now();
   try {
@@ -86,9 +88,10 @@ export async function trackHeadset<T>(poll: () => Promise<T>): Promise<T> {
   }
 }
 
-export function headsetConnected(): boolean {
+// Whether the headset is following the room, and over which link
+export function headsetStatus(): { connected: boolean; via: "wifi" | "usb" } {
   const s = store();
-  return s.headsetPolling > 0 || Date.now() - s.headsetSeen < 30_000;
+  return { connected: s.headsetPolling > 0 || Date.now() - s.headsetSeen < 30_000, via: s.headsetVia };
 }
 
 // Why a panel can't be saved, or null if it's fine

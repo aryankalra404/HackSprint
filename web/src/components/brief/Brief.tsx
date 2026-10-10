@@ -31,7 +31,7 @@ export function Brief({ sample, resume }: Props) {
   const [selection, setSelection] = useState<Selection>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<"saved" | "saving" | "failed">("saved");
-  const [headset, setHeadset] = useState(false);
+  const [headset, setHeadset] = useState<{ connected: boolean; via: "wifi" | "usb" }>({ connected: false, via: "usb" });
   const [proposing, startProposing] = useTransition();
   const [briefing, startBriefing] = useTransition();
 
@@ -41,10 +41,10 @@ export function Brief({ sample, resume }: Props) {
     let live = true;
     const check = async () => {
       try {
-        const { connected } = await (await fetch("/api/room/headset", { cache: "no-store" })).json();
-        if (live) setHeadset(connected);
+        const status = await (await fetch("/api/room/headset", { cache: "no-store" })).json();
+        if (live) setHeadset(status);
       } catch {
-        if (live) setHeadset(false);
+        if (live) setHeadset({ connected: false, via: "usb" });
       }
     };
     check();
@@ -137,14 +137,14 @@ export function Brief({ sample, resume }: Props) {
             <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs" aria-live="polite">
               <span
                 aria-hidden="true"
-                className={`size-2 rounded-full ${saved === "failed" ? "bg-bad" : saved === "saving" ? "animate-pulse bg-warn" : headset ? "bg-good" : "bg-axis"}`}
+                className={`size-2 rounded-full ${saved === "failed" ? "bg-bad" : saved === "saving" ? "animate-pulse bg-warn" : headset.connected ? "bg-good" : "bg-axis"}`}
               />
               {saved === "failed"
                 ? "Couldn't save the table"
                 : saved === "saving"
                   ? "Saving…"
-                  : headset
-                    ? "Live in the headset"
+                  : headset.connected
+                    ? `Live in the headset (${headset.via === "wifi" ? "Wi-Fi" : "USB"})`
                     : "Saved. Headset not connected"}
             </p>
             <button type="button" onClick={() => { setProposal(null); setSelection(null); }} className="text-sm text-ink-2 hover:text-ink">

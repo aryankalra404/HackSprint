@@ -1,6 +1,6 @@
 #!/bin/sh
-# Connects the Quest to this laptop for the demo: the headset reaches the web app at localhost:3000,
-# and (if scrcpy is installed) its view is mirrored to a window for the big screen.
+# USB fallback for the Quest: the headset reaches the web app at localhost:3000 (it prefers Wi-Fi when the
+# laptop and headset share a network), and (if scrcpy is installed) its view is mirrored for the big screen.
 set -e
 if ! command -v adb >/dev/null 2>&1; then
   echo "adb not found. Install it with: brew install android-platform-tools"
@@ -11,7 +11,7 @@ if [ -z "$(adb devices | sed -n '2p')" ]; then
   exit 1
 fi
 adb reverse tcp:3000 tcp:3000
-echo "Headset linked: it reaches this laptop at http://localhost:3000"
+echo "Headset linked over USB: it reaches this laptop at http://localhost:3000 (it moves to Wi-Fi by itself when it can)"
 if command -v scrcpy >/dev/null 2>&1; then
   # Shows both eyes side by side. To show one eye, add --crop W:H:X:Y once tried on the headset.
   exec scrcpy --max-fps 60 --window-title "DryRun headset"
