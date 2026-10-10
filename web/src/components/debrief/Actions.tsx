@@ -1,5 +1,5 @@
 import type { Bundle, Debrief } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
+import { personaTag } from "@/lib/personas";
 import { slideLabel } from "@/lib/format";
 import { Card, StatusIcon } from "../ui";
 
@@ -11,14 +11,13 @@ const ACTION_TEXT: Record<string, string> = {
 
 export function Actions({ debrief, bundle }: { debrief: Debrief; bundle: Bundle }) {
   const { drill } = debrief;
-  const focus = bundle.personas.find((p) => p.id === drill.focus_persona);
 
   return (
     <Card title="Next: drill">
       <p className="font-display text-3xl leading-tight">{drill.title}</p>
       <p className="mt-2 text-sm text-ink-2">
         {drill.minutes} minutes on {drill.slides.map(slideLabel).join(", ")}, against{" "}
-        {focus?.display_name ?? PERSONA_STYLE[drill.focus_persona].short} ({PERSONA_STYLE[drill.focus_persona].role}).
+        {personaTag(bundle.personas, drill.focus_persona).name} ({personaTag(bundle.personas, drill.focus_persona).role}).
       </p>
       <p className="mt-4 rounded-xl bg-paper px-4 py-3 text-sm">
         In the headset, enter code <span className="text-base font-medium tracking-widest">{bundle.join_code}</span>

@@ -1,5 +1,5 @@
 import type { Bundle } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
+import { personaById, personaTag } from "@/lib/personas";
 import { clock, slideLabel } from "@/lib/format";
 import { RESCUE_LABEL, slideAt, type Exchange, type Freeze, type SlideSegment } from "@/lib/timeline";
 import { Card, PersonaAvatar, RoleTag, StatusIcon, VerdictPill, verdictTone } from "../ui";
@@ -44,9 +44,10 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
         title="Session timeline"
         aside={
           <ul className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Legend">
-            {personasPresent.map((id) => (
-              <li key={id}><RoleTag id={id} /></li>
-            ))}
+            {personasPresent.map((id) => {
+              const persona = personaById(bundle.personas, id);
+              return persona && <li key={id}><RoleTag persona={persona} /></li>;
+            })}
             <li className="inline-flex items-center gap-1.5 text-xs text-ink-2">
               <span aria-hidden="true" className="h-2 w-4 rounded-sm bg-warn" /> Freeze + rescue cue
             </li>
@@ -92,7 +93,6 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
               <div className="relative h-[84px] border-b border-line">
                 {exchanges.map((x, i) => {
                   const selected = selection?.momentId === x.id;
-                  const persona = bundle.personas.find((p) => p.id === x.persona_id);
                   return (
                     <div
                       key={x.id}
@@ -102,12 +102,12 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, selec
                       <button
                         type="button"
                         onClick={() => onSelect({ t: x.t, momentId: x.id })}
-                        aria-label={`${clock(x.t)}: ${persona?.display_name ?? PERSONA_STYLE[x.persona_id].short} asked a question${x.answer?.verdict ? `, ${x.answer.verdict}` : ""}`}
+                        aria-label={`${clock(x.t)}: ${personaTag(bundle.personas, x.persona_id).name} asked a question${x.answer?.verdict ? `, ${x.answer.verdict}` : ""}`}
                         aria-pressed={selected}
                         className={`flex h-7 items-center gap-1.5 rounded-full border bg-surface px-2.5 text-xs ${selected ? "border-ink ring-2 ring-ink" : "border-line hover:border-ink"}`}
                       >
-                        <span aria-hidden="true" className="size-2 rounded-full" style={{ background: PERSONA_STYLE[x.persona_id].color }} />
-                        {PERSONA_STYLE[x.persona_id].short}
+                        <span aria-hidden="true" className="size-2 rounded-full" style={{ background: personaTag(bundle.personas, x.persona_id).color }} />
+                        {personaTag(bundle.personas, x.persona_id).short}
                         {x.answer?.verdict && <VerdictGlyph verdict={x.answer.verdict} />}
                       </button>
                       <span
@@ -221,15 +221,16 @@ function Detail({ bundle, segments, exchanges, freezes, selection }: Omit<Props,
 
 function ExchangeDetail({ bundle, exchange }: { bundle: Bundle; exchange: Exchange }) {
   const persona = bundle.personas.find((p) => p.id === exchange.persona_id);
-  const name = persona?.display_name ?? PERSONA_STYLE[exchange.persona_id].short;
+  const tag = personaTag(bundle.personas, exchange.persona_id);
+  const name = tag.name;
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          <PersonaAvatar id={exchange.persona_id} name={name} size={36} />
+          {persona && <PersonaAvatar persona={persona} size={36} />}
           <div className="text-sm">
             <p className="font-medium">{name}</p>
-            <p className="text-xs text-muted">{PERSONA_STYLE[exchange.persona_id].role}</p>
+            <p className="text-xs text-muted">{tag.role}</p>
           </div>
         </div>
         <p className="font-display text-2xl leading-snug">{exchange.question}</p>

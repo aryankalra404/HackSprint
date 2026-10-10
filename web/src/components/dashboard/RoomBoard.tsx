@@ -1,5 +1,5 @@
 import type { PersonaId, SessionRecord } from "@/lib/contract";
-import { PERSONA_STYLE, PRESENTER_SEAT, SEATS, TABLE } from "@/lib/personas";
+import { ALL_SEATS, PRESENTER_SEAT, SEAT_POS, TABLE, seatColor } from "@/lib/personas";
 import { PersonaAvatar, StanceText, StatusIcon } from "../ui";
 
 // Overhead plan of the VR boardroom, drawn on a fixed 1000 x 560 canvas that scales with the screen.
@@ -20,12 +20,11 @@ const TABLE_BOX = { x: u(TABLE.zMin), y: v(TABLE.xMin), w: u(TABLE.zMax) - u(TAB
 const TABLE_MID = v((TABLE.xMin + TABLE.xMax) / 2);
 const HEAD_END = u(TABLE.zMax);
 
-// Chairs around the table that nobody sits in, so it reads as a real boardroom
-const EMPTY_CHAIRS = [
+// Chairs with no panel seat, so it reads as a real boardroom
+const SPARE_CHAIRS = [
   { x: -5.4, z: -6.02 },
   { x: -5.4, z: -3.8 },
   { x: -3.67, z: -4.9 },
-  { x: -3.67, z: -2.75 },
 ];
 
 type Side = "top" | "bottom" | "head";
@@ -57,12 +56,13 @@ export function RoomBoard({ session, onOpen }: Props) {
             Slides
           </text>
 
-          {EMPTY_CHAIRS.map((c) => (
+          {SPARE_CHAIRS.map((c) => (
             <Chair key={`${c.x},${c.z}`} cx={u(c.z)} cy={v(c.x)} side={sideOf(c.x, c.z)} empty />
           ))}
-          {bundle.personas.map((p) => (
-            <Chair key={p.id} cx={u(SEATS[p.id].z)} cy={v(SEATS[p.id].x)} side={sideOf(SEATS[p.id].x, SEATS[p.id].z)} />
-          ))}
+          {ALL_SEATS.map((seat) => {
+            const c = SEAT_POS[seat];
+            return <Chair key={seat} cx={u(c.z)} cy={v(c.x)} side={sideOf(c.x, c.z)} empty={!bundle.personas.some((p) => p.seat === seat)} />;
+          })}
 
           {/* Table: light oak with a darker edge */}
           <rect {...rect(TABLE_BOX)} rx={22} fill="#cdb48f" />
@@ -77,9 +77,9 @@ export function RoomBoard({ session, onOpen }: Props) {
                 key={p.id}
                 x1={you.x}
                 y1={you.y}
-                x2={u(SEATS[p.id].z)}
-                y2={v(SEATS[p.id].x)}
-                stroke={PERSONA_STYLE[p.id].color}
+                x2={u(SEAT_POS[p.seat].z)}
+                y2={v(SEAT_POS[p.seat].x)}
+                stroke={seatColor(p.seat)}
                 strokeOpacity={0.5}
                 strokeWidth={2 + s * 30}
                 strokeLinecap="round"
@@ -113,7 +113,7 @@ export function RoomBoard({ session, onOpen }: Props) {
 
         {/* Stakeholders: portrait in the chair, name card on the table in front of them */}
         {bundle.personas.map((p) => {
-          const seat = SEATS[p.id];
+          const seat = SEAT_POS[p.seat];
           const side = sideOf(seat.x, seat.z);
           const verdict = debrief?.stakeholders.find((s) => s.persona_id === p.id);
           const s = share(p.id);
@@ -134,7 +134,7 @@ export function RoomBoard({ session, onOpen }: Props) {
                 className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform hover:scale-105"
                 style={{ left: pct(u(seat.z), W), top: pct(v(seat.x), H) }}
               >
-                <PersonaAvatar id={p.id} name={p.display_name} size="7.2cqw" stance={verdict?.stance} />
+                <PersonaAvatar persona={p} size="7.2cqw" stance={verdict?.stance} />
               </button>
               <button
                 type="button"
@@ -143,7 +143,7 @@ export function RoomBoard({ session, onOpen }: Props) {
                 style={{ left: pct(card.left, W), top: pct(card.top, H), width: pct(CARD_W, W) }}
               >
                 <span className="truncate font-display text-[1.25cqw] leading-tight">{p.display_name}</span>
-                <span className="truncate text-[0.9cqw] leading-tight text-muted">{PERSONA_STYLE[p.id].role}</span>
+                <span className="truncate text-[0.9cqw] leading-tight text-muted">{p.role}</span>
                 {verdict && (
                   <span className="mt-[0.2cqw] flex items-center justify-between gap-[0.4cqw] text-[1cqw] leading-tight whitespace-nowrap">
                     <StanceText stance={verdict.stance} />

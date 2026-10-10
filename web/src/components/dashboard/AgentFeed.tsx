@@ -1,5 +1,4 @@
 import type { FeedItem } from "@/lib/feed";
-import { PERSONA_STYLE } from "@/lib/personas";
 import { VerdictPill } from "../ui";
 
 export function AgentFeed({ items }: { items: FeedItem[] }) {
@@ -24,7 +23,7 @@ export function AgentFeed({ items }: { items: FeedItem[] }) {
                     <span
                       aria-hidden="true"
                       className="mt-1.5 size-2 shrink-0 rounded-full"
-                      style={{ background: item.persona ? PERSONA_STYLE[item.persona].color : "var(--color-ink)" }}
+                      style={{ background: item.color ?? "var(--color-ink)" }}
                     />
                     <div className="flex min-w-0 flex-col gap-1">
                       <p className="text-sm leading-snug">

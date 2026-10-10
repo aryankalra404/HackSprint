@@ -1,5 +1,4 @@
 import type { Bundle, StakeholderVerdict } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
 import { momentLabel } from "@/lib/format";
 import { Card, PersonaAvatar, StancePill } from "../ui";
 
@@ -22,14 +21,15 @@ export function Stakeholders({
       <ul className="flex flex-col divide-y divide-line">
         {stakeholders.map((s) => {
           const persona = bundle.personas.find((p) => p.id === s.persona_id);
-          const name = persona?.display_name ?? PERSONA_STYLE[s.persona_id].short;
+          if (!persona) return null;
+          const name = persona.display_name;
           return (
             <li key={s.persona_id} className="flex gap-3 py-3 first:pt-0 last:pb-0">
-              <PersonaAvatar id={s.persona_id} name={name} />
+              <PersonaAvatar persona={persona} />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-sm font-medium">{name}</span>
-                  <span className="text-xs text-muted">{PERSONA_STYLE[s.persona_id].role}</span>
+                  <span className="text-xs text-muted">{persona.role}</span>
                   <span className="ml-auto"><StancePill stance={s.stance} /></span>
                 </div>
                 <p className="text-sm text-ink-2">{s.reason}</p>

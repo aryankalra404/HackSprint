@@ -1,5 +1,5 @@
-import type { PersonaId, SessionRecord, Verdict } from "./contract";
-import { PERSONA_STYLE } from "./personas";
+import type { SessionRecord, Verdict } from "./contract";
+import { personaTag } from "./personas";
 import { clock } from "./format";
 import { exchanges, freezes, RESCUE_LABEL, slideSegments } from "./timeline";
 
@@ -10,7 +10,8 @@ export interface FeedItem {
   when: string;
   title: string;
   detail?: string;
-  persona?: PersonaId;
+  // Seat colour of the stakeholder involved, if any
+  color?: string;
   verdict?: Verdict | null;
 }
 
@@ -41,9 +42,9 @@ export function buildFeed(session: SessionRecord): FeedItem[] {
       t: x.t,
       phase: "During" as const,
       when: clock(x.t),
-      title: `${PERSONA_STYLE[x.persona_id].short} asked: ${x.question}`,
+      title: `${personaTag(bundle.personas, x.persona_id).short} asked: ${x.question}`,
       detail: x.reason,
-      persona: x.persona_id,
+      color: personaTag(bundle.personas, x.persona_id).color,
       verdict: x.answer?.verdict ?? null,
     })),
     ...freezes(telemetry, segments)
@@ -64,8 +65,8 @@ export function buildFeed(session: SessionRecord): FeedItem[] {
       phase: "After",
       when: "done",
       title: `Planned the next drill: ${debrief.drill.title}`,
-      detail: `${debrief.drill.minutes} minutes against ${PERSONA_STYLE[debrief.drill.focus_persona].short}`,
-      persona: debrief.drill.focus_persona,
+      detail: `${debrief.drill.minutes} minutes against ${personaTag(bundle.personas, debrief.drill.focus_persona).name}`,
+      color: personaTag(bundle.personas, debrief.drill.focus_persona).color,
     },
     ...debrief.actions_taken.map((a) => ({
       id: `act-${a}`,

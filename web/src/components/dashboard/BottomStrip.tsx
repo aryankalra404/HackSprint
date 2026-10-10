@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { SessionRecord } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
+import { personaTag, seatColor } from "@/lib/personas";
 import { clock } from "@/lib/format";
 import { exchanges, freezes, RESCUE_LABEL, slideSegments } from "@/lib/timeline";
 import { StatusIcon, verdictTone } from "../ui";
@@ -70,8 +70,8 @@ function PlannedStrip({ session }: { session: SessionRecord }) {
             <span className="flex min-h-5 flex-wrap gap-1">
               {pushers.map((p) => (
                 <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-surface px-1.5 py-0.5 text-[10px]">
-                  <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: PERSONA_STYLE[p.id].color }} />
-                  {PERSONA_STYLE[p.id].short}
+                  <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: seatColor(p.seat) }} />
+                  {p.role_short}
                 </span>
               ))}
             </span>
@@ -87,9 +87,14 @@ function ActualStrip({ session }: { session: SessionRecord }) {
   const duration = telemetry.duration_s;
   const segments = slideSegments(telemetry, session.bundle.slides);
   const pct = (t: number) => `${(t / duration) * 100}%`;
+  // Questions close together alternate between two rows so their chips don't collide
+  const rows: number[] = [];
+  exchanges(telemetry).forEach((x, i, all) => {
+    rows.push(i > 0 && x.t - all[i - 1].t < duration * 0.08 && rows[i - 1] === 0 ? 1 : 0);
+  });
 
   return (
-    <div className="relative h-[68px]">
+    <div className="relative h-[76px]">
       {segments.map((s) => (
         <div
           key={s.slide_index}
@@ -100,18 +105,19 @@ function ActualStrip({ session }: { session: SessionRecord }) {
           <span className="text-muted">{s.slide_index + 1}</span> {s.title}
         </div>
       ))}
-      {exchanges(telemetry).map((x) => {
+      {exchanges(telemetry).map((x, i) => {
         const verdict = x.answer?.verdict;
         const tone = verdict ? verdictTone(verdict) : null;
+        const lower = rows[i] === 1;
         return (
           <span
             key={x.id}
-            className="absolute top-9 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface px-1.5 py-0.5 text-[10px]"
+            className={`absolute ${lower ? "top-[54px]" : "top-9"} inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface px-1.5 py-0.5 text-[10px]`}
             style={{ left: pct(x.t) }}
             title={`${clock(x.t)} ${x.question}`}
           >
-            <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: PERSONA_STYLE[x.persona_id].color }} />
-            {PERSONA_STYLE[x.persona_id].short}
+            <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: personaTag(session.bundle.personas, x.persona_id).color }} />
+            {personaTag(session.bundle.personas, x.persona_id).short}
             {tone && <StatusIcon tone={tone} className={`size-2.5 ${{ good: "text-good-ink", warn: "text-warn-ink", bad: "text-bad-ink" }[tone]}`} />}
           </span>
         );

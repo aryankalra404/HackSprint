@@ -1,7 +1,42 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.2).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.4).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
-export type PersonaId = "cfo" | "cto" | "procurement" | "vp_ops" | "end_user_lead";
+// Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
+export type PersonaId = string;
+
+// Six panel seats in the VR boardroom, numbered by seniority (0 is the head of the table).
+export type Seat = 0 | 1 | 2 | 3 | 4 | 5;
+
+export type AvatarId =
+  | "business_male_01"
+  | "business_male_02"
+  | "business_male_03"
+  | "business_male_04"
+  | "business_female_01"
+  | "business_female_02"
+  | "business_female_03";
+
+// Who sits where: shared by the /panel proposal, the edited /prep panel and the bundle personas.
+export interface Seating {
+  id: PersonaId;
+  seat: Seat;
+  role: string;
+  role_short: string;
+  display_name: string;
+  avatar: AvatarId;
+}
+
+export interface PanelMember extends Seating {
+  gender: "male" | "female";
+  why: string;
+  source: "email" | "research" | "deck" | "typical";
+}
+
+export interface PanelProposal {
+  draft_id: string;
+  members: PanelMember[];
+  suggestions: { role: string; role_short: string; why: string }[];
+}
 
 export interface Slide {
   index: number;
@@ -12,9 +47,7 @@ export interface Slide {
   rescue: { calm: string; keyword: string; bridge: string };
 }
 
-export interface Persona {
-  id: PersonaId;
-  display_name: string;
+export interface Persona extends Seating {
   priorities: string[];
   objections: { slide_index: number; text: string; source: "deck" | "research" | "history" }[];
   difficulty: 1 | 2 | 3;
@@ -66,7 +99,7 @@ export interface Telemetry {
   client: "vr" | "web";
   duration_s: number;
   events: TelemetryEvent[];
-  gaze_dwell_s?: Partial<Record<PersonaId, number>>;
+  gaze_dwell_s?: Record<PersonaId, number>;
 }
 
 export interface Evidence {

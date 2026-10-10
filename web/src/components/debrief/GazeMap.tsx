@@ -1,5 +1,5 @@
 import type { Persona, PersonaId } from "@/lib/contract";
-import { PERSONA_STYLE, PRESENTER_SEAT, SEATS, TABLE } from "@/lib/personas";
+import { PRESENTER_SEAT, SEAT_POS, TABLE, seatColor } from "@/lib/personas";
 import { Card, StatusIcon } from "../ui";
 
 // Top-down view of the VR boardroom, presenter on the left. Room z runs left to right, x top to bottom.
@@ -12,8 +12,8 @@ const px = (p: { x: number; z: number }) => ({ cx: (p.z - Z0) * S, cy: (p.x - X0
 
 const LOW_SHARE = 0.1;
 
-export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, number>>; personas: Persona[] }) {
-  const total = Object.values(dwell).reduce((a, b) => a + (b ?? 0), 0) || 1;
+export function GazeMap({ dwell, personas }: { dwell: Record<PersonaId, number>; personas: Persona[] }) {
+  const total = Object.values(dwell).reduce((a, b) => a + b, 0) || 1;
   const rows = personas.map((p) => ({ ...p, share: (dwell[p.id] ?? 0) / total }));
   const presenter = px(PRESENTER_SEAT);
 
@@ -30,7 +30,7 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
           stroke="var(--color-line)"
         />
         {rows.map((r) => {
-          const seat = px(SEATS[r.id]);
+          const seat = px(SEAT_POS[r.seat]);
           return (
             <line
               key={`ray-${r.id}`}
@@ -38,7 +38,7 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
               y1={presenter.cy}
               x2={seat.cx}
               y2={seat.cy}
-              stroke={PERSONA_STYLE[r.id].color}
+              stroke={seatColor(r.seat)}
               strokeOpacity={0.5}
               strokeWidth={1.5 + r.share * 18}
               strokeLinecap="round"
@@ -46,18 +46,18 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
           );
         })}
         {rows.map((r) => {
-          const seat = px(SEATS[r.id]);
-          const above = SEATS[r.id].x < -5;
+          const seat = px(SEAT_POS[r.seat]);
+          const above = SEAT_POS[r.seat].x < -5;
           return (
             <g key={r.id}>
-              <circle cx={seat.cx} cy={seat.cy} r={12} fill="var(--color-surface)" stroke={PERSONA_STYLE[r.id].color} strokeWidth={2.5} />
+              <circle cx={seat.cx} cy={seat.cy} r={12} fill="var(--color-surface)" stroke={seatColor(r.seat)} strokeWidth={2.5} />
               <text
                 x={seat.cx}
                 y={above ? seat.cy - 20 : seat.cy + 29}
                 textAnchor="middle"
                 className="fill-ink text-[11px]"
               >
-                {PERSONA_STYLE[r.id].short} {Math.round(r.share * 100)}%
+                {r.role_short} {Math.round(r.share * 100)}%
               </text>
             </g>
           );
@@ -69,8 +69,8 @@ export function GazeMap({ dwell, personas }: { dwell: Partial<Record<PersonaId, 
       <ul className="mt-4 flex flex-col gap-1.5">
         {[...rows].sort((a, b) => b.share - a.share).map((r) => (
           <li key={r.id} className="flex items-center gap-2 text-sm">
-            <span aria-hidden="true" className="size-2 rounded-full" style={{ background: PERSONA_STYLE[r.id].color }} />
-            <span className="flex-1">{r.display_name} <span className="text-muted">{PERSONA_STYLE[r.id].short}</span></span>
+            <span aria-hidden="true" className="size-2 rounded-full" style={{ background: seatColor(r.seat) }} />
+            <span className="flex-1">{r.display_name} <span className="text-muted">{r.role_short}</span></span>
             {r.share < LOW_SHARE && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-warn-ink">
                 <StatusIcon tone="warn" className="size-3" /> Barely looked

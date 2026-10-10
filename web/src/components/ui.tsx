@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import type { PersonaId, StakeholderVerdict, Verdict } from "@/lib/contract";
-import { PERSONA_PORTRAIT, PERSONA_STYLE } from "@/lib/personas";
+import type { Persona, StakeholderVerdict, Verdict } from "@/lib/contract";
+import { portraitOf, seatColor } from "@/lib/personas";
 
 export function Card({ title, aside, children, className = "" }: { title?: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -19,28 +19,26 @@ export function Card({ title, aside, children, className = "" }: { title?: strin
 // Portrait rendered from the VR avatar when there is one, initials otherwise.
 // With a stance, a small badge on the ring shows the verdict (the label sits next to it).
 export function PersonaAvatar({
-  id,
-  name,
+  persona,
   size = 40,
   stance,
 }: {
-  id: PersonaId;
-  name: string;
+  persona: Pick<Persona, "display_name" | "seat" | "avatar">;
   size?: number | string;
   stance?: StakeholderVerdict["stance"];
 }) {
-  const initials = name
+  const initials = persona.display_name
     .split(" ")
     .map((w) => w[0])
     .join("")
     .slice(0, 2);
-  const portrait = PERSONA_PORTRAIT[id];
+  const portrait = portraitOf(persona.avatar);
   const tone = stance && STANCE[stance][0];
   return (
     <span aria-hidden="true" className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
       <span
         className="inline-flex size-full items-center justify-center overflow-hidden rounded-full bg-surface text-xs font-medium text-ink"
-        style={{ boxShadow: `0 0 0 2px ${PERSONA_STYLE[id].color}` }}
+        style={{ boxShadow: `0 0 0 2px ${seatColor(persona.seat)}` }}
       >
         {portrait ? (
           // eslint-disable-next-line @next/next/no-img-element -- small static files, sized by the parent
@@ -58,11 +56,11 @@ export function PersonaAvatar({
   );
 }
 
-export function RoleTag({ id }: { id: PersonaId }) {
+export function RoleTag({ persona }: { persona: Pick<Persona, "seat" | "role_short"> }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
-      <span aria-hidden="true" className="size-2 rounded-full" style={{ background: PERSONA_STYLE[id].color }} />
-      {PERSONA_STYLE[id].short}
+      <span aria-hidden="true" className="size-2 rounded-full" style={{ background: seatColor(persona.seat) }} />
+      {persona.role_short}
     </span>
   );
 }

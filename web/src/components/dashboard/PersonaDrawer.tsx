@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import type { PersonaId, SessionRecord } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
 import { momentLabel, slideLabel } from "@/lib/format";
 import { exchanges } from "@/lib/timeline";
 import { PersonaAvatar, StancePill, VerdictPill } from "../ui";
@@ -31,10 +30,10 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
         className="relative flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto bg-surface p-6 shadow-xl outline-none"
       >
         <header className="flex items-start gap-3">
-          <PersonaAvatar id={id} name={persona.display_name} size={48} />
+          <PersonaAvatar persona={persona} size={48} />
           <div className="flex-1">
             <h2 className="font-display text-3xl leading-none">{persona.display_name}</h2>
-            <p className="mt-1 text-sm text-muted">{PERSONA_STYLE[id].role}</p>
+            <p className="mt-1 text-sm text-muted">{persona.role}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-line px-3 py-1 text-sm hover:border-ink">
             Close

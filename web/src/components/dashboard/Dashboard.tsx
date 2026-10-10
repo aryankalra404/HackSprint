@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { PersonaId, SessionRecord } from "@/lib/contract";
-import { PERSONA_STYLE } from "@/lib/personas";
 import { buildFeed } from "@/lib/feed";
 import { PersonaAvatar, StancePill } from "../ui";
 import { RoomBoard } from "./RoomBoard";
@@ -42,10 +41,10 @@ export function Dashboard({ session }: { session: SessionRecord }) {
               return (
                 <li key={p.id}>
                   <button type="button" onClick={() => setOpen(p.id)} className="flex w-full items-center gap-3 py-3 text-left">
-                    <PersonaAvatar id={p.id} name={p.display_name} size={36} />
+                    <PersonaAvatar persona={p} size={36} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium">{p.display_name}</span>
-                      <span className="block truncate text-xs text-muted">{verdict ? PERSONA_STYLE[p.id].role : p.objections[0]?.text}</span>
+                      <span className="block truncate text-xs text-muted">{verdict ? p.role : p.objections[0]?.text}</span>
                     </span>
                     {verdict && <StancePill stance={verdict.stance} />}
                   </button>

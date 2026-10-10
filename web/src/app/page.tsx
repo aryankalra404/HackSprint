@@ -1,12 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
-import { PERSONA_PORTRAIT, PERSONA_STYLE } from "@/lib/personas";
-import type { PersonaId } from "@/lib/contract";
+import { demoSession } from "@/lib/mock/session";
+import { portraitOf, seatColor } from "@/lib/personas";
 
-const PANEL: PersonaId[] = ["cfo", "cto", "procurement", "vp_ops", "end_user_lead"];
+// An example panel, as n8n proposed it for the sample prospect
+const PANEL = [...demoSession.bundle.personas].sort((a, b) => a.seat - b.seat);
 
 const STEPS = [
-  { n: "1", title: "Brief", body: "Upload your deck and name the prospect. n8n researches the company and briefs five stakeholders, each with their own priorities and objections." },
+  { n: "1", title: "Brief", body: "Upload your deck, name the prospect and paste the meeting email. n8n researches the company, proposes who will be in the room and why, and briefs whoever you confirm." },
   { n: "2", title: "Rehearse", body: "Pitch in the VR boardroom or the browser. The panel interrupts with grounded questions, and the Rescue Agent cues you when you freeze." },
   { n: "3", title: "Debrief", body: "n8n scores you with evidence, sends the report, books a drill on your weakest slide, and briefs the panel to press harder there next time." },
 ];
@@ -49,16 +50,22 @@ export default function Home() {
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-8 sm:py-24">
-        <h2 className="font-display text-3xl sm:text-4xl">The panel</h2>
-        <p className="mt-2 max-w-xl text-ink-2">Five seats, five agendas. Names and objections are generated for each prospect.</p>
+        <h2 className="font-display text-3xl sm:text-4xl">Who&apos;s in the room</h2>
+        <p className="mt-2 max-w-xl text-ink-2">
+          n8n reads the meeting email, your deck and its research, then proposes the panel: real attendees first, then the roles that sign off
+          on a deal like yours. Rename, swap or add anyone before you rehearse. This is the panel it proposed for {demoSession.bundle.prospect.company}.
+        </p>
         <ul className="mt-10 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
-          {PANEL.map((id) => (
-            <li key={id} className="flex flex-col gap-3">
+          {PANEL.map((p) => (
+            <li key={p.id} className="flex flex-col gap-3">
               <span className="relative aspect-square overflow-hidden rounded-2xl bg-ink">
-                <Image src={PERSONA_PORTRAIT[id]!} alt="" fill sizes="(min-width: 1024px) 220px, 45vw" className="object-cover" />
-                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1" style={{ background: PERSONA_STYLE[id].color }} />
+                <Image src={portraitOf(p.avatar) ?? ""} alt="" fill sizes="(min-width: 1024px) 220px, 45vw" className="object-cover" />
+                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1" style={{ background: seatColor(p.seat) }} />
               </span>
-              <span className="text-sm font-medium">{PERSONA_STYLE[id].role}</span>
+              <span className="flex flex-col">
+                <span className="font-display text-base">{p.display_name}</span>
+                <span className="text-sm text-ink-2">{p.role}</span>
+              </span>
             </li>
           ))}
         </ul>
