@@ -1,4 +1,4 @@
-"""Prompts and JSON schemas for the DryRun workflows (tested against gemini-2.5-flash)."""
+"""Prompts and JSON schemas for the DryRun workflows (the model is GEMINI_MODEL in build.py)."""
 
 import json
 
@@ -28,7 +28,16 @@ Recent news headlines (date, publisher, headline):
 {news}
 
 From their website:
-{website}"""
+{website}
+
+From a web search (only when the news had little; facts as reported, with dates):
+{web}"""
+
+# Only used when Google News has little on the company (small or private companies); needs a Gemini key with billing
+WEB_PROMPT = """Search the web for recent, verifiable facts about {company} ({domain}) that someone going into a {kind} with them should know:
+what they do and their scale, funding, results, leadership changes, launches, partnerships and problems in the last 12 months.
+List up to 8 facts, one per line, each with its date and the publication or site that reported it.
+Only include facts you found in search results. If you found little, say so. Plain text."""
 
 BRIEF_PROMPT = """You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.
 
@@ -38,7 +47,7 @@ Meeting:
 Recent emails with them:
 {emails}
 
-Research on the company (from Google Search):
+Research on the company (from the news, their website and a web search):
 {research}
 
 Rules:

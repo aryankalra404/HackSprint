@@ -4,7 +4,7 @@ DryRun's brain, running on n8n Cloud (`https://aryankalra.app.n8n.cloud`). The w
 
 | Workflow | What it does |
 |---|---|
-| **DryRun prep** (`wf1-prep.json`) | Watches Google Calendar. For each new event, Gemini decides whether it's worth preparing for. If so: reads your recent emails with the attendees, reads the news about the company (Google News) and its website, writes the brief and proposes the panel, saves it to the **DryRun meetings** data table and emails you. It saves its progress after each stage (shown live on the web app's brief page), and if a run fails it marks the meeting failed with the reason. The web app can also add a meeting by hand: `POST /webhook/dryrun/add-meeting`. |
+| **DryRun prep** (`wf1-prep.json`) | Watches Google Calendar. For each new event, Gemini decides whether it's worth preparing for. If so: reads your recent emails with the attendees, reads the news about the company (Google News) and its website (if there are fewer than 3 stories, it also asks Gemini to search the web, which needs billing on the Gemini key; without it the run carries on), writes the brief and proposes the panel, saves it to the **DryRun meetings** data table and emails you. It saves its progress after each stage (shown live on the web app's brief page), and if a run fails it marks the meeting failed with the reason. The web app can also add a meeting by hand: `POST /webhook/dryrun/add-meeting`. |
 | **DryRun meetings API** (`wf0-meetings-api.json`) | `GET /webhook/dryrun/meetings` (upcoming meetings) and `GET /webhook/dryrun/meeting?id=` (one meeting with its brief and panel), from the data table. |
 
 ## How they're built

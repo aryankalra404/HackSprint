@@ -9,13 +9,15 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import BRIEF_PROMPT, BRIEF_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA
+from prompts import BRIEF_PROMPT, BRIEF_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, WEB_PROMPT
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
 # One model for every Gemini step. Free-tier limits are per model (gemini-2.5-flash allows 20 requests a day).
 GEMINI_MODEL = "gemini-3-flash-preview"
 GEMINI = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 APP_URL = "http://localhost:3000"
+# Fewer news stories than this and n8n also searches the web (Gemini with Google Search, which needs billing on the key)
+MIN_NEWS = 3
 MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "86BWrDlUXrOWFgqc", "cachedResultName": "DryRun meetings"}
 
 IMPORTS = ("import { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, "
@@ -74,7 +76,7 @@ def code_node(var, name, js, output, extra=None):
     return make_node(var, "node", "n8n-nodes-base.code", 2, name, {"mode": "runOnceForAllItems", "language": "javaScript", "jsCode": js.strip()}, output, extra=extra)
 
 
-def gemini_node(var, name, body_expr, output):
+def gemini_node(var, name, body_expr, output, extra=None):
     return make_node(var, "node", "n8n-nodes-base.httpRequest", 4.5, name, {
         "method": "POST",
         "url": GEMINI,
@@ -84,7 +86,7 @@ def gemini_node(var, name, body_expr, output):
         "specifyBody": "json",
         "jsonBody": Expr(body_expr),
         "options": {"timeout": 120000},
-    }, output, credentials={"googlePalmApi": "Gemini"}, extra={"retryOnFail": True, "maxTries": 3, "waitBetweenTries": 3000})
+    }, output, credentials={"googlePalmApi": "Gemini"}, extra=extra or {"retryOnFail": True, "maxTries": 3, "waitBetweenTries": 3000})
 
 
 def upsert_node(var, name, output):
@@ -120,7 +122,9 @@ const progress = [
     mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,
     'Reading your recent emails with ' + names),
   step('research', 'Research', !!research, !!mail,
-    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '') : '',
+    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')
+      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'
+         : ". Little news, and web search isn't available on this Gemini key") : '',
     'Reading the news about ' + company + ' and their website',
     { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),
   step('brief', 'Brief', !!seated, !!research,
@@ -263,18 +267,50 @@ const body = html.replace(/<script[^]*?<\\/script>/gi, ' ').replace(/<style[^]*?
 // App-style sites render in the browser; their meta description still says what the company does
 const website = [tag(html, 'title'), meta('description'), meta('og:description'), body].filter(Boolean).join(' ').slice(0, 3000);
 return [{ json: { ...prev, news, website } }];""", [{"meeting": MEETING, "emails": "", "news": [], "website": ""}])
+    c += make_node("enoughNews", "ifElse", "n8n-nodes-base.if", 2.3, "Enough news?", {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"leftValue": Expr("{{ $json.news.length }}"), "rightValue": MIN_NEWS,
+                            "operator": {"type": "number", "operation": "gte"}}],
+            "combinator": "and",
+        }, "options": {},
+    }, [{"meeting": MEETING, "news": []}])
+    # Small or private companies barely make the news: ask Gemini to search the web. On a free key this is refused (429),
+    # so it carries on without, and no retries
+    c += gemini_node("searchWeb", "Search the web", "{{ JSON.stringify({ contents: [{ parts: [{ text: " + json.dumps(WEB_PROMPT) +
+                     ".replace('{company}', $json.meeting.company).replace('{domain}', $json.meeting.company_domain || 'domain unknown')"
+                     ".replace('{kind}', $json.meeting.kind) }] }], tools: [{ google_search: {} }] }) }}", GEMINI_REPLY,
+                     extra={"onError": "continueRegularOutput"})
+    c += code_node("addWeb", "Add the web results", """
+// Keep the search answer only if Google Search actually backed it, with the pages it used as sources
+const prev = $('Gather the sources').first().json;
+const c = ($json.candidates && $json.candidates[0]) || {};
+const text = ((c.content && c.content.parts) || []).map(p => p.text || '').join('').trim();
+const pages = ((c.groundingMetadata && c.groundingMetadata.groundingChunks) || []).map(x => x.web).filter(w => w && w.uri);
+const found = text && pages.length > 0;
+// Each page's title is its site (e.g. inc42.com); its link goes through Google's redirect to the article
+const web = found ? pages.slice(0, 6).map(w => ({ title: w.title || 'Web page', url: w.uri, site: 'https://' + (w.domain || w.title || '') })) : [];
+const error = $json.error ? ($json.error.message || String($json.error)).split('\\n')[0].slice(0, 160) : '';
+return [{ json: { ...prev, web_searched: true, web_found: found ? text : '', web, web_error: error } }];""",
+                   [{"meeting": MEETING, "emails": "", "news": [], "website": "", "web_searched": True, "web_found": "", "web": [], "web_error": ""}])
     c += gemini_node("research", "Research the company", "{{ JSON.stringify({ contents: [{ parts: [{ text: " + json.dumps(RESEARCH_PROMPT) +
                      ".replace('{company}', $json.meeting.company).replace('{kind}', $json.meeting.kind).replace('{title}', $json.meeting.title)"
                      ".replace('{news}', $json.news.map(n => n.date + ' | ' + n.publisher + ' | ' + n.title).join('\\n') || 'None found.')"
-                     ".replace('{website}', $json.website || 'Not available.') }] }] }) }}", GEMINI_REPLY)
+                     ".replace('{website}', $json.website || 'Not available.').replace('{web}', $json.web_found || 'Not searched.') }] }] }) }}", GEMINI_REPLY)
     c += code_node("readResearch", "Read the research", """
 // The research summary, with the news it was written from as sources
 const parts = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts) || [];
 const research = parts.map(p => p.text || '').join('');
-const prev = $('Gather the sources').first().json;
-const sources = prev.news.slice(0, 8).map(n => ({ title: (n.publisher ? n.publisher + ': ' : '') + n.title, url: n.url, date: n.date, site: n.site }));
-return [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources, news_count: prev.news.length, has_website: !!prev.website } }];""",
-                   [{"meeting": MEETING, "emails": "", "research": "", "sources": [], "news_count": 0, "has_website": False}])
+// Came straight from the news, or through the web search when the news had little
+const searched = (() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })();
+const prev = searched ? $('Add the web results').first().json : $('Gather the sources').first().json;
+const web = prev.web || [];
+const sources = prev.news.slice(0, 8).map(n => ({ title: (n.publisher ? n.publisher + ': ' : '') + n.title, url: n.url, date: n.date, site: n.site }))
+  .concat(web.map(w => ({ title: w.title, url: w.url, site: w.site })));
+return [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources, news_count: prev.news.length, has_website: !!prev.website,
+                  web_searched: searched, web_count: web.length, web_error: prev.web_error || '' } }];""",
+                   [{"meeting": MEETING, "emails": "", "research": "", "sources": [], "news_count": 0, "has_website": False,
+                     "web_searched": False, "web_count": 0, "web_error": ""}])
     c += progress_node("progressResearch", "Progress: researched")
     c += upsert_node("saveProgressResearch", "Save progress: research", [{"id": 1}])
     c += gemini_node("brief", "Write the brief and panel", "{{ JSON.stringify({ contents: [{ parts: [{ text: " + json.dumps(BRIEF_PROMPT) +
@@ -308,7 +344,7 @@ const members = people.concat(extra).map((m, i) => ({ id: 'p' + (i + 1), seat: S
 const brief = {
   summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },
   attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),
-  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 8),
+  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 12),
 };
 const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [] };
 return [{ json: { meeting: prev.meeting, brief, proposal } }];""", [{"meeting": MEETING, "brief": {}, "proposal": {}}])
@@ -374,10 +410,12 @@ return $input.all().map(({ json: row }) => {
   .add(triage)
   .to(readDecision)
   .to(prepareIt
-    .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(progressEmails.to(saveProgressEmails.to(news.to(website.to(gatherSources.to(research.to(readResearch.to(progressResearch.to(saveProgressResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief.to(progressEmailed.to(saveProgressEmailed))))))))))))))))))))
+    .onTrue(rowResearching.to(saveResearching.to(emails.to(summariseEmails.to(progressEmails.to(saveProgressEmails.to(news.to(website.to(gatherSources.to(enoughNews
+      .onTrue(research.to(readResearch.to(progressResearch.to(saveProgressResearch.to(brief.to(seatPanel.to(rowReady.to(saveReady.to(emailBrief.to(progressEmailed.to(saveProgressEmailed)))))))))))
+      .onFalse(searchWeb.to(addWeb.to(research)))))))))))))
     .onFalse(skip))
   .group('Decide', [readDecision], { description: 'Gemini decides whether this meeting is worth preparing for, and why' })
-  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, research, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your recent emails with the attendees, the news about the company and its website, saving progress as it goes' })
+  .group('Research', [rowResearching, saveResearching, emails, summariseEmails, progressEmails, saveProgressEmails, news, website, gatherSources, enoughNews, searchWeb, addWeb, research, readResearch, progressResearch, saveProgressResearch], { description: 'Reads your emails with the attendees, the company news and website (searching the web if news is thin), saving progress as it goes' })
   .add(onFailure)
   .to(findRun)
   .to(markFailed)
