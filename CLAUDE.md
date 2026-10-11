@@ -52,4 +52,5 @@ When a task changes something these files describe, update the file in the same 
 - Never commit API keys, n8n credentials or `.env` files. n8n exports must have credentials removed.
 - Only the laptop talks to n8n. The Quest must reach the laptop: the same network with device-to-device traffic allowed (a phone hotspot works; venue Wi-Fi often blocks it), or USB (`npm run quest`).
 - The user usually has `next dev` running on :3000. Don't delete `web/.next` while it runs. `web/.room.json` is their live room (panel, phase): copy it before tests that change the room, and put it back after.
+- **Every n8n webhook call is an execution, and the plan has a monthly cap** (the trial's 1,000 ran out on 11 Oct, mostly from pages reloading in a loop while the dev server restarted, each load reading meetings from n8n). The laptop shares meeting reads (`readOnce` in `web/src/lib/api.ts`); keep any new n8n read behind it, never poll n8n from a client, and keep test runs few.
 - n8n Code nodes have no `URL` class, and backslashes in JS written inside `build.py` strings get eaten by Python; prefer `[^]` and string splits to escapes.
