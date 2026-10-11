@@ -26,6 +26,14 @@ function withoutAudio(bundle: Bundle): Bundle {
   return { ...bundle, lines: bundle.lines.map(({ audio_base64: _a, audio_url: _u, ...l }) => l) };
 }
 
+// Turns n8n didn't answer, per run (keyed by its start), so the debrief knows the silence was the system's (contract 0.26: turn_failed)
+const g = globalThis as { __dryrunFailedTurns?: Map<string, { t: number; mode: TurnRequest["mode"] }[]> };
+const failed = (g.__dryrunFailedTurns ??= new Map<string, { t: number; mode: TurnRequest["mode"] }[]>());
+
+export function failedTurns(startedAt: string): { t: number; type: "turn_failed"; mode: TurnRequest["mode"] }[] {
+  return (failed.get(startedAt) ?? []).map((f) => ({ ...f, type: "turn_failed" as const }));
+}
+
 // Questions nobody has answered yet: a question stays open until an answer with that person's asked_by arrives
 export function pendingQuestions(feed: LoggedTurn[]): TurnContext["pending"] {
   const open: TurnContext["pending"] = [];
@@ -98,6 +106,7 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     try {
       reply = await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
     } catch (err) {
+      failed.set(room.live.started_at, [...(failed.get(room.live.started_at) ?? []), { t: body.t, mode: body.mode }]);
       throw new TurnError(err instanceof Error ? err.message : "n8n failed", 502);
     }
   }

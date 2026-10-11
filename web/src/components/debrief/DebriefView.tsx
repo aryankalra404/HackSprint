@@ -11,6 +11,8 @@ import { Metrics } from "./Metrics";
 import { GazeMap } from "./GazeMap";
 import { Actions } from "./Actions";
 import { Transcript } from "./Transcript";
+import { Owed } from "./Owed";
+import { Trouble } from "./Trouble";
 
 export function DebriefView({ session }: { session: DebriefedSession }) {
   const { bundle, telemetry, debrief, history } = session;
@@ -64,6 +66,8 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
         <Stakeholders bundle={bundle} stakeholders={debrief.stakeholders} onSelect={selectAt} />
       </div>
 
+      {debrief.owed && debrief.owed.length > 0 && <Owed owed={debrief.owed} bundle={bundle} />}
+
       <Metrics metrics={debrief.metrics} onSelect={selectAt} />
 
       <Timeline
@@ -76,6 +80,8 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
         selection={selection}
         onSelect={setSelection}
       />
+
+      {debrief.trouble && debrief.trouble.length > 0 && <Trouble trouble={debrief.trouble} />}
 
       {debrief.slides?.length > 0 && <Transcript slides={debrief.slides} bundle={bundle} />}
 

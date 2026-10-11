@@ -130,13 +130,13 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, qaSta
               <div className="relative h-11">
                 {shown.map((s) => {
                   const width = ((s.end - s.start) / duration) * 100;
-                  const over = s.end - s.start - s.target;
+                  const over = s.pitch - s.target;
                   return (
                     <button
-                      key={s.slide_index}
+                      key={`${s.slide_index}-${s.start}`}
                       type="button"
                       onClick={() => onSelect({ t: s.start, momentId: null })}
-                      title={`${slideLabel(s.slide_index)}: ${s.title}. ${clock(s.end - s.start)} against a ${clock(s.target)} target`}
+                      title={`${slideLabel(s.slide_index)}: ${s.title}. ${clock(s.pitch)} of pitch against a ${clock(s.target)} target`}
                       className="absolute inset-y-0 flex items-center justify-between gap-1 overflow-hidden rounded-md border-r-2 border-surface bg-paper px-2 text-left text-xs hover:bg-line"
                       style={{ left: pct(s.start, duration), width: `${width}%` }}
                     >

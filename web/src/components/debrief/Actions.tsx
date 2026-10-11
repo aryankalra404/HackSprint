@@ -7,6 +7,7 @@ const ACTION_TEXT: Record<string, string> = {
   report_emailed: "Emailed you this report",
   drill_scheduled: "Booked the drill on your calendar",
   weak_spots_saved: "Briefed the panel to press on your weak spots next time",
+  answers_drafted: "Drafted answers to the questions you couldn't answer, with sources",
 };
 
 // Where the report ends: the one thing to practise, who will press on it, and what n8n already did about it.

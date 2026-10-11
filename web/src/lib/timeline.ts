@@ -6,6 +6,8 @@ export interface SlideSegment {
   start: number;
   end: number;
   target: number;
+  // Seconds of the presenter's own pitch in it: questions asked during it don't count (0.26, as the debrief counts them)
+  pitch: number;
 }
 
 export interface Exchange {
@@ -28,14 +30,18 @@ export interface Freeze {
 
 export function slideSegments(telemetry: Telemetry, slides: Slide[]): SlideSegment[] {
   const starts = telemetry.events.filter((e) => e.type === "slide");
+  const busy = exchanges(telemetry).flatMap((x) => (x.answer ? [[x.t, x.answer.t] as const] : []));
+  const overlap = (from: number, to: number) => busy.reduce((n, [a, z]) => n + Math.max(0, Math.min(to, z) - Math.max(from, a)), 0);
   return starts.map((e, i) => {
     const slide = slides[e.slide_index];
+    const end = starts[i + 1]?.t ?? telemetry.duration_s;
     return {
       slide_index: e.slide_index,
       title: slide?.title ?? `Slide ${e.slide_index + 1}`,
       start: e.t,
-      end: starts[i + 1]?.t ?? telemetry.duration_s,
+      end,
       target: slide?.target_seconds ?? 0,
+      pitch: Math.max(0, end - e.t - overlap(e.t, end)),
     };
   });
 }

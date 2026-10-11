@@ -2,6 +2,7 @@ import type { Bundle, PrepStep, RoomDebrief, SessionRecord, Telemetry, Telemetry
 import { N8N_URL, forgetMeetingReads } from "./api";
 import { getBrief, getRoom, slideLog, updateRoom } from "./room";
 import { cacheSession } from "./sessions";
+import { failedTurns } from "./turns";
 
 // The laptop's side of a debrief (contract: POST /debrief). When a run ends, whoever ended it, the laptop sends n8n what happened
 // (every turn with its transcript, the slide changes it saw, and the rehearsing client's telemetry if it came first), and shows n8n's
@@ -61,7 +62,7 @@ export function startDebrief(again = false): void {
   const ended = room.live.ended_at ? Date.parse(room.live.ended_at) : Date.now();
   const telemetry = g.__dryrunClientTelemetry && g.__dryrunClientTelemetry.at >= started ? g.__dryrunClientTelemetry.telemetry : null;
   const turns: TelemetryEvent[] = feed.map((t) => ({ type: "turn", ...t }));
-  const events = [...slideLog(room.live.started_at), ...turns, ...(telemetry?.events.filter((e) => e.type !== "turn" && e.type !== "slide") ?? [])].sort((a, b) => a.t - b.t);
+  const events = [...slideLog(room.live.started_at), ...turns, ...failedTurns(room.live.started_at), ...(telemetry?.events.filter((e) => e.type !== "turn" && e.type !== "slide") ?? [])].sort((a, b) => a.t - b.t);
   const body = {
     session_id: id,
     meeting_id: getBrief()?.draft_id ?? "",

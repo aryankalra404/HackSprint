@@ -286,6 +286,8 @@ export type TelemetryEvent =
   | { t: number; type: "silence"; duration_s: number; rescue_level: 0 | 1 | 2 | 3 }
   // The chair spoke to bring a presenter back from a freeze (0.26): "Take your time" (2) or the way-back-in question (3)
   | { t: number; type: "rescue"; level: 2 | 3; line_id: string }
+  // A turn n8n didn't answer (0.26), logged by the laptop so the report doesn't blame the presenter for the silence
+  | { t: number; type: "turn_failed"; mode: TurnMode }
   | ({ type: "turn" } & LoggedTurn);
 
 export interface Telemetry {
@@ -307,7 +309,8 @@ export interface Evidence {
 
 export interface Metric {
   name: string;
-  score: number;
+  // null: too short to score (0.26)
+  score: number | null;
   explanation: string;
   evidence: Evidence[];
 }
@@ -347,9 +350,30 @@ export interface Facing {
   longest_gap: { persona_id: PersonaId; seconds: number; from_slide: number; to_slide: number } | null;
 }
 
+// A question the presenter couldn't answer (0.26), with a suggested answer drafted by n8n from the deck, the research and what they said
+export interface OwedAnswer {
+  thread_id: string;
+  persona_id: PersonaId;
+  question: string;
+  said: string;
+  status: "parked" | "dodged" | "partial";
+  suggested: string;
+  // What they must check or fill in themselves (n8n never invents facts about their product)
+  confirm: string;
+  sources: { title: string; url: string }[];
+}
+
+// Something that went wrong on the system's side, which the debrief discounts (0.26)
+export interface Trouble {
+  t: number;
+  kind: "garbled" | "cut_short" | "turn_failed";
+  note: string;
+}
+
 export interface Debrief {
   headline: string;
-  overall: number;
+  // null: too short to score (0.26)
+  overall: number | null;
   previous_overall: number | null;
   stakeholders: StakeholderVerdict[];
   metrics: Metric[];
@@ -358,6 +382,10 @@ export interface Debrief {
   drill: Drill;
   // What the panel presses on next time (0.20); the next /prep for the meeting raises them
   weak_spots?: string[];
+  // 0.26: the questions owed, the system's trouble, and the pitch as counted (only the presenter's own time); missing before 0.26
+  owed?: OwedAnswer[];
+  trouble?: Trouble[];
+  pitch?: { seconds: number; words: number; scored: boolean };
   actions_taken: string[];
 }
 

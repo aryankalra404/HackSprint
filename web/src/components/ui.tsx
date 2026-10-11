@@ -124,6 +124,17 @@ const STANCE: Record<StakeholderVerdict["stance"], [Tone, string]> = {
   opposes: ["bad", "Not convinced"],
 };
 
+const OWED: Record<"parked" | "dodged" | "partial", [Tone, string]> = {
+  parked: ["warn", "Parked"],
+  partial: ["warn", "Partly answered"],
+  dodged: ["bad", "Dodged"],
+};
+
+export function OwedPill({ status }: { status: "parked" | "dodged" | "partial" }) {
+  const [tone, label] = OWED[status];
+  return <Pill tone={tone}>{label}</Pill>;
+}
+
 export function StancePill({ stance }: { stance: StakeholderVerdict["stance"] }) {
   const [tone, label] = STANCE[stance];
   return <Pill tone={tone}>{label}</Pill>;

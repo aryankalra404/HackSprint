@@ -21,11 +21,15 @@ export function BottomStrip({ session }: { session: SessionRecord }) {
       <div className="flex shrink-0 items-center gap-6 lg:border-l lg:border-line lg:pl-6">
         {debrief ? (
           <>
-            <p className="flex items-baseline gap-1">
-              <span className="font-display text-5xl leading-none">{debrief.overall}</span>
-              <span className="text-xs text-muted">/100</span>
-            </p>
-            {debrief.previous_overall != null && (
+            {debrief.overall != null ? (
+              <p className="flex items-baseline gap-1">
+                <span className="font-display text-5xl leading-none">{debrief.overall}</span>
+                <span className="text-xs text-muted">/100</span>
+              </p>
+            ) : (
+              <p className="text-sm text-ink-2">Too short to score</p>
+            )}
+            {debrief.previous_overall != null && debrief.overall != null && (
               <p className="text-sm text-good-ink">
                 ▲ {debrief.overall - debrief.previous_overall}
                 <span className="block text-[11px] text-muted">since last</span>
