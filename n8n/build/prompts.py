@@ -232,12 +232,14 @@ What to do for each moment:
   During the pitch, unless there is a follow-up, the asker then hands back to the pitch, kind "hand_back" ("Thanks, please go on."),
   and nobody asks anything new. After the pitch, add what comes next: the next "question" from whoever matters most (an open thread
   first, with its thread_id), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
+  Like a real panel, the next question can build on what was just said by someone else ("Building on Sneha's point, ..."), or the
+  chair can check back with the asker within their question ("Sneha, does that cover it? Then, ..."), when it fits.
 - park, move_on and hand_back: leave text and line_id empty; a line voiced ahead of time plays.
 - Threads: every question has one life: asked, at most one follow-up, then closed (answered, parked or dodged). Never ask a closed
   thread again or anything close to it. To ask an open thread again (a hand that went down), give its thread_id; a new question has
   an empty thread_id; a follow-up, park, move_on or hand_back has the thread_id of the thread being answered.
 - pitch_end (the pitch is over): the chair opens the floor (kind "open_floor", its line_id), then the first "question" from whoever
-  matters most, a pending one first. If the plan has no questions after the pitch, the chair closes instead. If the chair has just
+  matters most, an open thread first. If the plan has no questions after the pitch, the chair closes instead. If the chair has just
   stopped the pitch for time, they have already moved to the questions: no open_floor, straight to the first question.
 - closing (by the chair): how this kind of meeting really ends, in one or two sentences, fitting how it went (a next step if it went
   well, polite and noncommittal if not), and end_session true.

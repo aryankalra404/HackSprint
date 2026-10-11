@@ -834,7 +834,7 @@ def groq_first_nodes(var, name, prompt, output, schema, source):
 # or opening the floor mid-pitch. Every question is a thread: asked, at most one follow-up, then answered, parked or dodged, and never
 # asked again. Lines voiced ahead of time play as they are; new lines go to the voice.
 CHECK_JS = """
-const r = $('What the room knows').first().json;
+const r = $('What the room knows').first().json.room;
 const d = JSON.parse(replyText($json) || '{}');
 const people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]));
 const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
@@ -842,7 +842,11 @@ const name = id => ((people[id] || {}).display_name || id).split(' ')[0];
 const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'park', 'move_on', 'hand_back', 'open_floor', 'closing'];
 // Park, move-on and hand-back need no text: a generic line plays (0.26)
 const SOCIAL = ['park', 'move_on', 'hand_back'];
-let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id] || SOCIAL.includes(x.kind))).map(x => ({ ...x }));
+// The model sometimes starts a line with who says it ("Rohan: ..."), which the voice would read out
+const unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];
+  return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };
+let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id] || SOCIAL.includes(x.kind)))
+  .map(x => ({ ...x, text: unnamed(people[x.persona_id], x.text) }));
 if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
 // Stopped for time, the chair has already moved to the questions with a line the headset played (0.25)
 if (r.mode === 'pitch_end' && r.time_up) reactions = reactions.filter(x => x.kind !== 'open_floor');
@@ -964,20 +968,26 @@ if (pitchOver && (r.mode === 'answer' || r.mode === 'pitch_end') && !asked && !f
   }
 }
 
-// The model sometimes starts a line with who says it ("Rohan: ..."), which the voice would read out
-const unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];
-  return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };
 reactions = reactions.slice(0, 3).map(x => {
   const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
-  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : unnamed(people[x.persona_id], x.text), raise_hand: r.mode === 'segment' && x.kind === 'question',
+  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : x.text, raise_hand: r.mode === 'segment' && x.kind === 'question',
                 reason: x.reason || '', ...(x.thread_id ? { thread_id: x.thread_id } : {}) };
   return line ? { ...out, line_id: line.id } : out;
 });
 // A bundle briefed before voices existed has none: fall back to a voice that fits the avatar
 const voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');
 const toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);
-return [{ json: { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, threads: [...changed].map(id => byId[id]),
-                           end_session: reactions.some(x => x.kind === 'closing') }, to_voice: toVoice } }];"""
+return { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, threads: [...changed].map(id => byId[id]),
+                  end_session: reactions.some(x => x.kind === 'closing') }, to_voice: toVoice };"""
+
+
+# Whisper's hint list: words it would otherwise mishear. For an answer, the question being answered and the asker's name come first, so
+# answers come back as words (11 Oct: "Nearest True Tax Limit"); then the company, the slide titles and the people.
+WHISPER_HINT = ("{{ (() => { const b = $json.body || $('What the presenter said (headset)').first().json.body; const ctx = b.context || {}; const bundle = ctx.bundle || {}; "
+                "const people = bundle.personas || []; const who = people.find(p => p.id === b.asked_by); "
+                "const open = b.mode === 'answer' ? (ctx.threads || ctx.pending || []).filter(t => t.persona_id === b.asked_by && t.status !== 'answered' && t.status !== 'parked' && t.status !== 'dodged').pop() : null; "
+                "return [open ? open.text : '', who ? who.display_name : '', (bundle.prospect || {}).company].concat((bundle.slides || []).map(s => s.title), people.map(p => p.display_name))"
+                ".filter(Boolean).join(', ').slice(0, 600); })() }}")
 
 
 TURN_REQUEST = {"body": {"session_id": "s1", "mode": "segment", "slide_index": 1, "t": 42.0, "audio_base64": "UklGRg==", "audio_format": "m4a",
@@ -986,16 +996,20 @@ TURN_REQUEST = {"body": {"session_id": "s1", "mode": "segment", "slide_index": 1
                                      "elapsed_s": 42.0, "turns": [], "threads": [], "pending": []}}}
 
 
-def turn():
-    c = IMPORTS
-    c += make_node("turnTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "What the presenter said (headset)", {
-        "httpMethod": "POST", "path": "dryrun/turn", "responseMode": "responseNode", "options": {},
-    }, [TURN_REQUEST])
-    c += code_node("readTurn", "Read the turn", """
+def expr_node(var, name, field, type_, js, output, extra=None):
+    """A Set node whose one field is computed by JavaScript in an n8n expression. Used on the live turn instead of Code nodes: the
+    first Code node of a run waits about 1.7 s for n8n Cloud's code runner, while expressions run at once (contract 0.26)."""
+    body = "{{ (() => {\n" + js.strip().replace("}}", "} }") + "\n})() }}"
+    return make_node(var, "node", "n8n-nodes-base.set", 3.4, name, {
+        "mode": "manual", "assignments": {"assignments": [{"id": var, "name": field, "type": type_, "value": Expr(body)}]}, "options": {},
+    }, output, extra=extra)
+
+
+TURN_READ_JS = """
 // The moment, its audio as a file for transcription, and the context the laptop sent (docs/CONTRACT.md, POST /turn).
 // n8n keeps no state between turns: everything it decides from is here.
-const b = $input.first().json.body;
-const ctx = b.context || {};
+const q = $('What the presenter said (headset)').first().json.body;
+const ctx = q.context || {};
 const bundle = ctx.bundle || {};
 const turns = ctx.turns || [];
 const pitchEnd = turns.findIndex(t => t.mode === 'pitch_end');
@@ -1005,41 +1019,48 @@ const askedAfter = pitchEnd < 0 ? 0 : turns.slice(pitchEnd).reduce((a, t) => a +
 const threads = (ctx.threads || (ctx.pending || []).map((q, i) => ({ id: 'q' + (i + 1), persona_id: q.persona_id, text: q.text, slide_index: q.slide_index, status: 'open', follow_ups: 0, planned: false })));
 // An answer answers the asker's latest thread that's still open. With none, it answers the chair's way-back-in question after a freeze,
 // which the client asked from the bundle without n8n (0.26): that becomes a thread too.
-let answering = b.mode === 'answer' && b.asked_by ? threads.filter(t => t.persona_id === b.asked_by && (t.status === 'open' || t.status === 'followed_up')).pop() : null;
-const rescue = b.mode === 'answer' && !answering ? (bundle.lines || []).find(l => l.kind === 'rescue_question' && l.persona_id === b.asked_by && l.slide_index === b.slide_index) : null;
+let answering = q.mode === 'answer' && q.asked_by ? threads.filter(t => t.persona_id === q.asked_by && (t.status === 'open' || t.status === 'followed_up')).pop() : null;
+const rescue = q.mode === 'answer' && !answering ? (bundle.lines || []).find(l => l.kind === 'rescue_question' && l.persona_id === q.asked_by && l.slide_index === q.slide_index) : null;
 if (rescue) {
-  answering = { id: 'q' + (threads.length + 1), persona_id: rescue.persona_id, text: rescue.text, slide_index: b.slide_index, status: 'open', follow_ups: 0, planned: true };
+  answering = { id: 'q' + (threads.length + 1), persona_id: rescue.persona_id, text: rescue.text, slide_index: q.slide_index, status: 'open', follow_ups: 0, planned: true };
   threads.push(answering);
 }
-const json = { session_id: b.session_id, mode: b.mode, slide_index: b.slide_index, t: b.t, asked_by: b.asked_by || '', mid_slide: !!b.mid_slide, time_up: !!b.time_up,
-               bundle, elapsed: Math.round(ctx.elapsed_s || b.t || 0),
+const r = { session_id: q.session_id, mode: q.mode, slide_index: q.slide_index, t: q.t, asked_by: q.asked_by || '', mid_slide: !!q.mid_slide, time_up: !!q.time_up,
+               bundle, elapsed: Math.round(ctx.elapsed_s || q.t || 0),
                turns, threads, answering_id: answering ? answering.id : '', asked_during: askedDuring, asked_after: askedAfter };
-// The laptop sends the speech as AAC (m4a), or WAV if it couldn't compress it
-const audio = b.audio_base64 || b.audio_wav_base64 || '';
-const m4a = b.audio_format === 'm4a';
-return [{ json: { ...json, has_audio: !!audio }, binary: audio ? { audio: { data: audio, mimeType: m4a ? 'audio/mp4' : 'audio/wav', fileName: m4a ? 'turn.m4a' : 'turn.wav' } } : {} }];""",
-                   [{"mode": "segment", "bundle": {}, "turns": [], "threads": [], "answering_id": "", "asked_during": 0, "asked_after": 0, "has_audio": True}])
+"""
+
+def turn():
+    c = IMPORTS
+    c += make_node("turnTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "What the presenter said (headset)", {
+        "httpMethod": "POST", "path": "dryrun/turn", "responseMode": "responseNode", "options": {},
+    }, [TURN_REQUEST])
+    # The speech as a file for Whisper: the laptop sends AAC (m4a), or WAV if it couldn't compress it
+    c += make_node("readAudio", "node", "n8n-nodes-base.convertToFile", 1.1, "Read the speech", {
+        "operation": "toBinary", "sourceProperty": "body.audio_base64",
+        "options": {"fileName": Expr("{{ $json.body.audio_format === 'm4a' ? 'turn.m4a' : 'turn.wav' }}"),
+                    "mimeType": Expr("{{ $json.body.audio_format === 'm4a' ? 'audio/mp4' : 'audio/wav' }}")},
+    }, [{}], extra={"onError": "continueRegularOutput"})
     c += make_node("transcribe", "node", "n8n-nodes-base.httpRequest", 4.5, "Transcribe (Groq Whisper)", {
         "method": "POST", "url": GROQ_WHISPER, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
         "sendBody": True, "contentType": "multipart-form-data",
         "bodyParameters": {"parameters": [
-            {"parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "audio"},
+            {"parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "data"},
             {"name": "model", "value": WHISPER_MODEL}, {"name": "language", "value": "en"}, {"name": "response_format", "value": "json"},
-            # Names Whisper would otherwise mishear ("RouteIQ" came out as "Rautik"): the company, the slides and the people
-            {"name": "prompt", "value": Expr("{{ [($json.bundle.prospect || {}).company].concat(($json.bundle.slides || []).map(s => s.title), "
-                                             "($json.bundle.personas || []).map(p => p.display_name)).filter(Boolean).join(', ').slice(0, 600) }}")}]},
+            # Words Whisper would otherwise mishear ("RouteIQ" came out as "Rautik"): for an answer, the question being answered and
+            # who asked it first, then the company, the slides and the people
+            {"name": "prompt", "value": Expr(WHISPER_HINT)}]},
         "options": {"timeout": 30000},
     }, [{"text": "So at your scale, that is a meaningful saving in the first year."}], credentials={"groqApi": "Groq"},
         # No audio, or a failed transcription, carries on with an empty transcript: the room just doesn't react
         extra={"onError": "continueRegularOutput"})
     # The prompt is put together in "What the room knows", so changing it means changing one node
     prompt = "j.prompt"
-    c += code_node("context", "What the room knows", """
+    c += expr_node("context", "What the room knows", "room", "object", TURN_READ_JS + """
 // The prompt, kept short: a live turn should take a few seconds, and Groq's free tier allows 8,000 tokens a minute
 const PROMPT = """ + json.dumps(TURN_PROMPT) + """;
-const r = $('Read the turn').first().json;
 const b = r.bundle;
-const transcript = String(($json && $json.text) || '').trim();
+const transcript = String($('Transcribe (Groq Whisper)').first().json.text || '').trim();
 const personas = (b.personas || []).map(p => ({ id: p.id, name: p.display_name, role: p.role, manner: p.manner, chair: p.chair, difficulty: p.difficulty,
   priorities: p.priorities, objections: (p.objections || []).map(o => (o.slide_index >= 0 ? 'slide ' + (o.slide_index + 1) + ': ' : '') + o.text) }));
 const slide = (b.slides || []).find(s => s.index === r.slide_index);
@@ -1063,42 +1084,44 @@ const parts = {
 };
 // Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-return [{ json: { ...r, transcript, prompt } }];""",
-                   [{"mode": "segment", "transcript": ""}])
-    c += groq_first_nodes("decide", "Decide who reacts", prompt, [{"choices": [{"message": {"content": "{}"}}]}], TURN_SCHEMA, "$('What the room knows').first().json")
-    c += code_node("check", "Check the reactions", REPLY_JS + CHECK_JS, [{"reply": {"reactions": [], "threads": []}, "to_voice": []}])
+return { ...r, transcript, prompt };""", [{"room": {"mode": "segment", "transcript": "", "prompt": ""}}])
+    c += groq_first_nodes("decide", "Decide who reacts", prompt, [{"choices": [{"message": {"content": "{}"}}]}], TURN_SCHEMA, "$('What the room knows').first().json.room")
+    c += expr_node("check", "Check the reactions", "out", "object", REPLY_JS + CHECK_JS, [{"out": {"reply": {"reactions": [], "threads": []}, "to_voice": []}}])
     c += make_node("anyToVoice", "ifElse", "n8n-nodes-base.if", 2.3, "New lines to voice?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
-            "conditions": [{"leftValue": Expr("{{ $json.to_voice.length }}"), "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}],
+            "conditions": [{"leftValue": Expr("{{ $json.out.to_voice.length }}"), "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}],
             "combinator": "and",
         }, "options": {},
-    }, [{"to_voice": []}])
-    c += code_node("eachReaction", "One item per new line", """
-return $input.first().json.to_voice.map(v => ({ json: v }));""", [{"i": 0, "text": "Meaningful isn't a number.", "speaker": "rahul"}])
+    }, [{"out": {"to_voice": []}}])
+    c += make_node("eachReaction", "node", "n8n-nodes-base.splitOut", 1, "One item per new line", {"fieldToSplitOut": "out.to_voice", "options": {}},
+                   [{"i": 0, "text": "Meaningful isn't a number.", "speaker": "rahul"}])
     c += make_node("voiceTurn", "node", "n8n-nodes-base.httpRequest", 4.5, "Voice the line (Sarvam)", {
         "method": "POST", "url": SARVAM_TTS, "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
         "sendBody": True, "specifyBody": "json",
         "jsonBody": Expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: '" + SARVAM_MODEL + "', speaker: $json.speaker, speech_sample_rate: 22050, output_audio_codec: 'mp3' }) }}"),
-        "options": {"timeout": 20000},
+        # A turn's new lines are voiced at the same time
+        "options": {"timeout": 20000, "batching": {"batch": {"batchSize": 3, "batchInterval": 0}}},
     }, [{"request_id": "r1", "audios": ["UklGRg=="]}], credentials={"httpHeaderAuth": "Sarvam"}, extra={"onError": "continueRegularOutput"})
-    c += code_node("withVoices", "Add the voices", """
+    c += expr_node("withVoices", "Add the voices", "reply", "object", """
 // The reply with each new line's audio (base64 MP3); the laptop saves them as WAV and gives the headset their paths
-const c = $('Check the reactions').first().json;
-const voiced = (() => { try { return $('Voice the line (Sarvam)').isExecuted; } catch (e) { return false; } })();
+const c = $('Check the reactions').first().json.out;
+const voiced = $('Voice the line (Sarvam)').isExecuted;
 const items = voiced ? $('One item per new line').all().map(i => i.json) : [];
 const out = voiced ? $('Voice the line (Sarvam)').all().map(i => i.json) : [];
 const reactions = c.reply.reactions.map(x => ({ ...x }));
 items.forEach((v, k) => { const a = out[k] && out[k].audios && out[k].audios[0]; if (a) reactions[v.i].audio_base64 = a; });
-return [{ json: { ...c.reply, reactions } }];""", [{"transcript": "", "reactions": []}])
-    c += make_node("replyTurn", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the reactions", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
+return { ...c.reply, reactions };""", [{"reply": {"transcript": "", "reactions": []}}], extra={"executeOnce": True})
+    c += make_node("replyTurn", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the reactions",
+                   {"respondWith": "json", "responseBody": Expr("{{ JSON.stringify($json.reply) }}"), "options": {}}, [{}])
     c += ("const about = sticky('## DryRun turn\\nHow the room reacts to what the presenter just said (POST /webhook/dryrun/turn, docs/CONTRACT.md): "
-          "transcribes it, decides whether anyone speaks, who, what and why (or why nobody does), and voices it. The laptop sends the context, "
-          "so this keeps no state.', [turnTrigger], { color: 4 });\n\n")
+          "transcribes it, decides whether anyone speaks, who, what and why (or why nobody does), holds that to the rules (every question "
+          "a thread: one follow-up, then answered, parked or dodged), and voices it. The laptop sends the context, so this keeps no state. "
+          "No Code nodes on this path: their runner takes about 1.7 s to start, expressions don\\'t.', [turnTrigger], { color: 4 });\n\n")
     c += """export default workflow('dryrun-turn', 'DryRun turn')
   .add(about)
   .add(turnTrigger)
-  .to(readTurn)
+  .to(readAudio)
   .to(transcribe)
   .to(context)
   .to(decide)
@@ -1109,8 +1132,8 @@ return [{ json: { ...c.reply, reactions } }];""", [{"transcript": "", "reactions
   .add(decide.onError(decideGemini))
   .add(decideGemini)
   .to(check)
-  .group('Listen', [readTurn, transcribe], { description: 'Reads the moment and transcribes what the presenter said' })
-  .group('Decide', [context, decide, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why' })
+  .group('Listen', [readAudio, transcribe], { description: 'Reads the speech and transcribes what the presenter said' })
+  .group('Decide', [context, decide, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why, and holds it to the rules' })
   .group('Voice', [anyToVoice, eachReaction, voiceTurn, withVoices], { description: 'Voices new lines with Sarvam; lines voiced in prep play as they are' });
 """
     return c

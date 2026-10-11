@@ -14,7 +14,7 @@ export const turnTimeoutS = 15;
 export const pitchEndTimeoutS = 20;
 export const minSpeechS = 1.5;
 export const preRollS = 1;
-export const answerPauseS = 1.2;
+export const answerPauseS = 0.8;
 export const maxTurnS = 90;
 // A slide recorded for longer than this goes at the next pause anyway, only so each upload stays small
 export const maxSegmentS = 300;
