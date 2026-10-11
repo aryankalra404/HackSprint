@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import BRIEF_PROMPT, BRIEF_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, WEB_PROMPT
+from prompts import BRIEF_PROMPT, BRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, WEB_PROMPT
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
 # One model for every Gemini step. Free-tier limits are per model (gemini-2.5-flash allows 20 requests a day).
@@ -103,7 +103,8 @@ def llm_nodes(var, name, prompt, output, schema=None, source="$json"):
     # Groq's JSON mode takes no schema, so the schema goes in the prompt
     ask = ("(" + prompt.replace("$json", "j") + ")" + (" + " + json.dumps("\n\nReply with only a JSON object that follows this JSON schema:\n") +
            " + JSON.stringify(" + js_obj(schema) + ")" if schema else ""))
-    body = ("{{ (() => { const j = " + source + "; return JSON.stringify({ model: '" + GROQ_MODEL + "', messages: [{ role: 'user', content: " + ask + " }]" +
+    # gpt-oss reasons before it answers, and its default 3,072 tokens can run out before the JSON is finished
+    body = ("{{ (() => { const j = " + source + "; return JSON.stringify({ model: '" + GROQ_MODEL + "', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: " + ask + " }]" +
             (", response_format: { type: 'json_object' }" if schema else "") + " }); })() }}")
     groq = make_node(var + "Groq", "node", "n8n-nodes-base.httpRequest", 4.5, name + " (Groq)", {
         "method": "POST",
@@ -205,10 +206,15 @@ def prep():
 return $input.all().map(({ json: e }) => {
   const attendees = (e.attendees || []).map(a => ({ name: a.displayName || a.email.split('@')[0], email: a.email, self: !!a.self }));
   const self = attendees.find(a => a.self) || { email: (e.creator && e.creator.email) || (e.organizer && e.organizer.email) || '' };
+  const start = (e.start && (e.start.dateTime || e.start.date)) || '';
+  const end = (e.end && (e.end.dateTime || e.end.date)) || '';
+  // The slot's length, so the brief can suggest how long to pitch (null for all-day events)
+  const minutes = start && end && e.start.dateTime ? Math.round((Date.parse(end) - Date.parse(start)) / 60000) : null;
   return { json: {
     meeting_id: e.id,
     title: e.summary || 'Untitled meeting',
-    start: (e.start && (e.start.dateTime || e.start.date)) || '',
+    start,
+    minutes,
     description: (e.description || '').replace(/<[^>]+>/g, ' ').slice(0, 2000),
     attendees: attendees.filter(a => !a.self).map(a => ({ name: a.name, email: a.email })),
     owner_email: self.email,
@@ -226,6 +232,7 @@ return $input.all().map(({ json }) => {
     meeting_id: b.id || ('web-' + Date.now()),
     title: b.title || ('Meeting with ' + (b.company || 'a prospect')),
     start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),
+    minutes: b.minutes || null,
     description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.context].filter(Boolean).join('\\n').slice(0, 4000),
     attendees: b.attendees || [],
     owner_email: b.owner_email || '',
@@ -392,7 +399,9 @@ const brief = {
   attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),
   questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 12),
 };
-const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [] };
+// n8n's suggested pitch length (contract 0.18: proposal.pitch), kept to whole minutes from 1 to 60
+const pitch = b.pitch && b.pitch.minutes ? { minutes: Math.max(1, Math.min(60, Math.round(b.pitch.minutes))), why: b.pitch.why || '' } : undefined;
+const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [], ...(pitch ? { pitch } : {}) };
 return [{ json: { meeting: prev.meeting, brief, proposal } }];""", [{"meeting": MEETING, "brief": {}, "proposal": {}}])
     c += code_node("rowReady", "Row: ready", PROGRESS_JS + """
 const s = $('Seat the panel').first().json;
@@ -534,8 +543,100 @@ return [{ json: {
     return c
 
 
+# ---------------------------------------------------------------- DryRun rehearsal prep (/prep)
+
+REHEARSAL_REQUEST = {"body": {"draft_id": "evt123", "presenter": {"name": "Aryan", "email": "you@example.com"}, "pitch_minutes": 5,
+                              "deck": {"name": "RouteIQ.pdf", "slides": [{"index": 0, "text": "RouteIQ for Delhivery"}]},
+                              "prospect": {"company": "Delhivery", "website": "", "context": "RouteIQ pitch"},
+                              "panel": [{"id": "p1", "seat": 0, "color": 0, "role": "VP Operations", "role_short": "VP Ops", "display_name": "Priya Nair",
+                                         "avatar": "business_female_01", "difficulty": 2, "source": "email"}]}}
+
+
+def rehearsal():
+    c = IMPORTS
+    c += make_node("prepTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "Start a rehearsal (web app)", {
+        "httpMethod": "POST", "path": "dryrun/prep", "responseMode": "responseNode", "options": {},
+    }, [REHEARSAL_REQUEST])
+    # The meeting's brief and research, saved by DryRun prep. A meeting missing from the table still gets a rehearsal.
+    c += make_node("findMeeting", "node", "n8n-nodes-base.dataTable", 1.1, "Find the meeting", {
+        "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.draft_id }}")}]},
+    }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "kind": "sales_pitch", "why": "", "brief": "{}"}], extra={"alwaysOutputData": True})
+    c += code_node("gather", "Gather what n8n knows", """
+// Everything the rehearsal is planned from: the meeting and its brief (from the DryRun meetings table), the confirmed panel,
+// the deck's slide text and the pitch length (docs/CONTRACT.md, POST /prep)
+const req = $('Start a rehearsal (web app)').first().json.body;
+const row = $input.first().json || {};
+const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
+const brief = parse(row.brief) || {};
+const minutes = Math.max(1, Math.min(60, Math.round(Number(req.pitch_minutes) || 5)));
+const meeting = { title: row.title || (req.prospect && req.prospect.context) || 'Meeting', company: row.company || (req.prospect && req.prospect.company) || '',
+                  kind: row.kind || 'other', start: row.start || '', notes: row.why || '' };
+const panel = (req.panel || []).map(p => ({ id: p.id, name: p.display_name || '', role: p.role, difficulty: p.difficulty || 2,
+                                            source: p.source || 'typical', will_push_on: p.will_push_on || '', why: p.why || '' }));
+const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1500) }));
+return [{ json: { req, minutes, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides,
+                  brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
+                           company: brief.company || {} } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
+    c += llm_nodes("plan", "Plan the rehearsal", json.dumps(REHEARSAL_PROMPT) +
+                   ".replace('{presenter}', $json.presenter || 'the presenter').split('{minutes}').join(String($json.minutes))"
+                   ".replace('{meeting}', JSON.stringify($json.meeting, null, 1)).replace('{brief}', JSON.stringify($json.brief, null, 1))"
+                   ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{deck}', JSON.stringify($json.slides, null, 1))",
+                   GEMINI_REPLY, schema=REHEARSAL_SCHEMA, source="$('Gather what n8n knows').first().json")
+    c += code_node("bundle", "Build the bundle", REPLY_JS + """
+// The rehearsal bundle (docs/CONTRACT.md, POST /prep response). Seats, colours, faces and difficulty stay as the presenter set them;
+// the plan, the briefs and the lines are n8n's. The laptop fills in each slide's image and saves the voices.
+const g = $('Gather what n8n knows').first().json;
+const p = JSON.parse(replyText($json) || '{}');
+const byId = Object.fromEntries((p.personas || []).map(x => [x.id, x]));
+const ids = g.req.panel.map(m => m.id);
+const chair = ids.includes(p.chair) ? p.chair : (g.req.panel.find(m => m.seat === 0) || g.req.panel[0] || {}).id;
+const personas = g.req.panel.map(m => {
+  const x = byId[m.id] || {};
+  return { id: m.id, seat: m.seat, color: m.color, role: m.role, role_short: m.role_short, avatar: m.avatar,
+           display_name: m.display_name || x.display_name || m.role, priorities: x.priorities || [],
+           objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: o.source === 'deck' ? 'deck' : 'research' })),
+           difficulty: m.difficulty || 2, manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,
+           // Chosen with the voices (TTS) step
+           voice: '' };
+});
+// Slide times scaled so they add up to the pitch length
+const pitchSeconds = g.minutes * 60;
+const raw = g.slides.map(s => (p.slides || []).find(x => x.index === s.index) || { index: s.index, title: 'Slide ' + (s.index + 1), key_points: [], target_seconds: 60, rescue: {} });
+const total = raw.reduce((a, s) => a + Math.max(5, s.target_seconds || 0), 0) || 1;
+const slides = raw.map(s => ({ index: s.index, title: s.title || '', image_url: '', key_points: s.key_points || [],
+  target_seconds: Math.max(5, Math.round(Math.max(5, s.target_seconds || 0) * pitchSeconds / total)),
+  rescue: { calm: (s.rescue && s.rescue.calm) || 'Take a breath.', keyword: (s.rescue && s.rescue.keyword) || '', bridge: (s.rescue && s.rescue.bridge) || '' },
+  notes: null }));
+const r = (p.rescue_after_s || []).map(Number).filter(n => n > 0).slice(0, 3);
+const rescue = r.length === 3 && r[0] < r[1] && r[1] < r[2] ? r : [3, 6, 10];
+const plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0)), after_pitch: Math.max(0, Math.round((p.plan && p.plan.after_pitch) || 0)),
+               why: (p.plan && p.plan.why) || '' };
+const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
+return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,
+                  rescue_after_s: rescue, slides, personas, lines, drill: null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
+    c += make_node("reply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the bundle", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
+    c += ("const about = sticky('## DryRun rehearsal prep\\nBriefs the practice panel for one rehearsal (POST /webhook/dryrun/prep, docs/CONTRACT.md): "
+          "plans each slide and the rescue cues, what each person will push on, who interrupts and who chairs, how many questions to ask "
+          "and when, and the lines voiced ahead of time.', [prepTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-rehearsal-prep', 'DryRun rehearsal prep')
+  .add(about)
+  .add(prepTrigger)
+  .to(findMeeting)
+  .to(gather)
+  .to(plan)
+  .to(bundle)
+  .to(reply)
+  .add(plan.onError(planGroq))
+  .add(planGroq)
+  .to(bundle)
+  .group('Plan', [gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' });
+"""
+    return c
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")
