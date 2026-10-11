@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
                      TURN_SCHEMA, WEB_PROMPT)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
@@ -31,6 +31,8 @@ SARVAM_TTS = "https://api.sarvam.ai/text-to-speech"
 SARVAM_MODEL = "bulbul:v3"
 VOICES = {"female": ["priya", "kavya", "neha", "ritu", "shreya", "simran"], "male": ["rahul", "aditya", "rohan", "amit", "kabir", "varun", "dev"]}
 MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "wURCb4PjdZLpttns", "cachedResultName": "DryRun meetings"}
+# One row per rehearsal: its bundle, what happened, the debrief's progress and the debrief (JSON as strings)
+SESSIONS_TABLE = {"__rl": True, "mode": "id", "value": "xzUZexBbX6bcX18F", "cachedResultName": "DryRun sessions"}
 
 IMPORTS = ("import { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, "
            "nextBatch, languageModel, memory, tool, outputParser, embedding, embeddings, vectorStore, retriever, documentLoader, "
@@ -511,42 +513,62 @@ def api():
         c += make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name,
                        {"resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "returnAll": True},
                        [{"meeting_id": "evt123", "title": "RouteIQ pitch", "status": "ready"}], extra={"alwaysOutputData": True})
+    # Each meeting's rehearsals (0.20), from the DryRun sessions table, read once per request
+    for var, name in [("sessionsAll", "Read rehearsals"), ("sessionsOne", "Read its rehearsals")]:
+        c += make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name,
+                       {"resource": "row", "operation": "get", "dataTableId": SESSIONS_TABLE, "returnAll": True},
+                       [{"session_id": "s1", "meeting_id": "evt123", "status": "done", "overall": 63, "headline": "", "at": "2026-10-12T18:02:00.000Z"}],
+                       extra={"alwaysOutputData": True, "executeOnce": True})
     c += code_node("shapeList", "Upcoming meetings", """
-// Upcoming (and today's) meetings, soonest first (docs/CONTRACT.md, GET /meetings)
+// Upcoming (and today's) meetings, soonest first (docs/CONTRACT.md, GET /meetings), each with its rehearsals so far
 const since = Date.now() - 12 * 3600 * 1000;
 const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
-const meetings = $input.all().map(i => i.json).filter(r => r.meeting_id && (!r.start || Date.parse(r.start) >= since))
+const sessions = $input.all().map(i => i.json).filter(r => r.session_id && r.status === 'done');
+const practice = id => {
+  const done = sessions.filter(r => String(r.meeting_id) === String(id)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return done.length ? { sessions: done.length, last: { session_id: done[0].session_id, at: done[0].at, overall: done[0].overall, headline: done[0].headline || '' } } : null;
+};
+const meetings = $('Read meetings').all().map(i => i.json).filter(r => r.meeting_id && (!r.start || Date.parse(r.start) >= since))
   .sort((a, b) => Date.parse(a.start || 0) - Date.parse(b.start || 0))
   .map(r => ({ id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [],
                progress: parse(r.progress) || [], started_at: r.started_at || null,
-               run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null }));
+               run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null, practice: practice(r.meeting_id) }));
 return [{ json: { meetings } }];""", [{"meetings": []}])
     c += code_node("shapeOne", "The meeting and its brief", """
-// One meeting by id, with its brief and proposed panel (docs/CONTRACT.md, GET /meeting)
+// One meeting by id, with its brief, proposed panel and rehearsals, newest first (docs/CONTRACT.md, GET /meeting)
 const id = $('GET /meeting').first().json.query.id;
-const r = $input.all().map(i => i.json).find(r => String(r.meeting_id) === String(id));
+const r = $('Read meeting').all().map(i => i.json).find(r => String(r.meeting_id) === String(id));
 const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
 if (!r) return [{ json: { error: 'not found' } }];
+const sessions = $input.all().map(i => i.json).filter(x => x.session_id && String(x.meeting_id) === String(id))
+  .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  .map(x => ({ session_id: x.session_id, at: x.at, status: x.status, overall: typeof x.overall === 'number' ? x.overall : null, headline: x.headline || '' }));
+const done = sessions.filter(x => x.status === 'done');
 return [{ json: {
   meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [],
              progress: parse(r.progress) || [], started_at: r.started_at || null,
-             run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null },
-  brief: parse(r.brief), proposal: parse(r.proposal),
-} }];""", [{"meeting": {}, "brief": None, "proposal": None}])
+             run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null,
+             practice: done.length ? { sessions: done.length, last: { session_id: done[0].session_id, at: done[0].at, overall: done[0].overall, headline: done[0].headline } } : null },
+  brief: parse(r.brief), proposal: parse(r.proposal), sessions,
+} }];""", [{"meeting": {}, "brief": None, "proposal": None, "sessions": []}])
     for var, name in [("sendList", "Send meetings"), ("sendOne", "Send the meeting")]:
         c += make_node(var, "node", "n8n-nodes-base.respondToWebhook", 1.5, name, {"respondWith": "firstIncomingItem", "options": {}}, [{}])
-    c += ("const about = sticky('## DryRun meetings API\\nThe web app reads your meetings and briefs from the DryRun meetings table: "
-          "GET /webhook/dryrun/meetings and GET /webhook/dryrun/meeting?id= (docs/CONTRACT.md).', [listTrigger, oneTrigger], { color: 4 });\n\n")
+    c += ("const about = sticky('## DryRun meetings API\\nThe web app reads your meetings and briefs from the DryRun meetings table, with each meeting\\'s "
+          "rehearsals from DryRun sessions: GET /webhook/dryrun/meetings and GET /webhook/dryrun/meeting?id= (docs/CONTRACT.md).', [listTrigger, oneTrigger], { color: 4 });\n\n")
     c += """export default workflow('dryrun-meetings-api', 'DryRun meetings API')
   .add(about)
   .add(listTrigger)
   .to(readAll)
+  .to(sessionsAll)
   .to(shapeList)
   .to(sendList)
   .add(oneTrigger)
   .to(readOne)
+  .to(sessionsOne)
   .to(shapeOne)
-  .to(sendOne);
+  .to(sendOne)
+  .group('Meetings', [readAll, sessionsAll, shapeList, sendList], { description: 'GET /meetings: upcoming meetings, each with its rehearsals so far' })
+  .group('One meeting', [readOne, sessionsOne, shapeOne, sendOne], { description: 'GET /meeting: one meeting with its brief, panel and rehearsals' });
 """
     return c
 
@@ -570,12 +592,24 @@ def rehearsal():
         "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "matchType": "anyCondition",
         "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.draft_id }}")}]},
     }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "kind": "sales_pitch", "why": "", "brief": "{}"}], extra={"alwaysOutputData": True})
+    # The meeting's last debriefed rehearsal (0.20): the next one presses on its weak spots and shows its talk track
+    c += make_node("lastRehearsal", "node", "n8n-nodes-base.dataTable", 1.1, "Last rehearsal", {
+        "resource": "row", "operation": "get", "dataTableId": SESSIONS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $('Start a rehearsal (web app)').first().json.body.draft_id || 'none' }}")}]},
+        "returnAll": True,
+    }, [{"session_id": "s0", "meeting_id": "evt123", "status": "done", "at": "2026-10-10T19:12:00.000Z", "overall": 63, "debrief": "{}"}],
+        extra={"alwaysOutputData": True, "executeOnce": True})
     c += code_node("gather", "Gather what n8n knows", """
 // Everything the rehearsal is planned from: the meeting and its brief (from the DryRun meetings table), the confirmed panel,
 // the deck's slide text and the pitch length (docs/CONTRACT.md, POST /prep)
 const req = $('Start a rehearsal (web app)').first().json.body;
-const row = $input.first().json || {};
+const row = $('Find the meeting').first().json || {};
 const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
+// The last debriefed rehearsal of this meeting, if any: its score, weak spots, drill and each slide's talk track
+const done = $input.all().map(i => i.json).filter(r => r.session_id && r.status === 'done').sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+const lastDebrief = done.length ? parse(done[0].debrief) : null;
+const last = lastDebrief ? { overall: lastDebrief.overall, headline: lastDebrief.headline || '', weak_spots: lastDebrief.weak_spots || [], drill: lastDebrief.drill || null,
+                             notes: Object.fromEntries((lastDebrief.slides || []).filter(s => s.notes).map(s => [s.index, s.notes])) } : null;
 const brief = parse(row.brief) || {};
 const minutes = Math.max(1, Math.min(60, Math.round(Number(req.pitch_minutes) || 5)));
 const meeting = { title: row.title || (req.prospect && req.prospect.context) || 'Meeting', company: row.company || (req.prospect && req.prospect.company) || '',
@@ -583,13 +617,15 @@ const meeting = { title: row.title || (req.prospect && req.prospect.context) || 
 const panel = (req.panel || []).map(p => ({ id: p.id, name: p.display_name || '', role: p.role, difficulty: p.difficulty || 2,
                                             source: p.source || 'typical', will_push_on: p.will_push_on || '', why: p.why || '' }));
 const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1500) }));
-return [{ json: { req, minutes, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides,
+return [{ json: { req, minutes, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last,
+                  history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
                            company: brief.company || {} } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
     c += llm_nodes("plan", "Plan the rehearsal", json.dumps(REHEARSAL_PROMPT) +
                    ".replace('{presenter}', $json.presenter || 'the presenter').split('{minutes}').join(String($json.minutes))"
                    ".replace('{meeting}', JSON.stringify($json.meeting, null, 1)).replace('{brief}', JSON.stringify($json.brief, null, 1))"
-                   ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{deck}', JSON.stringify($json.slides, null, 1))",
+                   ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{deck}', JSON.stringify($json.slides, null, 1))"
+                   ".replace('{history}', $json.history || 'First rehearsal.')",
                    GEMINI_REPLY, schema=REHEARSAL_SCHEMA, source="$('Gather what n8n knows').first().json")
     c += code_node("bundle", "Build the bundle", REPLY_JS + """
 // The rehearsal bundle (docs/CONTRACT.md, POST /prep response). Seats, colours, faces and difficulty stay as the presenter set them;
@@ -607,8 +643,9 @@ const personas = g.req.panel.map(m => {
   const x = byId[m.id] || {};
   return { id: m.id, seat: m.seat, color: m.color, role: m.role, role_short: m.role_short, avatar: m.avatar,
            display_name: m.display_name || x.display_name || m.role, priorities: x.priorities || [],
-           objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: o.source === 'deck' ? 'deck' : 'research' })),
-           difficulty: m.difficulty || 2, manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,
+           objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: ['deck', 'history'].includes(o.source) ? o.source : 'research' })),
+           // Whoever presses on a weak spot from last time is one step harder (at most 3)
+           difficulty: Math.min(3, (m.difficulty || 2) + ((x.objections || []).some(o => o.source === 'history') ? 1 : 0)), manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,
            voice: voiceFor(m.avatar) };
 });
 // Slide times scaled so they add up to the pitch length
@@ -618,14 +655,15 @@ const total = raw.reduce((a, s) => a + Math.max(5, s.target_seconds || 0), 0) ||
 const slides = raw.map(s => ({ index: s.index, title: s.title || '', image_url: '', key_points: s.key_points || [],
   target_seconds: Math.max(5, Math.round(Math.max(5, s.target_seconds || 0) * pitchSeconds / total)),
   rescue: { calm: (s.rescue && s.rescue.calm) || 'Take a breath.', keyword: (s.rescue && s.rescue.keyword) || '', bridge: (s.rescue && s.rescue.bridge) || '' },
-  notes: null }));
+  // The talk track from the last debrief of this meeting, on the speaker view (null on a first rehearsal)
+  notes: (g.last && g.last.notes[s.index]) || null }));
 const r = (p.rescue_after_s || []).map(Number).filter(n => n > 0).slice(0, 3);
 const rescue = r.length === 3 && r[0] < r[1] && r[1] < r[2] ? r : [3, 6, 10];
 const plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0)), after_pitch: Math.max(0, Math.round((p.plan && p.plan.after_pitch) || 0)),
                why: (p.plan && p.plan.why) || '' };
 const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
 return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,
-                  rescue_after_s: rescue, slides, personas, lines, drill: null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
+                  rescue_after_s: rescue, slides, personas, lines, drill: (g.last && g.last.drill) || null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
     c += code_node("eachLine", "One item per line", """
 // Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).
 const b = $input.first().json;
@@ -661,6 +699,7 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_bas
   .add(about)
   .add(prepTrigger)
   .to(findMeeting)
+  .to(lastRehearsal)
   .to(gather)
   .to(plan)
   .to(bundle)
@@ -671,7 +710,7 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_bas
   .add(plan.onError(planGroq))
   .add(planGroq)
   .to(bundle)
-  .group('Plan', [gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
+  .group('Plan', [lastRehearsal, gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
   .group('Voices', [eachLine, voice, addVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\\'s voice' });
 """
     return c
@@ -771,9 +810,12 @@ const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
 const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'open_floor', 'closing'];
 let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id]));
 if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
+// The model sometimes starts a line with who says it ("Rohan: ..."), which the voice would read out
+const unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];
+  return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };
 reactions = reactions.slice(0, 3).map(x => {
   const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
-  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : String(x.text), raise_hand: r.mode === 'segment' && x.kind === 'question', reason: x.reason || '' };
+  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : unnamed(people[x.persona_id], x.text), raise_hand: r.mode === 'segment' && x.kind === 'question', reason: x.reason || '' };
   return line ? { ...out, line_id: line.id } : out;
 });
 const verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;
@@ -831,8 +873,315 @@ return [{ json: { ...c.reply, reactions } }];""", [{"transcript": "", "reactions
     return c
 
 
+# ---------------------------------------------------------------- DryRun debrief (/debrief and GET /session)
+
+DEBRIEF_REQUEST = {"body": {"session_id": "s1", "meeting_id": "evt123", "client": "web", "duration_s": 300, "owner_email": "you@example.com",
+                            "presenter": {"name": "Aryan", "email": "you@example.com"},
+                            "events": [{"t": 0, "type": "slide", "slide_index": 0},
+                                       {"t": 40, "type": "turn", "mode": "segment", "slide_index": 0, "transcript": "We cut empty miles by a third.",
+                                        "note": "", "reactions": [], "answer_verdict": None}],
+                            "bundle": {"session_id": "s1", "prospect": {"company": "Delhivery"}, "pitch_seconds": 300, "slides": [], "personas": [], "lines": []}}}
+
+
+def sessions_upsert(var, name):
+    return make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name, {
+        "resource": "row", "operation": "upsert", "dataTableId": SESSIONS_TABLE, "matchType": "allConditions",
+        "filters": {"conditions": [{"keyName": "session_id", "condition": "eq", "keyValue": Expr("{{ $json.session_id }}")}]},
+        "columns": {"mappingMode": "autoMapInputData", "value": None},
+    }, [{"id": 1}])
+
+
+# Where n8n is in the debrief (contract: debrief_status), from the steps that have run so far; inlined into each save
+DEBRIEF_PROGRESS_JS = """
+const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };
+const out = name => (ran(name) ? $(name).first().json : null);
+const read = $('Read the session').first().json;
+const judged = out('Build the debrief');
+const mailed = out('Email the report');
+const step = (id, label, done, running, doneText, runningText) => ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '' });
+const debriefSteps = [
+  step('read', 'Read the transcript', true, false, read.summary, ''),
+  step('judge', 'Judged the pitch', !!judged, true,
+    judged ? 'Scored ' + judged.debrief.metrics.length + ' things with evidence, marked ' + judged.marks + ' moments, ' + judged.backs + ' of ' + judged.debrief.stakeholders.length + ' would back it' : '',
+    'Marking the transcript, scoring the answers and reading the room'),
+  step('plan', 'Planned the next rehearsal', !!judged, !!judged,
+    judged ? 'Drill: ' + judged.debrief.drill.title + (judged.debrief.weak_spots.length ? '. The panel will press on ' + judged.debrief.weak_spots.join(', ') : '') : '', ''),
+  step('email', 'Emailed you the report', !!mailed && !mailed.error, !!judged, 'To ' + (read.owner_email || 'you'), 'Emailing you the report'),
+];
+if (mailed && mailed.error) Object.assign(debriefSteps[3], { state: 'error', detail: "Couldn't email the report" });
+const statusFields = { debrief_status: JSON.stringify({ done: !!mailed, steps: debriefSteps }), execution_id: String($execution.id), workflow_id: String($workflow.id), updated_at: new Date().toISOString() };
+"""
+
+
+def debrief():
+    c = IMPORTS
+    c += make_node("debriefTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "Debrief a session (laptop)", {
+        "httpMethod": "POST", "path": "dryrun/debrief", "responseMode": "responseNode", "options": {},
+    }, [DEBRIEF_REQUEST])
+    c += make_node("findHistory", "node", "n8n-nodes-base.dataTable", 1.1, "Earlier rehearsals", {
+        "resource": "row", "operation": "get", "dataTableId": SESSIONS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.meeting_id || 'none' }}")}]},
+        "returnAll": True,
+    }, [{"session_id": "s0", "meeting_id": "evt123", "status": "done", "overall": 65, "at": "2026-10-10T19:12:00.000Z", "debrief": "{}"}],
+        extra={"alwaysOutputData": True})
+    c += code_node("readSession", "Read the session", REPLY_JS + """
+// What happened, slide by slide, with everything that can be counted counted here (the same input always gives the same numbers):
+// time on each slide, words per minute, filler words, pacing against the plan. The model only judges (docs/CONTRACT.md, POST /debrief).
+const b = $('Debrief a session (laptop)').first().json.body;
+const bundle = b.bundle || {};
+const personas = bundle.personas || [];
+const planned = bundle.slides || [];
+const events = (b.events || []).slice().sort((x, y) => x.t - y.t);
+const duration = Number(b.duration_s) || (events.length ? events[events.length - 1].t : 0);
+const turns = events.filter(e => e.type === 'turn');
+const end = turns.find(t => t.mode === 'pitch_end');
+const pitchEnd = end ? end.t : duration;
+// Time on each slide during the pitch, from the slide changes
+const changes = events.filter(e => e.type === 'slide');
+if (!changes.length || changes[0].t > 0) changes.unshift({ t: 0, type: 'slide', slide_index: changes.length ? 0 : 0 });
+const seconds = {};
+changes.forEach((c, i) => {
+  const from = Math.min(c.t, pitchEnd);
+  const to = Math.min(i + 1 < changes.length ? changes[i + 1].t : duration, pitchEnd);
+  seconds[c.slide_index] = (seconds[c.slide_index] || 0) + Math.max(0, to - from);
+});
+// What was said on each slide during the pitch (the opening, each slide, the last slide), and the answers apart
+const said = {};
+turns.filter(t => t.mode !== 'answer' && String(t.transcript || '').trim()).forEach(t => { said[t.slide_index] = ((said[t.slide_index] || '') + ' ' + t.transcript.trim()).trim(); });
+const words = t => String(t || '').split(/\\s+/).filter(Boolean).length;
+const FILLER = /\\b(um+|uh+|erm|you know|basically|sort of|kind of|i mean)\\b/gi;
+const indexes = [...new Set(Object.keys(said).map(Number).concat(Object.keys(seconds).map(Number)))].sort((x, y) => x - y);
+const slides = indexes.map(i => {
+  const transcript = said[i] || '';
+  const plan = planned.find(s => s.index === i) || {};
+  const sec = Math.round(seconds[i] || 0);
+  const fillers = transcript.match(FILLER) || [];
+  return { index: i, title: plan.title || 'Slide ' + (i + 1), transcript, seconds: sec, target_seconds: plan.target_seconds || 0,
+           words_per_minute: sec >= 10 ? Math.round(words(transcript) / (sec / 60)) : 0, key_points: plan.key_points || [],
+           fillers: [...new Set(fillers)].slice(0, 3), filler_count: fillers.length };
+});
+// Each question with the answer that followed it
+const name = id => ((personas.find(p => p.id === id) || {}).display_name) || id;
+const exchanges = [];
+turns.forEach(t => {
+  if (t.mode === 'answer') {
+    const open = exchanges.slice().reverse().find(x => !x.answer && x.persona_id === t.asked_by);
+    if (open) Object.assign(open, { answer: t.transcript || '', verdict: t.answer_verdict || null });
+  }
+  (t.reactions || []).filter(r => r.kind === 'question' || r.kind === 'follow_up').forEach(r =>
+    exchanges.push({ t: t.t, slide_index: t.slide_index, persona_id: r.persona_id, question: r.text, answer: null, verdict: null }));
+});
+// Pacing: how far each slide was from its target, and the whole pitch from its length
+const timed = slides.filter(s => s.target_seconds > 0 && s.seconds > 0);
+const off = timed.length ? timed.reduce((a, s) => a + Math.min(1, Math.abs(s.seconds / s.target_seconds - 1)), 0) / timed.length : 0;
+const pitchSec = Math.round(Math.min(pitchEnd, duration));
+const clock = s => Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0');
+const worst = timed.slice().sort((x, y) => Math.abs(y.seconds / y.target_seconds - 1) - Math.abs(x.seconds / x.target_seconds - 1))[0];
+const pacing = { name: 'Pacing', score: timed.length ? Math.max(20, Math.round(100 - 70 * off)) : 60,
+  explanation: 'You pitched for ' + clock(pitchSec) + (bundle.pitch_seconds ? ' against a plan of ' + clock(bundle.pitch_seconds) : '')
+    + (worst ? '; slide ' + (worst.index + 1) + ' took ' + clock(worst.seconds) + ' against ' + clock(worst.target_seconds) : '') + '.', evidence: [] };
+// Earlier debriefed rehearsals of this meeting, oldest first, and the weak spots the last one left
+const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
+const earlier = $input.all().map(i => i.json).filter(r => r.session_id && r.session_id !== b.session_id && r.status === 'done' && typeof r.overall === 'number')
+  .sort((x, y) => Date.parse(x.at) - Date.parse(y.at));
+const history = earlier.map(r => ({ session_id: r.session_id, at: r.at, overall: r.overall }));
+const last = earlier.length ? parse(earlier[earlier.length - 1].debrief) : null;
+const weakBefore = (last && last.weak_spots) || [];
+const totalWords = slides.reduce((a, s) => a + words(s.transcript), 0) + exchanges.reduce((a, x) => a + words(x.answer), 0);
+const answered = exchanges.filter(x => x.answer).length;
+const summary = totalWords + ' words over ' + slides.filter(s => s.transcript).length + ' slide' + (slides.length === 1 ? '' : 's')
+  + ', ' + exchanges.length + ' question' + (exchanges.length === 1 ? '' : 's') + ' (' + answered + ' answered) in ' + clock(duration);
+// The prompt, with each {name} filled in by splitting (nothing in the text is read as a replacement pattern)
+const PROMPT = """ + json.dumps(DEBRIEF_PROMPT) + """;
+const parts = {
+  presenter: (b.presenter && b.presenter.name) || 'The presenter',
+  meeting: (bundle.prospect && bundle.prospect.company ? 'with ' + bundle.prospect.company : 'a meeting') + ', a ' + clock(bundle.pitch_seconds || pitchSec) + ' pitch',
+  personas: JSON.stringify(personas.map(p => ({ id: p.id, name: p.display_name, role: p.role, priorities: p.priorities, objections: (p.objections || []).map(o => o.text) }))),
+  slides: JSON.stringify(planned.map(s => ({ index: s.index, title: s.title, key_points: s.key_points, target_seconds: s.target_seconds }))),
+  weak_spots: weakBefore.length ? weakBefore.join('; ') : 'None (first rehearsal).',
+  transcript: slides.map(s => '[slide ' + (s.index + 1) + ' (index ' + s.index + '): ' + s.title + ', ' + s.seconds + ' s against ' + s.target_seconds + ' s, '
+    + s.words_per_minute + ' words a minute, ' + s.filler_count + ' filler words] "' + (s.transcript || '(nothing said)') + '"').join('\\n') || 'Nothing was said.',
+  exchanges: exchanges.map(x => name(x.persona_id) + ' (' + x.persona_id + ') asked on slide ' + (x.slide_index + 1) + ': "' + x.question + '" Answer: "'
+    + (x.answer || '(not answered)') + '"' + (x.verdict ? ' (judged ' + x.verdict + ')' : '')).join('\\n') || 'No questions were asked.',
+};
+const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
+const telemetry = { session_id: b.session_id, client: b.client || 'web', duration_s: duration, events, ...(b.gaze_dwell_s ? { gaze_dwell_s: b.gaze_dwell_s } : {}),
+                    ...(b.facing_slides_s != null ? { facing_slides_s: b.facing_slides_s } : {}) };
+return [{ json: { session_id: b.session_id, meeting_id: b.meeting_id || '', owner_email: b.owner_email || (b.presenter && b.presenter.email) || '',
+                  bundle, telemetry, slides, exchanges, pacing, history, weak_before: weakBefore, summary, prompt } }];""",
+                   [{"session_id": "s1", "meeting_id": "evt123", "summary": "", "prompt": "", "slides": [], "exchanges": [], "history": []}])
+    c += code_node("rowStart", "Row: debriefing", DEBRIEF_PROGRESS_JS + """
+// The session in the DryRun sessions table while n8n debriefs it
+const r = $('Read the session').first().json;
+return [{ json: { session_id: r.session_id, meeting_id: r.meeting_id, at: new Date().toISOString(), status: 'debriefing', headline: '',
+                  bundle: JSON.stringify(r.bundle), telemetry: JSON.stringify(r.telemetry), debrief: '', ...statusFields } }];""", [{"session_id": "s1"}])
+    c += sessions_upsert("saveStart", "Save: debriefing")
+    c += llm_nodes("judge", "Judge the pitch", "$('Read the session').first().json.prompt", GEMINI_REPLY, schema=DEBRIEF_SCHEMA,
+                   source="$('Read the session').first().json")
+    c += code_node("buildDebrief", "Build the debrief", REPLY_JS + """
+// The debrief (docs/CONTRACT.md, POST /debrief result): the model's judgement held to what was really said (every quote must be in the
+// transcript, so the report can underline it), with the counted numbers, the overall score and the history.
+const r = $('Read the session').first().json;
+const d = JSON.parse(replyText($json) || '{}');
+const personas = r.bundle.personas || [];
+const ids = personas.map(p => p.id);
+const turns = r.telemetry.events.filter(e => e.type === 'turn');
+// A quote as it appears in the transcript (the model sometimes changes case or spacing), or null if it isn't there
+const find = (text, quote) => {
+  const q = String(quote || '').trim().replace(/^["']|["'.,]$/g, '');
+  if (q.length < 3 || !text) return null;
+  const at = text.toLowerCase().indexOf(q.toLowerCase());
+  return at < 0 ? null : text.slice(at, at + q.length);
+};
+// When a quote was said: the turn whose transcript has it
+const moment = (quote, slideIndex) => {
+  const t = turns.find(x => find(x.transcript, quote));
+  if (!t) return null;
+  return { t: t.t, slide_index: t.slide_index, quote: find(t.transcript, quote) };
+};
+const NAMES = ['Clarity', 'Evidence', 'Objection handling', 'Structure'];
+const clamp = n => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+const metrics = NAMES.map(n => {
+  const m = (d.metrics || []).find(x => x.name === n) || { score: 50, explanation: '', evidence: [] };
+  return { name: n, score: clamp(m.score), explanation: m.explanation || '', evidence: (m.evidence || []).map(e => moment(e.quote, e.slide_index)).filter(Boolean).slice(0, 2) };
+}).concat([r.pacing]);
+const overall = Math.round(metrics.reduce((a, m) => a + m.score, 0) / metrics.length);
+const stakeholders = ids.map(id => {
+  const s = (d.stakeholders || []).find(x => x.persona_id === id) || { stance: 'undecided', reason: '' };
+  return { persona_id: id, stance: ['backs', 'undecided', 'opposes'].includes(s.stance) ? s.stance : 'undecided', reason: s.reason || '',
+           deciding_moment: s.quote ? moment(s.quote, s.slide_index) : null };
+});
+let marks = 0;
+const slides = r.slides.map(s => {
+  const j = (d.slides || []).find(x => x.index === s.index) || { covered: [], missed: [], marks: [], notes: '' };
+  const judged = (j.marks || []).map(m => ({ ...m, quote: find(s.transcript, m.quote) })).filter(m => m.quote)
+    .map(m => ({ quote: m.quote, kind: m.kind, note: m.note || '', better: m.kind === 'landed' ? '' : (m.better || '') })).slice(0, 4);
+  const fillers = s.fillers.map(f => ({ quote: f, kind: 'filler', note: s.filler_count > 1 ? 'Filler word (' + s.filler_count + ' on this slide)' : 'Filler word', better: '' }));
+  marks += judged.length;
+  return { index: s.index, transcript: s.transcript, seconds: s.seconds, target_seconds: s.target_seconds, words_per_minute: s.words_per_minute,
+           covered: j.covered || [], missed: j.missed || [], marks: judged.concat(fillers), notes: j.notes || '' };
+});
+const dr = d.drill || {};
+const drill = { title: dr.title || 'Run it again', focus_persona: ids.includes(dr.focus_persona) ? dr.focus_persona : (ids[0] || ''),
+                slides: (dr.slides || []).filter(i => r.slides.some(s => s.index === i)), minutes: Math.max(2, Math.min(5, Math.round(dr.minutes || 3))) };
+const g = r.telemetry.gaze_dwell_s;
+const facing = g ? { slides_s: r.telemetry.facing_slides_s || 0, longest_gap: null } : null;
+const debrief = { headline: d.headline || '', overall, previous_overall: r.history.length ? r.history[r.history.length - 1].overall : null,
+                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), actions_taken: ['weak_spots_saved'] };
+return [{ json: { session_id: r.session_id, debrief, marks, backs: stakeholders.filter(s => s.stance === 'backs').length } }];""",
+                   [{"session_id": "s1", "debrief": {"metrics": [], "stakeholders": [], "drill": {"title": ""}, "weak_spots": []}, "marks": 0, "backs": 0}])
+    c += code_node("rowJudged", "Row: judged", DEBRIEF_PROGRESS_JS + """
+const j = $('Build the debrief').first().json;
+return [{ json: { session_id: j.session_id, overall: j.debrief.overall, headline: j.debrief.headline, ...statusFields } }];""", [{"session_id": "s1"}])
+    c += sessions_upsert("saveJudged", "Save progress: judged")
+    c += make_node("emailReport", "node", "n8n-nodes-base.gmail", 2.2, "Email the report", {
+        "resource": "message", "operation": "send",
+        "sendTo": Expr("{{ $('Read the session').first().json.owner_email }}"),
+        "subject": Expr("{{ (() => { const r = $('Read the session').first().json; const d = $('Build the debrief').first().json.debrief; "
+                        "return 'Your rehearsal for ' + ((r.bundle.prospect || {}).company || 'your meeting') + ': ' + d.overall + '/100'; })() }}"),
+        "emailType": "html",
+        "message": Expr("{{ (() => { const r = $('Read the session').first().json; const d = $('Build the debrief').first().json.debrief; "
+                        "const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); "
+                        "const who = id => ((r.bundle.personas || []).find(p => p.id === id) || {}).display_name || id; "
+                        "const STANCE = { backs: 'would back it', undecided: 'is undecided', opposes: 'is not convinced' }; "
+                        "return '<h2>' + esc(d.headline) + '</h2><p><b>' + d.overall + '/100</b>' + (d.previous_overall != null ? ' (last time ' + d.previous_overall + ')' : '') + '</p>'"
+                        " + '<h3>The room</h3><ul>' + d.stakeholders.map(s => '<li><b>' + esc(who(s.persona_id)) + '</b> ' + STANCE[s.stance] + '. ' + esc(s.reason) + '</li>').join('') + '</ul>'"
+                        " + '<h3>Scores</h3><ul>' + d.metrics.map(m => '<li>' + esc(m.name) + ': ' + m.score + '. ' + esc(m.explanation) + '</li>').join('') + '</ul>'"
+                        " + '<h3>Next time</h3><p><b>' + esc(d.drill.title) + '</b>, ' + d.drill.minutes + ' minutes against ' + esc(who(d.drill.focus_persona)) + '.'"
+                        " + (d.weak_spots.length ? ' The panel will press on ' + esc(d.weak_spots.join(', ')) + '.' : '') + '</p>'"
+                        " + '<p><a href=\"" + APP_URL + "/s/' + encodeURIComponent(r.session_id) + '/report\">Open the full report</a>: what you said on each slide, marked up, with a talk track for next time.</p>'; })() }}"),
+        "options": {"appendAttribution": False},
+    }, [{"id": "msg1"}], credentials={"gmailOAuth2": "Gmail"}, extra={"onError": "continueRegularOutput"})
+    c += code_node("rowDone", "Row: done", DEBRIEF_PROGRESS_JS + """
+// The finished debrief, and the whole session record the laptop gets back (the same as GET /session)
+const r = $('Read the session').first().json;
+const j = $('Build the debrief').first().json;
+const mailedOk = !!mailed && !mailed.error;
+const debrief = { ...j.debrief, actions_taken: (mailedOk ? ['report_emailed'] : []).concat(j.debrief.actions_taken) };
+return [{ json: { session_id: r.session_id, status: 'done', overall: debrief.overall, headline: debrief.headline, debrief: JSON.stringify(debrief), ...statusFields } }];""",
+                   [{"session_id": "s1", "debrief": "{}", "debrief_status": "{}"}])
+    c += sessions_upsert("saveDone", "Save: debriefed")
+    c += code_node("practised", "Mark the meeting practised", """
+// The meeting now has a rehearsal behind it (shown on the web app's home page)
+const r = $('Read the session').first().json;
+// (always one item, so the reply still goes out for a session without a meeting: 'none' matches no row)
+return [{ json: { meeting_id: r.meeting_id || 'none', status: 'practised', updated_at: new Date().toISOString() } }];""", [{"meeting_id": "evt123"}])
+    c += make_node("savePractised", "node", "n8n-nodes-base.dataTable", 1.1, "Save: practised", {
+        "resource": "row", "operation": "update", "dataTableId": MEETINGS_TABLE, "matchType": "allConditions",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.meeting_id }}")}]},
+        "columns": {"mappingMode": "defineBelow", "value": {"status": Expr("{{ $json.status }}"), "updated_at": Expr("{{ $json.updated_at }}")},
+                    "matchingColumns": [], "schema": [
+                        {"id": "status", "displayName": "status", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True},
+                        {"id": "updated_at", "displayName": "updated_at", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True}]},
+    }, [{"id": 1}], extra={"onError": "continueRegularOutput", "alwaysOutputData": True})
+    c += code_node("theRecord", "The session record", """
+// The whole session, the same as GET /session gives, for the laptop that is waiting on this run
+const r = $('Read the session').first().json;
+const done = $('Row: done').first().json;
+return [{ json: { bundle: r.bundle, status: { done: true, steps: [] }, telemetry: r.telemetry, debrief_status: JSON.parse(done.debrief_status),
+                  debrief: JSON.parse(done.debrief), history: r.history } }];""", [{"bundle": {}, "debrief": {}}])
+    c += make_node("replyDebrief", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the debrief", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
+
+    # GET /session: one session for the dashboard and the report, with its earlier rehearsals
+    c += make_node("sessionTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "GET /session", {
+        "httpMethod": "GET", "path": "dryrun/session", "responseMode": "responseNode", "options": {},
+    }, [{"query": {"session_id": "s1"}}])
+    c += make_node("readSessions", "node", "n8n-nodes-base.dataTable", 1.1, "Read sessions", {
+        "resource": "row", "operation": "get", "dataTableId": SESSIONS_TABLE, "returnAll": True,
+    }, [{"session_id": "s1", "meeting_id": "evt123", "status": "done"}], extra={"alwaysOutputData": True})
+    c += code_node("shapeSession", "The session", """
+// docs/CONTRACT.md, GET /session: the record, or 404
+const id = $('GET /session').first().json.query.session_id;
+const rows = $input.all().map(i => i.json).filter(r => r.session_id);
+const row = rows.find(r => String(r.session_id) === String(id));
+const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
+if (!row) return [{ json: { code: 404, body: { error: 'not found' } } }];
+const history = rows.filter(r => r.meeting_id === row.meeting_id && r.session_id !== row.session_id && r.status === 'done' && typeof r.overall === 'number'
+  && Date.parse(r.at) < Date.parse(row.at)).sort((x, y) => Date.parse(x.at) - Date.parse(y.at)).map(r => ({ session_id: r.session_id, at: r.at, overall: r.overall }));
+return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: true, steps: [] }, telemetry: parse(row.telemetry),
+  debrief_status: parse(row.debrief_status), debrief: row.status === 'done' ? parse(row.debrief) : null, history, state: row.status } } }];""",
+                   [{"code": 200, "body": {}}])
+    c += make_node("sendSession", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the session", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($json.body) }}"), "options": {"responseCode": Expr("{{ $json.code }}")},
+    }, [{}])
+    c += ("const about = sticky('## DryRun debrief\\nWhen a rehearsal ends (POST /webhook/dryrun/debrief, docs/CONTRACT.md): counts the time, pace and filler words on "
+          "each slide, has the model judge the pitch against the plan and the panel (marks on the transcript, scores with evidence, who would back it, "
+          "a talk track per slide, the drill and weak spots), saves it to the DryRun sessions table step by step, emails the report and marks the meeting "
+          "practised. The next /prep for the meeting reads it. GET /webhook/dryrun/session reads one session.', [debriefTrigger, sessionTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-debrief', 'DryRun debrief')
+  .add(about)
+  .add(debriefTrigger)
+  .to(findHistory)
+  .to(readSession)
+  .to(rowStart)
+  .to(saveStart)
+  .to(judge)
+  .to(buildDebrief)
+  .to(rowJudged)
+  .to(saveJudged)
+  .to(emailReport)
+  .to(rowDone)
+  .to(saveDone)
+  .to(practised)
+  .to(savePractised)
+  .to(theRecord)
+  .to(replyDebrief)
+  .add(judge.onError(judgeGroq))
+  .add(judgeGroq)
+  .to(buildDebrief)
+  .add(sessionTrigger)
+  .to(readSessions)
+  .to(shapeSession)
+  .to(sendSession)
+  .group('Read', [findHistory, readSession, rowStart, saveStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
+  .group('Judge', [judge, judgeGroq, buildDebrief, rowJudged, saveJudged], { description: 'Marks the transcript, scores with evidence, reads the room, plans the drill' })
+  .group('Act', [emailReport, rowDone, saveDone, practised, savePractised, theRecord, replyDebrief], { description: 'Emails the report, saves it for the next rehearsal and marks the meeting practised' });
+"""
+    return c
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")

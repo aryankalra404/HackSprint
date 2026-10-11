@@ -111,6 +111,9 @@ The practice panel (ids are fixed; "source": "email" means a real attendee, anyt
 The deck, slide by slide (index from 0; empty if there is no deck or a slide has no text):
 {deck}
 
+The last rehearsal of this meeting (empty if this is the first):
+{history}
+
 Decide, for this meeting and this panel (never a generic template):
 - slides: for each slide in the deck, a short title, its 1 to 3 key points (what the presenter must get across), target_seconds
   (all slides together about {minutes} minutes, more time where the slide carries more), and rescue cues for when the presenter
@@ -118,7 +121,9 @@ Decide, for this meeting and this panel (never a generic template):
   A slide with no text: title "Slide <n>" (n from 1), no key points and a calm cue only; never guess what it shows. No deck: an empty list.
 - personas: for each panel member, by id: display_name (keep the given name; invent a realistic Indian name only if it is empty),
   priorities (what they care about most in this meeting), and objections tied to slides (slide_index, or -1 when there is no deck or it
-  could come at any time), grounded in the deck and the research, with source "deck" or "research". manner: "interrupts" if, in a real
+  could come at any time), grounded in the deck and the research, with source "deck" or "research". If there was a last rehearsal,
+  give each of its weak spots to the person who would press on it hardest, as an objection with source "history", on the slide it is
+  about, so this rehearsal is harder exactly where the last one was weak; the plan must leave room to ask about them. manner: "interrupts" if, in a real
   meeting like this, this person would raise a hand during the pitch; "waits" if they would keep it for the questions. Base it on the
   role, the kind of meeting and difficulty (1 easy to 3 hard).
 - chair: the id of the one person who would run this meeting (usually the most senior person from the company): they welcome the
@@ -148,7 +153,7 @@ REHEARSAL_SCHEMA = {"type": "object", "properties": {
         "id": {"type": "string"}, "display_name": {"type": "string"},
         "priorities": {"type": "array", "items": {"type": "string"}},
         "objections": {"type": "array", "items": {"type": "object", "properties": {
-            "slide_index": {"type": "integer"}, "text": {"type": "string"}, "source": {"type": "string", "enum": ["deck", "research"]}},
+            "slide_index": {"type": "integer"}, "text": {"type": "string"}, "source": {"type": "string", "enum": ["deck", "research", "history"]}},
             "required": ["slide_index", "text", "source"]}},
         "manner": {"type": "string", "enum": ["interrupts", "waits"]}},
         "required": ["id", "display_name", "priorities", "objections", "manner"]}},
@@ -212,3 +217,69 @@ TURN_SCHEMA = {"type": "object", "properties": {
     "answer_verdict": {"type": "string", "enum": ["resolved", "partial", "dodged", "none"]},
     "end_session": {"type": "boolean"}},
     "required": ["note", "reactions", "answer_verdict", "end_session"]}
+
+# DryRun debrief (/debrief): the judgement on one rehearsal. Times, words per minute, filler words and pacing are counted in a Code
+# node (the same input always gives the same numbers); this is what needs judgement, always tied to the presenter's own words.
+DEBRIEF_PROMPT = """You are debriefing a rehearsal of a real meeting. {presenter} just pitched to a practice panel in a virtual boardroom;
+the panel reacted live. Judge it as a sharp, fair coach would, using only what was actually said below. Write to the presenter ("you").
+
+The meeting: {meeting}
+The panel (what each cares about and will push on): {personas}
+The plan for each slide (key points, target time): {slides}
+Weak spots from the last rehearsal of this meeting (check whether they were fixed): {weak_spots}
+
+What the presenter said, slide by slide, with the time spent and the numbers already counted:
+{transcript}
+
+The questions, the answers and how each answer was judged live:
+{exchanges}
+
+Decide:
+- headline: one sentence on how it went and what it means for the real meeting (e.g. "A clear story, but finance left unconvinced
+  about the price.").
+- metrics: score 0-100 for exactly these four, each with a one-sentence explanation and 1 or 2 quotes as evidence (copied exactly, word
+  for word, from what the presenter said, with the slide it was on):
+  "Clarity" (could the panel follow what you offer and why it matters), "Evidence" (claims backed by numbers, proof, customers),
+  "Objection handling" (how the questions were answered; 60 if there were none), "Structure" (opening, flow between slides, a clear ask
+  at the end).
+- stakeholders: for each panel member, by id: stance "backs", "undecided" or "opposes" after this pitch, given what they care about and
+  how their questions went; reason (one sentence, specific); and the deciding moment: a quote copied exactly from the presenter and its
+  slide (or an empty quote if nothing decided it).
+- slides: for each slide that has something said on it, by index: covered and missed (which of its key points came across, in a few words
+  each); marks on the transcript: up to 4 per slide, each a quote copied exactly from that slide's transcript (a few words to one
+  sentence), its kind ("hedge" for weak or apologetic phrasing, "unsupported" for a claim with nothing behind it, "wrong_fact" for
+  something false or contradicting the deck, "landed" for something that clearly worked), a short note on why, and better: how to say it
+  instead (empty for "landed"). Do not mark filler words; they are already counted. notes: the talk track for this slide next time, 2 to 4
+  sentences in the presenter's voice, keeping what worked and fixing what did not.
+- drill: the one thing to practise next: a short title, focus_persona (the id of the person who will press on it), the slides it is about
+  (indexes) and minutes (2 to 5).
+- weak_spots: 1 to 3 topics to press on next time, a few words each (e.g. "the payback period", "integration with their TMS").
+Be honest and specific; no generic advice. Answer in JSON."""
+
+DEBRIEF_SCHEMA = {"type": "object", "properties": {
+    "headline": {"type": "string"},
+    "metrics": {"type": "array", "items": {"type": "object", "properties": {
+        "name": {"type": "string", "enum": ["Clarity", "Evidence", "Objection handling", "Structure"]},
+        "score": {"type": "integer"}, "explanation": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "object", "properties": {"slide_index": {"type": "integer"}, "quote": {"type": "string"}},
+                                                "required": ["slide_index", "quote"]}}},
+        "required": ["name", "score", "explanation", "evidence"]}},
+    "stakeholders": {"type": "array", "items": {"type": "object", "properties": {
+        "persona_id": {"type": "string"}, "stance": {"type": "string", "enum": ["backs", "undecided", "opposes"]},
+        "reason": {"type": "string"}, "quote": {"type": "string"}, "slide_index": {"type": "integer"}},
+        "required": ["persona_id", "stance", "reason", "quote", "slide_index"]}},
+    "slides": {"type": "array", "items": {"type": "object", "properties": {
+        "index": {"type": "integer"},
+        "covered": {"type": "array", "items": {"type": "string"}}, "missed": {"type": "array", "items": {"type": "string"}},
+        "marks": {"type": "array", "items": {"type": "object", "properties": {
+            "quote": {"type": "string"}, "kind": {"type": "string", "enum": ["hedge", "unsupported", "wrong_fact", "landed"]},
+            "note": {"type": "string"}, "better": {"type": "string"}},
+            "required": ["quote", "kind", "note", "better"]}},
+        "notes": {"type": "string"}},
+        "required": ["index", "covered", "missed", "marks", "notes"]}},
+    "drill": {"type": "object", "properties": {
+        "title": {"type": "string"}, "focus_persona": {"type": "string"}, "slides": {"type": "array", "items": {"type": "integer"}},
+        "minutes": {"type": "integer"}},
+        "required": ["title", "focus_persona", "slides", "minutes"]},
+    "weak_spots": {"type": "array", "items": {"type": "string"}}},
+    "required": ["headline", "metrics", "stakeholders", "slides", "drill", "weak_spots"]}
