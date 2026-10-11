@@ -1,6 +1,6 @@
-import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
+import type { LiveNow, PersonaId, Room, SessionRecord } from "@/lib/contract";
 import { colorOf } from "@/lib/personas";
-import { PersonaAvatar, StanceText, StatusIcon } from "../ui";
+import { HandIcon, PersonaAvatar, StanceText, StatusIcon } from "../ui";
 import { CARD_W, H, PRESENTER, RoomPlan, TABLE_CENTRE, W, cardPlacement, pct, seatPoint } from "../room/RoomPlan";
 
 const LOW_SHARE = 0.1;
@@ -9,6 +9,10 @@ interface Props {
   session: SessionRecord;
   // The laptop's room, when this is its session: the table says where the session is
   phase?: Room["phase"];
+  // Where the presenter rehearses, for what the table says while waiting
+  rehearseIn?: Room["rehearse_in"];
+  // Who is speaking and who has a hand up, live (contract 0.23: live.now)
+  now?: LiveNow;
   onOpen: (id: PersonaId) => void;
 }
 
@@ -18,13 +22,13 @@ const TABLE_TEXT: Partial<Record<Room["phase"], [string, string]>> = {
 };
 
 // The room on the dashboard: who sits where, and after the session, how each of them landed
-export function RoomBoard({ session, phase, onOpen }: Props) {
+export function RoomBoard({ session, phase, rehearseIn, now, onOpen }: Props) {
   const { bundle, telemetry, debrief } = session;
   const dwell = telemetry?.gaze_dwell_s;
   const total = dwell ? Object.values(dwell).reduce((a, b) => a + b, 0) || 1 : 1;
   const share = (id: PersonaId) => (dwell ? (dwell[id] ?? 0) / total : null);
   const backing = debrief?.stakeholders.filter((s) => s.stance === "backs").length ?? 0;
-  const [headline, detail] = (phase && TABLE_TEXT[phase]) ?? ["The panel is seated", "Put on the headset to start"];
+  const [headline, detail] = (phase && TABLE_TEXT[phase]) ?? ["The panel is seated", rehearseIn === "browser" ? "The presenter starts on the rehearsal page" : "Put on the headset to start"];
 
   // Who the presenter faced (head direction; the Quest 3S has no eye tracking): line weight is their share
   const lines = bundle.personas.map((p) => {
@@ -71,6 +75,8 @@ export function RoomBoard({ session, phase, onOpen }: Props) {
         const card = cardPlacement(p.seat);
         const verdict = debrief?.stakeholders.find((s) => s.persona_id === p.id);
         const s = share(p.id);
+        const speaking = now?.speaking === p.id;
+        const handUp = now?.hands.includes(p.id) ?? false;
         return (
           <div key={p.id}>
             <button
@@ -79,9 +85,14 @@ export function RoomBoard({ session, phase, onOpen }: Props) {
               aria-hidden="true"
               onClick={() => onOpen(p.id)}
               className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform hover:scale-105"
-              style={{ left: pct(at.x, W), top: pct(at.y, H) }}
+              style={{ left: pct(at.x, W), top: pct(at.y, H), ...(speaking ? { boxShadow: `0 0 0 0.7cqw ${colorOf(p.color)}` } : {}) }}
             >
               <PersonaAvatar persona={p} size="7.2cqw" stance={verdict?.stance} />
+              {handUp && (
+                <span className="absolute -top-[1.2cqw] -right-[1.2cqw] flex size-[3.2cqw] items-center justify-center rounded-full bg-warn text-ink ring-[0.3cqw] ring-surface">
+                  <HandIcon className="size-[2cqw]" />
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -91,6 +102,22 @@ export function RoomBoard({ session, phase, onOpen }: Props) {
             >
               <span className="truncate font-display text-[1.25cqw] leading-tight">{p.display_name}</span>
               <span className="truncate text-[0.9cqw] leading-tight text-muted">{p.role}</span>
+              {(speaking || handUp) && (
+                <span className="mt-[0.2cqw] flex items-center gap-x-[0.6cqw] text-[0.95cqw] leading-tight font-medium">
+                  {speaking && (
+                    <span className="inline-flex items-center gap-[0.25em]" style={{ color: colorOf(p.color) }}>
+                      <span aria-hidden="true" className="size-[0.8em] rounded-full" style={{ background: colorOf(p.color) }} />
+                      Speaking
+                    </span>
+                  )}
+                  {handUp && (
+                    <span className="inline-flex items-center gap-[0.25em] text-warn-ink">
+                      <HandIcon className="size-[1.1em]" />
+                      Hand up
+                    </span>
+                  )}
+                </span>
+              )}
               {verdict && (
                 <span className="mt-[0.2cqw] flex items-center justify-between gap-[0.4cqw] text-[1cqw] leading-tight whitespace-nowrap">
                   <StanceText stance={verdict.stance} />

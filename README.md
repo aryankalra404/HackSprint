@@ -23,6 +23,8 @@ Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built
 ## Being built
 In the headset: the panel interrupting with grounded questions in voice (built and tested in the Unity editor, not yet on the Quest), and the Rescue Agent that feeds you cues when you freeze.
 
+Rehearse in the browser: the same panel at the same table, your slides, raised hands, questions, rescue cues and the chair's closing, then the same debrief, for anyone without a headset. Built and tested end to end against stand-in turns; not yet with n8n's real turns.
+
 ## Stack
 - n8n Cloud, with Gemini (and Groq as the fallback)
 - Gmail and Google Calendar

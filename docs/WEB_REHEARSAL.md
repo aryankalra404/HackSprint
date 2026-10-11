@@ -136,11 +136,13 @@ It's one screen with no scrolling at ≥1024 px. Below `md`, show "Rehearse on a
 
 ---
 
-## 5. Contract change (0.21): do this first
+## 5. Contract change (0.23): do this first
 
-Rule from `CLAUDE.md`: **change `docs/CONTRACT.md` first, bump its version, then the code.** Mirror it in `web/src/lib/contract.ts` (its header comment says v0.18; set it to 0.21). Add a changelog line at the bottom of `CONTRACT.md`.
+(Built as 0.21 on the branch; it became 0.23 when merged, since main had used 0.21 for the sample meeting and 0.22 for the panel suggestions.)
 
-1. **Room gains `rehearse_in: "vr" | "browser"`.** Where the presenter rehearses this panel; `"vr"` by default (and for rooms saved before 0.21: add it to `EMPTY` in `web/src/lib/room.ts`).
+Rule from `CLAUDE.md`: **change `docs/CONTRACT.md` first, bump its version, then the code.** Mirror it in `web/src/lib/contract.ts` (its header comment says v0.18; set it to 0.23). Add a changelog line at the bottom of `CONTRACT.md`.
+
+1. **Room gains `rehearse_in: "vr" | "browser"`.** Where the presenter rehearses this panel; `"vr"` by default (and for rooms saved before 0.23: add it to `EMPTY` in `web/src/lib/room.ts`).
    - Set when the panel is briefed (the practice page's two buttons).
    - Changeable with `PUT /api/room/settings` `{ "rehearse_in": "browser" }` while `briefed` or `done` (answer `409` while `live`).
    - **The headset, when it's `"browser"`:** keeps seating the panel and showing slides, but doesn't start the session on speech or A, doesn't record or take turns, and its monitor says "Rehearsing in the browser". The browser page, when it's `"vr"`, says "This panel is set up for the headset" with a button "Rehearse here instead" (which sets it to `"browser"`).
@@ -258,7 +260,7 @@ New, in `web/src/`:
 Changed:
 | File | Change |
 |---|---|
-| `lib/contract.ts` | 0.21 types: `Room.rehearse_in`, `LiveSession.now` |
+| `lib/contract.ts` | 0.23 types: `Room.rehearse_in`, `LiveSession.now` |
 | `lib/room.ts` | `rehearse_in` in `EMPTY`; `setNow()`; clear `now` on end and restart |
 | `app/api/room/settings/route.ts` | Accept `rehearse_in` (not while `live`) |
 | `app/m/actions.ts` | `briefPanelAction` takes `rehearseIn` and redirects to `/rehearse` or the dashboard; new `rebriefAction()` for "Run it again, harder" (same `getBrief()` input and `room.panel`, a new `/prep`) |
@@ -275,7 +277,7 @@ Changed:
 
 Commit after each step once `npm run build` and `npm run lint` pass (one line, like a person would write it, no AI attribution, stage files by path; see `CLAUDE.md`, Git). Rough times in brackets.
 
-1. **Contract 0.21** (1 h). `CONTRACT.md` with a changelog line, `contract.ts`, `room.ts`, settings route, `POST /api/room/now`. *Done when:* `curl -X PUT localhost:3000/api/room/settings -d '{"rehearse_in":"browser"}' -H 'Content-Type: application/json'` round-trips in `GET /api/room`.
+1. **Contract 0.23** (1 h). `CONTRACT.md` with a changelog line, `contract.ts`, `room.ts`, settings route, `POST /api/room/now`. *Done when:* `curl -X PUT localhost:3000/api/room/settings -d '{"rehearse_in":"browser"}' -H 'Content-Type: application/json'` round-trips in `GET /api/room`.
 
 2. **Stand-in turns** (1–2 h). Lets you build without spending n8n executions. With `DRYRUN_FAKE_TURNS=1` in `.env.local`, `takeTurn` in `web/src/lib/turns.ts` skips n8n (put the check before the `N8N_URL` check in `app/api/turn/route.ts`) and answers from the bundle after a 2 s delay, so the waiting is realistic:
    - `opening`: the chair's `welcome` line.
@@ -316,7 +318,7 @@ Record a 20–30 s WAV of yourself pitching with pauses (QuickTime, export, `afc
 
 ## 9. For the main laptop (Unity), not this one
 
-The headset half of 0.21. The main laptop's Claude has Unity access; listed here so nothing is missed.
+The headset half of 0.23. The main laptop's Claude has Unity access; listed here so nothing is missed.
 - `RoomSync.Room` parses `rehearse_in`.
 - When it's `"browser"`:
   - `SessionController` doesn't start on speech or A.

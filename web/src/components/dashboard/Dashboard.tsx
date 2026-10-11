@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
 import { buildDebriefFeed, buildFeed, buildLiveFeed } from "@/lib/feed";
 import { useRoom } from "@/lib/useRoom";
@@ -42,7 +43,9 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
         ? "n8n is debriefing"
         : "Rehearsal over"
     : undefined;
-  const streamable = room !== null && !debrief;
+  // A browser rehearsal has no headset view: the room plan follows who speaks and who has a hand up instead
+  const browser = room?.rehearse_in === "browser";
+  const streamable = room !== null && !debrief && !browser;
   // A click on the switch wins until the session moves on (to its next phase, or a new run)
   const moment = `${room?.phase}:${room?.live?.started_at ?? ""}`;
   const [picked, setPicked] = useState<{ view: View; moment: string } | null>(null);
@@ -77,6 +80,14 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
             <div className="flex flex-wrap items-center gap-3">
               <ViewSwitch view={view} onChange={setView} />
               {view === "plan" && room?.phase === "briefed" && <p className="text-xs text-muted">The headset view opens when the session starts.</p>}
+              {/* The sample's script runs in the headset only */}
+              {room?.phase === "briefed" && !room.scripted && <RehearseHere sessionId={bundle.session_id} switchFirst />}
+            </div>
+          )}
+          {browser && room && !debrief && (room.phase === "briefed" || room.phase === "live") && (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+              <span>Rehearsing in the browser.</span>
+              <RehearseHere sessionId={bundle.session_id} label={room.phase === "live" ? "Open the rehearsal page" : "Rehearse in the browser"} />
             </div>
           )}
           {streamable && view === "headset" ? (
@@ -86,7 +97,7 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
           ) : (
             <>
               <div className="hidden min-h-0 flex-1 md:block">
-                <RoomBoard session={session} phase={room?.phase} onOpen={setOpen} />
+                <RoomBoard session={session} phase={room?.phase} rehearseIn={room?.rehearse_in} now={live?.now} onOpen={setOpen} />
               </div>
               <ul className="flex flex-col divide-y divide-line md:hidden">
                 {bundle.personas.map((p) => {
@@ -115,6 +126,37 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
 
       {open && <PersonaDrawer session={session} id={open} onClose={() => setOpen(null)} />}
     </div>
+  );
+}
+
+// To the browser's rehearsal page; for a panel set up for the headset, it moves the room to the browser first
+function RehearseHere({ sessionId, switchFirst = false, label = "Rehearse in the browser instead" }: { sessionId: string; switchFirst?: boolean; label?: string }) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const href = `/s/${sessionId}/rehearse`;
+  if (!switchFirst)
+    return (
+      <Link href={href} className="text-xs font-medium text-ink underline underline-offset-2">
+        {label}
+      </Link>
+    );
+  async function go() {
+    setError(null);
+    try {
+      const res = await fetch("/api/room/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rehearse_in: "browser" }) });
+      if (!res.ok) return setError(((await res.json()) as { error?: string }).error ?? "That didn't work.");
+      router.push(href);
+    } catch {
+      setError("Couldn't reach the laptop's room.");
+    }
+  }
+  return (
+    <>
+      <button type="button" onClick={go} className="text-xs font-medium text-ink underline underline-offset-2">
+        {label}
+      </button>
+      {error && <span role="alert" className="text-xs text-bad-ink">{error}</span>}
+    </>
   );
 }
 

@@ -3,14 +3,15 @@ import { SAMPLE_ID, SCRIPT, sampleBundle, sampleDeck } from "./mock/sample";
 import { setDeck, updateRoom } from "./room";
 
 // The sample meeting's rehearsal, all on the laptop (see mock/sample.ts): briefing it seats the fixed panel with no n8n call, and
-// its turns are answered from the script. The room's `scripted` tells the headset to stand in for the presenter.
+// its turns are answered from the script. The room's `scripted` tells the headset to stand in for the presenter, so it's always
+// rehearsed in VR.
 
 // Briefs the room with the sample's panel, slides and voices. The panel is the sample's whatever was edited on the practice page,
 // since the script and the voices belong to those five.
 export function briefSample(): string {
   setDeck(sampleDeck);
   const panel = sampleBundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty }));
-  updateRoom({ phase: "briefed", prospect: sampleBundle.prospect, panel, bundle: sampleBundle, session_id: SAMPLE_ID, live: null, slide: 0, debrief: null, scripted: true });
+  updateRoom({ phase: "briefed", prospect: sampleBundle.prospect, panel, bundle: sampleBundle, session_id: SAMPLE_ID, live: null, slide: 0, debrief: null, scripted: true, rehearse_in: "vr" });
   return SAMPLE_ID;
 }
 

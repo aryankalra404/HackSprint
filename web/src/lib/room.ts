@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { BriefInput, Deck, DraftMember, PanelProposal, PitchSuggestion, Room, SessionAction, SessionActor } from "./contract";
+import type { BriefInput, Deck, DraftMember, LiveNow, PanelProposal, PitchSuggestion, Room, SessionAction, SessionActor } from "./contract";
 import { removeDeckFiles } from "./deck";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "./personas";
 
@@ -21,7 +21,7 @@ interface Store {
   slideLog: { startedAt: string; events: { t: number; type: "slide"; slide_index: number }[] } | null;
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5, debrief: null };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5, rehearse_in: "vr", debrief: null };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };
@@ -114,7 +114,18 @@ export function changeSession(action: SessionAction, by: SessionActor): { ok: tr
     return { ok: true, room: updateRoom({ phase: "briefed", slide: 0, live: null, debrief: null }) };
   }
   if (room.phase !== "live" || !room.live) return { ok: false, error: `Can't end: the room is ${room.phase}, not live.`, room };
-  return { ok: true, room: updateRoom({ phase: "done", live: { ...room.live, ended_at: now, ended_by: by } }) };
+  // Nobody is speaking or has a hand up once it's over
+  const { now: _now, ...live } = room.live;
+  return { ok: true, room: updateRoom({ phase: "done", live: { ...live, ended_at: now, ended_by: by } }) };
+}
+
+// Who on the panel is speaking and has a hand up, from the rehearsing client (contract: POST /api/room/now); only while live
+export function setNow(next: LiveNow): { ok: true; room: Room } | { ok: false; error: string; room: Room } {
+  const room = getRoom();
+  if (room.phase !== "live" || !room.live) return { ok: false, error: `The room is ${room.phase}, not live.`, room };
+  const same = room.live.now && room.live.now.speaking === next.speaking && room.live.now.hands.join() === next.hands.join();
+  if (same) return { ok: true, room };
+  return { ok: true, room: updateRoom({ live: { ...room.live, now: next } }) };
 }
 
 // Puts a new deck in the room (or none), back on its first slide, and deletes the old one's images
