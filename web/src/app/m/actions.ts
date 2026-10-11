@@ -59,7 +59,8 @@ export async function retryMeetingAction(meetingId: string): Promise<Result<null
 export async function briefPanelAction(input: BriefInput, draftId: string, panel: DraftMember[]): Promise<Result<never>> {
   const problem = panel.length === 0 ? "The panel needs at least one person." : panelProblem(panel);
   if (problem) return { ok: false, error: problem };
-  if (panel.some((m) => !m.role.trim())) return { ok: false, error: "Everyone needs a role." };
+  const roleless = panel.filter((m) => !m.role.trim()).map((m) => m.display_name || "someone");
+  if (roleless.length) return { ok: false, error: `Add a role for ${roleless.join(" and ")}: what they do shapes what they push on.` };
   // The sample is briefed on the laptop, with its own panel: no n8n call
   if (draftId === SAMPLE_ID) redirect(`/s/${briefSample()}`);
 

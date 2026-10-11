@@ -78,10 +78,21 @@ export interface PrepRequest extends BriefInput {
   voices?: boolean;
 }
 
+export interface PanelSuggestion {
+  role: string;
+  role_short: string;
+  why: string;
+  display_name?: string;
+  gender?: "male" | "female";
+  avatar?: string;
+  will_push_on?: string;
+}
+
 export interface PanelProposal {
   draft_id: string;
   members: PanelMember[];
-  suggestions: { role: string; role_short: string; why: string }[];
+  // Practice people to add with one tap, most influential first (0.22: whole people; older meetings have role, role_short and why only)
+  suggestions: PanelSuggestion[];
   // Missing on meetings prepared before contract 0.18
   pitch?: PitchSuggestion;
 }

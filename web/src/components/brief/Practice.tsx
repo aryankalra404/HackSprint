@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { BriefInput, DraftMember, PanelProposal, PitchSuggestion, Room, Seat } from "@/lib/contract";
+import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
@@ -90,16 +90,20 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
     });
   }
 
-  // Someone new gets the chosen chair, a free colour and a free face (one with a portrait if there is one)
-  function add(role: string, roleShort: string, why?: string) {
+  // Someone new gets the chosen chair and a free colour. A suggestion from n8n comes as a whole person (name, face, what they push on),
+  // keeping their face if it's free; a role typed in gets a free face (one with a portrait if there is one) and n8n names them.
+  function add(s: PanelSuggestion) {
     if (members.length >= MAX_PANEL) return;
-    const seat = selection?.kind === "seat" ? selection.seat : ALL_SEATS.find((s) => !members.some((m) => m.seat === s));
+    const seat = selection?.kind === "seat" ? selection.seat : ALL_SEATS.find((x) => !members.some((m) => m.seat === x));
     const color = ALL_COLORS.find((c) => !members.some((m) => m.color === c));
     const free = AVATARS.filter((a) => !members.some((m) => m.avatar === a.id));
-    const avatar = (free.find((a) => a.portrait) ?? free[0])?.id;
+    const own = free.find((a) => a.id === s.avatar);
+    const avatar = (own ?? free.find((a) => a.portrait && (!s.gender || a.gender === s.gender)) ?? free.find((a) => a.portrait) ?? free[0])?.id;
     if (seat == null || color == null || !avatar) return;
     const id = `p${Math.max(0, ...members.map((m) => Number(m.id.slice(1)) || 0)) + 1}`;
-    setMembers((ms) => [...ms, { id, seat, color, avatar, role, role_short: roleShort, display_name: "", difficulty: 2, why }]);
+    const person: DraftMember = { id, seat, color, avatar, role: s.role, role_short: s.role_short, display_name: s.display_name ?? "", difficulty: 2,
+      ...(s.why ? { why: s.why } : {}), ...(s.gender ? { gender: s.gender } : {}), ...(s.will_push_on ? { will_push_on: s.will_push_on } : {}), source: "typical" };
+    setMembers((ms) => [...ms, person]);
     setSelection({ kind: "person", id });
   }
 
