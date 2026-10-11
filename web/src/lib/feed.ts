@@ -1,4 +1,4 @@
-import type { Bundle, LiveSession, LoggedTurn, Reaction, SessionRecord, ThinkingTurn, Verdict } from "./contract";
+import type { Bundle, LiveSession, LoggedTurn, Reaction, RoomDebrief, SessionRecord, ThinkingTurn, Verdict } from "./contract";
 import { personaTag } from "./personas";
 import { clock } from "./format";
 import { exchanges, freezes, RESCUE_LABEL, slideSegments } from "./timeline";
@@ -139,4 +139,23 @@ function reacted(r: Pick<Reaction, "kind" | "text" | "raise_hand">, name: string
     case "closing":
       return `${name} closed the meeting`;
   }
+}
+
+// n8n's debrief of the run that just ended, step by step as the laptop reads it (contract: the room's debrief)
+export function buildDebriefFeed(debrief: RoomDebrief): FeedItem[] {
+  const steps: FeedItem[] = debrief.steps
+    .filter((s) => s.state !== "pending")
+    .map((s) => ({
+      id: `debrief-${s.id}`,
+      phase: "After",
+      when: s.state === "running" ? "now" : s.state === "error" ? "failed" : "done",
+      title: s.label,
+      detail: s.detail || undefined,
+      busy: s.state === "running" && debrief.state === "running",
+    }));
+  if (debrief.state === "done")
+    steps.push({ id: "debrief-ready", phase: "After", when: "done", title: `Debrief ready: ${debrief.overall ?? "?"}/100`, detail: debrief.headline || undefined });
+  if (debrief.state === "failed") steps.push({ id: "debrief-failed", phase: "After", when: "failed", title: "The debrief didn't finish", detail: debrief.error ?? undefined });
+  if (debrief.state === "skipped") steps.push({ id: "debrief-skipped", phase: "After", when: "skipped", title: "No debrief", detail: debrief.error ?? undefined });
+  return steps;
 }

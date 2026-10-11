@@ -17,9 +17,11 @@ interface Store {
   headsetSeen: number;
   headsetPolling: number;
   headsetVia: "wifi" | "usb";
+  // The slide changes during the live run, for the debrief (contract: POST /debrief events); not part of the room
+  slideLog: { startedAt: string; events: { t: number; type: "slide"; slide_index: number }[] } | null;
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5 };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5, debrief: null };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };
@@ -33,7 +35,7 @@ function store(): Store {
       // No saved room yet
     }
     // A room saved by an older version may lack newer fields
-    g.__dryrunRoom = { ...saved, room: { ...EMPTY, ...saved.room }, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb" };
+    g.__dryrunRoom = { ...saved, room: { ...EMPTY, ...saved.room }, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb", slideLog: null };
   }
   return g.__dryrunRoom;
 }
@@ -103,12 +105,13 @@ export function changeSession(action: SessionAction, by: SessionActor): { ok: tr
   const now = new Date().toISOString();
   if (action === "start") {
     if (room.phase !== "briefed") return { ok: false, error: `Can't start: the room is ${room.phase}, not briefed.`, room };
-    return { ok: true, room: updateRoom({ phase: "live", slide: 0, live: { started_at: now, started_by: by, ended_at: null, ended_by: null, stage: "opening", feed: [] } }) };
+    store().slideLog = { startedAt: now, events: [{ t: 0, type: "slide", slide_index: 0 }] };
+    return { ok: true, room: updateRoom({ phase: "live", slide: 0, debrief: null, live: { started_at: now, started_by: by, ended_at: null, ended_by: null, stage: "opening", feed: [] } }) };
   }
   if (action === "restart") {
     // Go again with the same panel and bundle
     if (room.phase !== "done") return { ok: false, error: `Can't restart: the room is ${room.phase}, not done.`, room };
-    return { ok: true, room: updateRoom({ phase: "briefed", slide: 0, live: null }) };
+    return { ok: true, room: updateRoom({ phase: "briefed", slide: 0, live: null, debrief: null }) };
   }
   if (room.phase !== "live" || !room.live) return { ok: false, error: `Can't end: the room is ${room.phase}, not live.`, room };
   return { ok: true, room: updateRoom({ phase: "done", live: { ...room.live, ended_at: now, ended_by: by } }) };
@@ -127,7 +130,12 @@ export function setSlide(index: number): { ok: true; room: Room } | { ok: false;
   const room = getRoom();
   if (!room.deck) return { ok: false, error: "There's no deck in the room.", room };
   const slide = Math.max(0, Math.min(room.deck.slides.length - 1, Math.trunc(index)));
-  return { ok: true, room: slide === room.slide ? room : updateRoom({ slide }) };
+  if (slide === room.slide) return { ok: true, room };
+  // During a run, each change goes in the debrief's slide log, timed from the start
+  const log = store().slideLog;
+  if (room.phase === "live" && room.live && log?.startedAt === room.live.started_at)
+    log.events.push({ t: Math.round((Date.now() - Date.parse(room.live.started_at)) / 100) / 10, type: "slide", slide_index: slide });
+  return { ok: true, room: updateRoom({ slide }) };
 }
 
 // Why a panel can't be saved, or null if it's fine
@@ -140,4 +148,10 @@ export function panelProblem(panel: DraftMember[]): string | null {
   if (!unique(panel.map((m) => m.color)) || panel.some((m) => !ALL_COLORS.includes(m.color))) return "Each person needs their own colour.";
   if (!unique(panel.map((m) => m.avatar)) || panel.some((m) => !AVATARS.some((a) => a.id === m.avatar))) return "Each person needs their own face.";
   return null;
+}
+
+// The slide changes of a run, oldest first (for the debrief)
+export function slideLog(startedAt: string): { t: number; type: "slide"; slide_index: number }[] {
+  const log = store().slideLog;
+  return log?.startedAt === startedAt ? log.events : [{ t: 0, type: "slide", slide_index: 0 }];
 }

@@ -4,6 +4,7 @@ import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
 import { getRoom } from "./room";
 import { saveBundleAudio } from "./audio";
+import { cachedSession } from "./sessions";
 
 const MOCKS: Record<string, SessionRecord> = { demo: demoSession, "demo-prep": demoPrepSession };
 
@@ -12,18 +13,24 @@ const MOCKS: Record<string, SessionRecord> = { demo: demoSession, "demo-prep": d
 export const N8N_URL = process.env.DRYRUN_N8N_URL;
 
 export async function getSession(sessionId: string): Promise<SessionRecord | null> {
-  // The sample sessions, and the session in the room right now, until n8n stores sessions
+  // The sample sessions
   if (MOCKS[sessionId]) return MOCKS[sessionId];
+  // A run debriefed on this laptop: its copy, so opening a report costs no n8n call
+  const cached = await cachedSession(sessionId);
+  if (cached) return cached;
+  // The session in the room right now, before it has been rehearsed
   const room = getRoom();
   if (room.session_id === sessionId && room.bundle) {
     return { bundle: room.bundle, status: { done: true, steps: prepSteps(room.bundle) }, telemetry: null, debrief_status: null, debrief: null, history: [] };
   }
-  if (!N8N_URL) return MOCKS[sessionId] ?? null;
-
-  const res = await fetch(`${N8N_URL}/session?session_id=${encodeURIComponent(sessionId)}`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`n8n /session failed: ${res.status}`);
-  return res.json();
+  if (!N8N_URL) return null;
+  // Any other session from n8n's sessions table (contract: GET /session), e.g. from another laptop
+  return readOnce(`session:${sessionId}`, () => SETTLED_MS, async () => {
+    const res = await fetch(`${N8N_URL}/session?session_id=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`n8n /session failed: ${res.status}`);
+    return (await res.json()) as SessionRecord;
+  });
 }
 
 // What n8n's rehearsal prep did, read from its bundle, so the dashboard's feed shows this panel's real prep
@@ -48,6 +55,11 @@ function prepSteps(bundle: Bundle): PrepStep[] {
     state: "done",
     detail: bundle.plan.why,
   });
+  // From the last rehearsal of this meeting (0.20): harder where it was weak, with that run's talk track
+  const pressing = bundle.personas.flatMap((p) => p.objections.filter((o) => o.source === "history").map((o) => `${p.display_name.split(" ")[0]}: ${o.text}`));
+  if (pressing.length > 0) steps.push({ id: "history", label: "Briefed the panel on last time's weak spots", state: "done", detail: pressing.slice(0, 3).join("; ") });
+  const tracks = bundle.slides.filter((s) => s.notes).length;
+  if (tracks > 0) steps.push({ id: "notes", label: "Kept last time's talk track", state: "done", detail: `${tracks} slide${tracks === 1 ? "" : "s"}` });
   if (voiced > 0) steps.push({ id: "lines", label: `Voiced ${voiced} lines ahead of time`, state: "done", detail: "The welcome, opening the floor and acknowledgements, so they play at once" });
   if (cues > 0) steps.push({ id: "rescue", label: "Prepared rescue cues", state: "done", detail: `${cues} cues across ${bundle.slides.length} slides` });
   return steps;

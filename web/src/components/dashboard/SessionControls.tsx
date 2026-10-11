@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { Room, SessionAction } from "@/lib/contract";
 import { clock } from "@/lib/format";
 
@@ -11,11 +12,14 @@ export function SessionControls({ room }: { room: Room }) {
   const [error, setError] = useState<string | null>(null);
   const elapsed = useElapsed(room.phase === "live" ? room.live?.started_at : undefined);
 
-  async function send(action: SessionAction) {
+  async function send(action: SessionAction | "debrief") {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/room/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, by: "web" }) });
+      const res =
+        action === "debrief"
+          ? await fetch("/api/room/debrief", { method: "POST" })
+          : await fetch("/api/room/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, by: "web" }) });
       if (!res.ok) setError(((await res.json()) as { error?: string }).error ?? "That didn't work.");
     } catch {
       setError("Couldn't reach the laptop's room.");
@@ -28,7 +32,9 @@ export function SessionControls({ room }: { room: Room }) {
     room.phase === "live"
       ? { dot: "bg-bad animate-pulse", text: `Live ${elapsed}${room.live?.started_by === "headset" ? ", started in the headset" : ""}` }
       : room.phase === "done"
-        ? { dot: "bg-good", text: `Session ended${lasted(room)}` }
+        ? room.debrief?.state === "running"
+          ? { dot: "bg-warn animate-pulse", text: `Session ended${lasted(room)}. n8n is debriefing it` }
+          : { dot: "bg-good", text: `Session ended${lasted(room)}` }
         : { dot: "bg-warn animate-pulse", text: "Waiting for the presenter to start speaking" };
 
   const button = "rounded-full px-4 py-1.5 text-xs font-medium disabled:opacity-60";
@@ -48,8 +54,23 @@ export function SessionControls({ room }: { room: Room }) {
           End session
         </button>
       )}
+      {room.phase === "done" && room.debrief?.state === "done" && (
+        <Link href={`/s/${room.debrief.run_id}/report`} className={`${button} bg-ink text-surface`}>
+          Open the report{room.debrief.overall != null ? ` (${room.debrief.overall}/100)` : ""}
+        </Link>
+      )}
+      {room.phase === "done" && room.debrief?.state === "failed" && (
+        <button type="button" disabled={busy} onClick={() => send("debrief")} className={`${button} border border-line bg-surface hover:border-ink`}>
+          Try the debrief again
+        </button>
+      )}
       {room.phase === "done" && (
-        <button type="button" disabled={busy} onClick={() => send("restart")} className={`${button} bg-ink text-surface`}>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => send("restart")}
+          className={`${button} ${room.debrief?.state === "done" ? "border border-line bg-surface hover:border-ink" : "bg-ink text-surface"}`}
+        >
           Run it again
         </button>
       )}

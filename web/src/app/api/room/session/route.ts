@@ -1,5 +1,6 @@
 import type { SessionAction, SessionActor } from "@/lib/contract";
-import { changeSession } from "@/lib/room";
+import { startDebrief } from "@/lib/debrief";
+import { changeSession, getRoom } from "@/lib/room";
 
 const ACTIONS: SessionAction[] = ["start", "end", "restart"];
 const ACTORS: SessionActor[] = ["headset", "web"];
@@ -11,5 +12,7 @@ export async function POST(request: Request) {
   const by = ACTORS.find((a) => a === body.by);
   if (!action || !by) return Response.json({ error: 'Send { "action": "start" | "end" | "restart", "by": "headset" | "web" }' }, { status: 400 });
   const result = changeSession(action, by);
-  return result.ok ? Response.json(result.room) : Response.json({ error: result.error, room: result.room }, { status: 409 });
+  // Whoever ends it, the run goes to n8n for its debrief; the room shows the progress
+  if (result.ok && action === "end") startDebrief();
+  return result.ok ? Response.json(getRoom()) : Response.json({ error: result.error, room: result.room }, { status: 409 });
 }

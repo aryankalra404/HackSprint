@@ -204,7 +204,7 @@ export interface TurnResponse {
 export type TelemetryEvent =
   | { t: number; type: "slide"; slide_index: number }
   | { t: number; type: "silence"; duration_s: number; rescue_level: 0 | 1 | 2 | 3 }
-  | ({ type: "turn" } & Omit<LoggedTurn, "note">);
+  | ({ type: "turn" } & LoggedTurn);
 
 export interface Telemetry {
   session_id: string;
@@ -274,6 +274,8 @@ export interface Debrief {
   slides: DebriefSlide[];
   facing: Facing | null;
   drill: Drill;
+  // What the panel presses on next time (0.20); the next /prep for the meeting raises them
+  weak_spots?: string[];
   actions_taken: string[];
 }
 
@@ -322,6 +324,8 @@ export interface Meeting {
   progress?: PrepStep[];
   started_at?: string | null;
   run?: { workflow_id: string; execution_id: string } | null;
+  // The rehearsals debriefed so far, with the latest (0.20); null before the first
+  practice?: { sessions: number; last: Pick<SessionSummary, "session_id" | "at" | "overall" | "headline"> } | null;
 }
 
 // Only facts: real attendees, sourced news. Hypothetical roles live in the proposal's practice panel.
@@ -338,6 +342,17 @@ export interface MeetingDetail {
   meeting: Meeting;
   brief: MeetingBrief | null;
   proposal: PanelProposal | null;
+  // This meeting's rehearsals, newest first (0.20)
+  sessions?: SessionSummary[];
+}
+
+// One rehearsal of a meeting, from the DryRun sessions table (0.20)
+export interface SessionSummary {
+  session_id: string;
+  at: string;
+  status: "debriefing" | "done" | "failed";
+  overall: number | null;
+  headline: string;
 }
 
 export interface NewMeeting {
@@ -371,6 +386,20 @@ export interface Room {
   height_offset: number;
   // How long the presenter means to pitch, sent to /prep; starts at n8n's suggestion, or 5
   pitch_minutes: number;
+  // The debrief of the run that just ended (0.20); null until a session ends, and again once one starts
+  debrief: RoomDebrief | null;
+}
+
+export interface RoomDebrief {
+  // That run's session id: the bundle's plus its start time, so each run gets its own report
+  run_id: string;
+  state: "running" | "done" | "failed" | "skipped";
+  // n8n's steps, as the laptop last read them
+  steps: PrepStep[];
+  error: string | null;
+  // The debrief's score and headline, once done
+  overall?: number | null;
+  headline?: string;
 }
 
 // One slide image on the laptop: `image_url` is a path there (GET /api/deck/<id>/<n>.jpg)

@@ -1,11 +1,11 @@
-import { N8N_URL, postToN8n } from "@/lib/api";
+import type { Telemetry } from "@/lib/contract";
+import { keepHeadsetTelemetry } from "@/lib/debrief";
 
-// The headset only talks to the laptop; this forwards /debrief to n8n unchanged (contract: POST `/debrief`)
+// What only the headset knows (contract: POST /debrief, headset to laptop), posted before it ends the session. The laptop answers at
+// once and sends it to n8n with the turns and slide changes when the session ends.
 export async function POST(request: Request) {
-  if (!N8N_URL) return Response.json({ error: "n8n isn't connected (DRYRUN_N8N_URL is unset)" }, { status: 503 });
-  try {
-    return Response.json(await postToN8n("/debrief", await request.json()));
-  } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : "n8n failed" }, { status: 502 });
-  }
+  const body = (await request.json().catch(() => null)) as Partial<Telemetry> | null;
+  if (!body || !Array.isArray(body.events)) return Response.json({ error: "Send the headset's telemetry: { session_id, client, duration_s, events, ... }" }, { status: 400 });
+  keepHeadsetTelemetry({ client: body.client ?? "vr", duration_s: Number(body.duration_s) || 0, events: body.events, gaze_dwell_s: body.gaze_dwell_s, facing_slides_s: body.facing_slides_s });
+  return Response.json({ accepted: true });
 }

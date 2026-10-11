@@ -47,3 +47,6 @@ next-env.d.ts
 /.decks/
 # voices n8n generated, saved by the laptop
 /.audio/
+
+# debriefed sessions kept on the laptop for the report
+/.sessions/

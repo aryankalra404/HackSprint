@@ -71,6 +71,7 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
       bundle,
       session_id: sessionId,
       live: null,
+      debrief: null,
       panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
     });
   } catch {

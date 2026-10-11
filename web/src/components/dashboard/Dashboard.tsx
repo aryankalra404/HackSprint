@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
-import { buildFeed, buildLiveFeed } from "@/lib/feed";
+import { buildDebriefFeed, buildFeed, buildLiveFeed } from "@/lib/feed";
 import { useRoom } from "@/lib/useRoom";
 import { PersonaAvatar, StancePill } from "../ui";
 import { RoomBoard } from "./RoomBoard";
@@ -30,8 +30,18 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
   const { bundle, debrief } = session;
   // While this session is in the room, the feed follows the rehearsal turn by turn
   const live = room?.session_id === bundle.session_id ? room.live : null;
-  const feed = useMemo(() => [...buildFeed(session), ...(live ? buildLiveFeed(live, room?.bundle ?? bundle) : [])], [session, live, room?.bundle, bundle]);
-  const status = live ? (room?.phase === "live" ? `Live: ${STAGE[live.stage]}` : "Rehearsal over") : undefined;
+  const debriefing = room?.session_id === bundle.session_id ? room.debrief : null;
+  const feed = useMemo(
+    () => [...buildFeed(session), ...(live ? buildLiveFeed(live, room?.bundle ?? bundle) : []), ...(debriefing ? buildDebriefFeed(debriefing) : [])],
+    [session, live, room?.bundle, bundle, debriefing],
+  );
+  const status = live
+    ? room?.phase === "live"
+      ? `Live: ${STAGE[live.stage]}`
+      : debriefing?.state === "running"
+        ? "n8n is debriefing"
+        : "Rehearsal over"
+    : undefined;
   const streamable = room !== null && !debrief;
   // A click on the switch wins until the session moves on (to its next phase, or a new run)
   const moment = `${room?.phase}:${room?.live?.started_at ?? ""}`;
