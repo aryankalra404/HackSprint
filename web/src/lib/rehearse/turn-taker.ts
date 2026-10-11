@@ -103,7 +103,7 @@ interface Queued {
   hand: { since: number; speechAt: number } | null;
   // The chair keeping time: played by this client, never late, and time_up ends the pitch once it's said. A filler (0.26) is played
   // by this client the moment an answer goes, and dropped if it can't start soon.
-  local?: "time_nudge" | "time_up" | "filler";
+  local?: "time_nudge" | "time_up" | "filler" | "rescue";
   queuedAt?: number;
 }
 
@@ -152,6 +152,9 @@ export class TurnTaker {
   private silences: TelemetryEvent[] = [];
   private cue: TurnView["cue"] = null;
   private lastFiller: string | null = null;
+  // A freeze in the pitch (0.26): whether the chair has said "Take your time" and asked the way back in, until the presenter speaks
+  private freeze = { soft: false, asked: false };
+  private rescuedSlides = new Set<number>();
 
   constructor(
     private readonly bundle: Bundle,
@@ -192,6 +195,8 @@ export class TurnTaker {
     this.silences = [];
     this.cue = null;
     this.lastFiller = null;
+    this.freeze = { soft: false, asked: false };
+    this.rescuedSlides = new Set();
     this.ears.beginRecording(preRollS);
     this.publish();
   }
@@ -223,6 +228,7 @@ export class TurnTaker {
     if (speaking) {
       this.speechClock += dt;
       this.lastActivity = now;
+      this.freeze = { soft: false, asked: false };
     }
     const slideNow = this.deps.slide();
 
@@ -362,10 +368,12 @@ export class TurnTaker {
   }
 
   // Queues a line voiced ahead of time, played by this client
-  private say(line: VoicedLine, local: "time_nudge" | "time_up" | "filler"): void {
+  private say(line: VoicedLine, local: "time_nudge" | "time_up" | "filler" | "rescue"): void {
     const run = this.run;
-    const reason = local === "filler" ? "Listening" : "Keeping time";
-    const reaction: Reaction = { persona_id: line.persona_id, kind: local === "filler" ? "acknowledge" : local, text: line.text, line_id: line.id, raise_hand: false, reason };
+    const reason = local === "filler" ? "Listening" : local === "rescue" ? "You went quiet" : "Keeping time";
+    // The way-back-in question is a real question: what the presenter says next is its answer
+    const kind: Reaction["kind"] = local === "filler" || (local === "rescue" && line.kind !== "rescue_question") ? "acknowledge" : local === "rescue" ? "question" : local;
+    const reaction: Reaction = { persona_id: line.persona_id, kind, text: line.text, line_id: line.id, raise_hand: false, reason };
     const item: Queued = { reaction, mode: "segment", slide: this.slide, speechAtSend: this.speechClock, clip: line.audio_url ? undefined : "text", hand: null, local, queuedAt: this.deps.now() };
     this.queue.push(item);
     if (line.audio_url)
@@ -461,7 +469,8 @@ export class TurnTaker {
 
   // 6.6 Rescue cues: silence during the pitch, with the panel idle, shows the slide's calm, keyword and bridge in turn
   private rescue(speaking: boolean, now: number): void {
-    const eligible = this.stage === "pitch" && !speaking && !this.panelBusy() && this.hands().length === 0 && this.wrap.countdownFrom == null;
+    // Not while they think about an answer: only a freeze in the pitch itself
+    const eligible = this.stage === "pitch" && this.mode === "segment" && !speaking && !this.panelBusy() && this.hands().length === 0 && this.wrap.countdownFrom == null;
     if (!eligible) {
       this.cueFrom = now;
       this.closeSilence(now);
@@ -477,11 +486,35 @@ export class TurnTaker {
     }
     if (!this.silence) this.silence = { from: now - quiet, level };
     this.silence.level = Math.max(this.silence.level, level) as 1 | 2 | 3;
+    this.voicedRescue(quiet, keyword, bridge);
     // The strongest cue the slide has, up to this level
     const r = this.bundle.slides[this.slide]?.rescue;
     const texts = r ? [r.calm, r.keyword, r.bridge] : [];
     const shown = ([3, 2, 1] as const).find((l) => l <= level && texts[l - 1]?.trim());
     this.cue = shown ? { level: shown, text: texts[shown - 1] } : null;
+  }
+
+  // 0.26 The room reacts to a freeze, from lines voiced ahead of time with nothing sent to n8n: the chair's "Take your time" at the
+  // keyword cue, then a few seconds later that slide's way-back-in question (once per slide), whose answer goes to n8n as an answer
+  private voicedRescue(quiet: number, keyword: number, bridge: number): void {
+    const chair = this.bundle.personas.find((p) => p.chair);
+    if (!chair) return;
+    const soft = this.line(chair.id, "rescue_soft");
+    const question = this.bundle.lines.find((l) => l.kind === "rescue_question" && l.persona_id === chair.id && l.slide_index === this.slide && l.audio_url);
+    if (!this.freeze.soft && quiet >= keyword && soft?.audio_url) {
+      this.freeze.soft = true;
+      this.say(soft, "rescue");
+      this.silences.push({ t: round1(this.deps.elapsed()), type: "rescue", level: 2, line_id: soft.id });
+      return;
+    }
+    // After "Take your time" the silence clock starts again, so the question comes sooner
+    const askAt = this.freeze.soft ? Math.max(2, bridge - keyword) : bridge;
+    if (!this.freeze.asked && question && !this.rescuedSlides.has(this.slide) && quiet >= askAt) {
+      this.freeze.asked = true;
+      this.rescuedSlides.add(this.slide);
+      this.say(question, "rescue");
+      this.silences.push({ t: round1(this.deps.elapsed()), type: "rescue", level: 3, line_id: question.id });
+    }
   }
 
   // A silence that reached a cue goes in the telemetry

@@ -284,6 +284,8 @@ export interface TurnResponse {
 export type TelemetryEvent =
   | { t: number; type: "slide"; slide_index: number }
   | { t: number; type: "silence"; duration_s: number; rescue_level: 0 | 1 | 2 | 3 }
+  // The chair spoke to bring a presenter back from a freeze (0.26): "Take your time" (2) or the way-back-in question (3)
+  | { t: number; type: "rescue"; level: 2 | 3; line_id: string }
   | ({ type: "turn" } & LoggedTurn);
 
 export interface Telemetry {
