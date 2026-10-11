@@ -18,8 +18,10 @@ Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built
 - **The web app** lists your upcoming meetings and asks "prepare for this meeting?". It shows the brief, and you can edit the practice panel: up to 6 people, any chair, any face. Upload your deck (PDF, PowerPoint or Keynote) and it goes on the boardroom TV.
 - **The VR boardroom** seats that panel live as you edit it. The headset finds the laptop over Wi-Fi, with USB as the fallback. Your slides are on the TV behind you, with a speaker view on the monitor you face; a quick pinch (right hand next, left hand back) or the controller's triggers change slides, no controllers needed. When you start speaking, the session starts and the panel turns to look at you; when you finish on your last slide, it wraps up by itself. The dashboard shows the headset's view on the big screen. (Tested in the Unity editor; testing on the Quest this week.)
 
+- **n8n debriefs every rehearsal.** When a session ends, n8n reads what you said slide by slide, marks it (hedges, claims with no proof, what landed) with a better way to say each, scores you with quotes as evidence, judges who on the panel would back you, emails you the report and briefs the next rehearsal to press on your weak spots. The meeting shows every rehearsal and its report. (Tested end to end through the web app.)
+
 ## Being built
-Stakeholders interrupting with grounded questions (in voice), the Rescue Agent that feeds you cues when you freeze, and an n8n debrief that scores the session with evidence and makes the next rehearsal harder where you were weak.
+In the headset: the panel interrupting with grounded questions in voice (built and tested in the Unity editor, not yet on the Quest), and the Rescue Agent that feeds you cues when you freeze.
 
 ## Stack
 - n8n Cloud, with Gemini (and Groq as the fallback)
