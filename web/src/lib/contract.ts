@@ -400,5 +400,15 @@ export interface LiveSession {
   ended_by: SessionActor | null;
   // Kept by the laptop from the turns it forwards
   stage: "opening" | "pitch" | "questions" | "closing";
+  // Turns sent to n8n and not answered yet (0.19), so the dashboard shows n8n at work
+  thinking?: ThinkingTurn[];
   feed: LoggedTurn[];
+}
+
+export interface ThinkingTurn {
+  id: string;
+  mode: TurnMode;
+  slide_index: number;
+  t: number;
+  asked_by?: PersonaId;
 }

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { PersonaId, Room, SessionRecord } from "@/lib/contract";
-import { buildFeed } from "@/lib/feed";
+import { buildFeed, buildLiveFeed } from "@/lib/feed";
 import { useRoom } from "@/lib/useRoom";
 import { PersonaAvatar, StancePill } from "../ui";
 import { RoomBoard } from "./RoomBoard";
@@ -18,15 +18,20 @@ import { DeckPanel } from "../room/DeckPanel";
 
 type View = "headset" | "plan";
 
+const STAGE = { opening: "the opening", pitch: "the pitch", questions: "questions", closing: "closing" } as const;
+
 // One screen for the room: it sits on the big display while the presenter is in VR.
 // Prep (briefed, waiting) and debrief share the layout. For the session in the laptop's room, the dashboard follows the room:
 // the header starts, ends and restarts it, and the room panel shows the room plan while waiting and switches to what the
 // presenter sees in the headset once the session is live (the headset only streams while that view is open).
 export function Dashboard({ session, nameCards, heightOffset, room: initialRoom }: { session: SessionRecord; nameCards: boolean; heightOffset: number; room: Room | null }) {
   const [open, setOpen] = useState<PersonaId | null>(null);
-  const feed = useMemo(() => buildFeed(session), [session]);
   const room = useRoom(initialRoom);
   const { bundle, debrief } = session;
+  // While this session is in the room, the feed follows the rehearsal turn by turn
+  const live = room?.session_id === bundle.session_id ? room.live : null;
+  const feed = useMemo(() => [...buildFeed(session), ...(live ? buildLiveFeed(live, room?.bundle ?? bundle) : [])], [session, live, room?.bundle, bundle]);
+  const status = live ? (room?.phase === "live" ? `Live: ${STAGE[live.stage]}` : "Rehearsal over") : undefined;
   const streamable = room !== null && !debrief;
   // A click on the switch wins until the session moves on (to its next phase, or a new run)
   const moment = `${room?.phase}:${room?.live?.started_at ?? ""}`;
@@ -93,7 +98,7 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
             </>
           )}
         </section>
-        <AgentFeed items={feed} />
+        <AgentFeed items={feed} status={status} />
       </main>
 
       <BottomStrip session={session} />

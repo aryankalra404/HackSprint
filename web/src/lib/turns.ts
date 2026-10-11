@@ -1,4 +1,4 @@
-import type { Bundle, LiveSession, LoggedTurn, Reaction, TurnContext, TurnRequest, TurnResponse } from "./contract";
+import type { Bundle, LiveSession, LoggedTurn, Reaction, ThinkingTurn, TurnContext, TurnRequest, TurnResponse } from "./contract";
 import { postToN8n } from "./api";
 import { compressSpeech, saveAudio } from "./audio";
 import { getRoom, updateRoom } from "./room";
@@ -54,6 +54,23 @@ export async function takeTurn(body: TurnRequest): Promise<TurnResponse> {
   if (room.phase !== "live" || !room.live || !room.bundle) throw new TurnError(`The room is ${room.phase}, not live.`, 409);
   if (body.session_id && room.session_id && body.session_id !== room.session_id) throw new TurnError("That turn is for another session.", 409);
 
+  const thinking: ThinkingTurn = { id: `${room.live.started_at}:${body.t}:${body.mode}`, mode: body.mode, slide_index: body.slide_index, t: body.t, ...(body.asked_by ? { asked_by: body.asked_by } : {}) };
+  setThinking(room.live.started_at, (list) => [...list, thinking]);
+  try {
+    return await forward(body, room as typeof room & { live: LiveSession; bundle: Bundle });
+  } finally {
+    setThinking(room.live.started_at, (list) => list.filter((x) => x.id !== thinking.id));
+  }
+}
+
+// Marks a turn as waiting on n8n (or not), for the dashboard, as long as the room is still on the same run
+function setThinking(startedAt: string, change: (list: ThinkingTurn[]) => ThinkingTurn[]) {
+  const now = getRoom();
+  if (!now.live || now.live.started_at !== startedAt) return;
+  updateRoom({ live: { ...now.live, thinking: change(now.live.thinking ?? []) } });
+}
+
+async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { live: LiveSession; bundle: Bundle }): Promise<TurnResponse> {
   const { audio_wav_base64, ...rest } = body;
   const speech = await compressSpeech(audio_wav_base64 ?? "");
   const feed = room.live.feed ?? [];
