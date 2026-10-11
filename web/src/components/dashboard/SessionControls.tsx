@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import type { Room, SessionAction } from "@/lib/contract";
 import { clock } from "@/lib/format";
+import { rebriefAction } from "@/app/m/actions";
 
 // Start, end and restart the rehearsal from the laptop: the backup for the headset's "start speaking" and its A and B buttons.
 // Shows the room as the dashboard follows it, so it also shows when the headset started or ended the session.
 export function SessionControls({ room }: { room: Room }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rebriefing, startRebrief] = useTransition();
   const elapsed = useElapsed(room.phase === "live" ? room.live?.started_at : undefined);
 
   async function send(action: SessionAction | "debrief") {
@@ -72,6 +74,23 @@ export function SessionControls({ room }: { room: Room }) {
           className={`${button} ${room.debrief?.state === "done" ? "border border-line bg-surface hover:border-ink" : "bg-ink text-surface"}`}
         >
           Run it again
+        </button>
+      )}
+      {room.phase === "done" && (
+        // n8n re-briefs the same panel from the last debrief and presses on the weak spots
+        <button
+          type="button"
+          disabled={busy || rebriefing || room.debrief?.state === "running"}
+          onClick={() =>
+            startRebrief(async () => {
+              setError(null);
+              const res = await rebriefAction();
+              if (!res.ok) setError(res.error);
+            })
+          }
+          className={`${button} border border-line bg-surface hover:border-ink`}
+        >
+          {rebriefing ? "n8n is planning the rehearsal…" : "Run it again, harder"}
         </button>
       )}
       {error && <p role="alert" className="text-xs text-bad-ink">{error}</p>}

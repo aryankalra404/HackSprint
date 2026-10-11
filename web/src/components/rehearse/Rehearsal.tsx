@@ -7,9 +7,10 @@ import { buildDebriefFeed, buildLiveFeed } from "@/lib/feed";
 import { personaTag } from "@/lib/personas";
 import { type DebugInfo, useRehearsal } from "@/lib/rehearse/useRehearsal";
 import { rebriefAction } from "@/app/m/actions";
+import { HandIcon } from "../ui";
 import { AgentFeed } from "../dashboard/AgentFeed";
 import { useElapsed } from "../dashboard/SessionControls";
-import { HandIcon, RehearsalTable } from "./RehearsalTable";
+import { RehearsalTable } from "./RehearsalTable";
 import { SpeakerView } from "./SpeakerView";
 import { StartGate } from "./StartGate";
 

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { Persona, PersonaId } from "@/lib/contract";
 import { colorOf } from "@/lib/personas";
-import { PersonaAvatar } from "../ui";
+import { HandIcon, PersonaAvatar } from "../ui";
 import { CARD_W, H, RoomPlan, TABLE_CENTRE, W, cardPlacement, pct, seatPoint } from "../room/RoomPlan";
 
 interface Props {
@@ -92,15 +92,4 @@ function SpeakingRing({ color, level }: { color: string; level: () => number }) 
     return () => cancelAnimationFrame(frame);
   }, [level]);
   return <span ref={ring} aria-hidden="true" className="absolute inset-0 rounded-full" style={{ boxShadow: `0 0 0 0.7cqw ${color}`, opacity: 0.85 }} />;
-}
-
-export function HandIcon({ className = "size-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 11V6a2 2 0 0 0-4 0v5" />
-      <path d="M14 10V4a2 2 0 0 0-4 0v6" />
-      <path d="M10 10.5V6a2 2 0 0 0-4 0v8" />
-      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
-    </svg>
-  );
 }
