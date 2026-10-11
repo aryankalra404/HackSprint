@@ -36,7 +36,7 @@ Over USB the headset reaches the app at `http://localhost:3000`. It uses USB whe
 
 ## The deck
 Upload a PDF, PowerPoint (`.pptx`, `.ppt`) or Keynote file on the practice page. The laptop converts it to one JPEG per slide in `.decks/<id>/` (not committed) and serves them at `/api/deck/<id>/<n>.jpg`; the headset downloads them all. It needs Ghostscript and ImageMagick (`brew install ghostscript imagemagick`) and, for PowerPoint and Keynote, LibreOffice (`brew install --cask libreoffice`). A deck takes about 10 seconds. If a slide looks wrong (LibreOffice doesn't draw everything PowerPoint does, e.g. rotated text boxes), export the deck as a PDF and upload that.
-Change slides from the practice page, the dashboard's header (a presentation clicker works there: Page Down, Page Up, arrows) or the headset (a thumb swipe with hands, the triggers with controllers); they all follow the room's `slide`.
+Change slides from the practice page, the dashboard's header (a presentation clicker works there: Page Down, Page Up, arrows) or the headset (a quick pinch with hands: right hand next, left hand back; the triggers with controllers); they all follow the room's `slide`.
 
 **Height in VR**, in the header of the practice page and the dashboard, opens a vertical bar that raises or lowers the presenter's eyes in the headset (up to 50 cm either way), for when the room feels too tall or too short.
 
