@@ -22,6 +22,11 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 APP_URL = "http://localhost:3000"
 # Fewer news stories than this and n8n also searches the web (Gemini with Google Search, which needs billing on the key)
 MIN_NEWS = 3
+# Persona voices: Sarvam's Bulbul (Indian voices, one call per line, base64 WAV back). Each person gets a different voice that
+# fits their avatar; the lists follow Sarvam's speaker names for this model.
+SARVAM_TTS = "https://api.sarvam.ai/text-to-speech"
+SARVAM_MODEL = "bulbul:v3"
+VOICES = {"female": ["priya", "kavya", "neha", "ritu", "shreya", "simran"], "male": ["rahul", "aditya", "rohan", "amit", "kabir", "varun", "dev"]}
 MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "86BWrDlUXrOWFgqc", "cachedResultName": "DryRun meetings"}
 
 IMPORTS = ("import { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, "
@@ -590,6 +595,10 @@ const g = $('Gather what n8n knows').first().json;
 const p = JSON.parse(replyText($json) || '{}');
 const byId = Object.fromEntries((p.personas || []).map(x => [x.id, x]));
 const ids = g.req.panel.map(m => m.id);
+// A different voice for each person, fitting their avatar (Sarvam speaker names)
+const VOICES = """ + json.dumps(VOICES) + """;
+const used = { female: 0, male: 0 };
+const voiceFor = avatar => { const g = String(avatar).includes('female') ? 'female' : 'male'; return VOICES[g][used[g]++ % VOICES[g].length]; };
 const chair = ids.includes(p.chair) ? p.chair : (g.req.panel.find(m => m.seat === 0) || g.req.panel[0] || {}).id;
 const personas = g.req.panel.map(m => {
   const x = byId[m.id] || {};
@@ -597,8 +606,7 @@ const personas = g.req.panel.map(m => {
            display_name: m.display_name || x.display_name || m.role, priorities: x.priorities || [],
            objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: o.source === 'deck' ? 'deck' : 'research' })),
            difficulty: m.difficulty || 2, manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,
-           // Chosen with the voices (TTS) step
-           voice: '' };
+           voice: voiceFor(m.avatar) };
 });
 // Slide times scaled so they add up to the pitch length
 const pitchSeconds = g.minutes * 60;
@@ -615,6 +623,33 @@ const plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pit
 const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
 return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,
                   rescue_after_s: rescue, slides, personas, lines, drill: null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
+    c += code_node("eachLine", "One item per line", """
+// Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).
+const b = $input.first().json;
+const req = $('Start a rehearsal (web app)').first().json.body;
+if (req.voices === false) return [];
+const voice = Object.fromEntries(b.personas.map(p => [p.id, p.voice]));
+return b.lines.map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));""", [{"id": "l1", "text": "Welcome, Aryan.", "speaker": "priya"}], extra={"alwaysOutputData": True})
+    c += make_node("voice", "node", "n8n-nodes-base.httpRequest", 4.5, "Voice the line (Sarvam)", {
+        "method": "POST",
+        "url": SARVAM_TTS,
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": True,
+        "specifyBody": "json",
+        "jsonBody": Expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: '" + SARVAM_MODEL + "', speaker: $json.speaker, speech_sample_rate: 22050 }) }}"),
+        "options": {"timeout": 30000},
+    }, [{"request_id": "r1", "audios": ["UklGRg=="]}], credentials={"httpHeaderAuth": "Sarvam"},
+        # A line that fails to voice is left without audio; the rehearsal still goes ahead
+        extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2, "waitBetweenTries": 1000})
+    c += code_node("addVoices", "Add the voices", """
+// Each line's audio (base64 WAV) into the bundle; the laptop saves them and serves them to the headset
+const b = $('Build the bundle').first().json;
+const lines = $('One item per line').all().map(i => i.json);
+const out = $input.all().map(i => i.json);
+const audio = {};
+lines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });
+return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_wav_base64: audio[l.id] } : l)) } }];""", [{"session_id": "s1", "lines": []}])
     c += make_node("reply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the bundle", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
     c += ("const about = sticky('## DryRun rehearsal prep\\nBriefs the practice panel for one rehearsal (POST /webhook/dryrun/prep, docs/CONTRACT.md): "
           "plans each slide and the rescue cues, what each person will push on, who interrupts and who chairs, how many questions to ask "
@@ -626,11 +661,15 @@ return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company
   .to(gather)
   .to(plan)
   .to(bundle)
+  .to(eachLine)
+  .to(voice)
+  .to(addVoices)
   .to(reply)
   .add(plan.onError(planGroq))
   .add(planGroq)
   .to(bundle)
-  .group('Plan', [gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' });
+  .group('Plan', [gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
+  .group('Voices', [eachLine, voice, addVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\\'s voice' });
 """
     return c
 

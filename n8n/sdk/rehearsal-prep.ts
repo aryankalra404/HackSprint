@@ -197,13 +197,86 @@ const bundle = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The rehearsal bundle (docs/CONTRACT.md, POST /prep response). Seats, colours, faces and difficulty stay as the presenter set them;\n// the plan, the briefs and the lines are n8n's. The laptop fills in each slide's image and saves the voices.\nconst g = $('Gather what n8n knows').first().json;\nconst p = JSON.parse(replyText($json) || '{}');\nconst byId = Object.fromEntries((p.personas || []).map(x => [x.id, x]));\nconst ids = g.req.panel.map(m => m.id);\nconst chair = ids.includes(p.chair) ? p.chair : (g.req.panel.find(m => m.seat === 0) || g.req.panel[0] || {}).id;\nconst personas = g.req.panel.map(m => {\n  const x = byId[m.id] || {};\n  return { id: m.id, seat: m.seat, color: m.color, role: m.role, role_short: m.role_short, avatar: m.avatar,\n           display_name: m.display_name || x.display_name || m.role, priorities: x.priorities || [],\n           objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: o.source === 'deck' ? 'deck' : 'research' })),\n           difficulty: m.difficulty || 2, manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,\n           // Chosen with the voices (TTS) step\n           voice: '' };\n});\n// Slide times scaled so they add up to the pitch length\nconst pitchSeconds = g.minutes * 60;\nconst raw = g.slides.map(s => (p.slides || []).find(x => x.index === s.index) || { index: s.index, title: 'Slide ' + (s.index + 1), key_points: [], target_seconds: 60, rescue: {} });\nconst total = raw.reduce((a, s) => a + Math.max(5, s.target_seconds || 0), 0) || 1;\nconst slides = raw.map(s => ({ index: s.index, title: s.title || '', image_url: '', key_points: s.key_points || [],\n  target_seconds: Math.max(5, Math.round(Math.max(5, s.target_seconds || 0) * pitchSeconds / total)),\n  rescue: { calm: (s.rescue && s.rescue.calm) || 'Take a breath.', keyword: (s.rescue && s.rescue.keyword) || '', bridge: (s.rescue && s.rescue.bridge) || '' },\n  notes: null }));\nconst r = (p.rescue_after_s || []).map(Number).filter(n => n > 0).slice(0, 3);\nconst rescue = r.length === 3 && r[0] < r[1] && r[1] < r[2] ? r : [3, 6, 10];\nconst plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0)), after_pitch: Math.max(0, Math.round((p.plan && p.plan.after_pitch) || 0)),\n               why: (p.plan && p.plan.why) || '' };\nconst lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));\nreturn [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,\n                  rescue_after_s: rescue, slides, personas, lines, drill: null } }];"
+      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The rehearsal bundle (docs/CONTRACT.md, POST /prep response). Seats, colours, faces and difficulty stay as the presenter set them;\n// the plan, the briefs and the lines are n8n's. The laptop fills in each slide's image and saves the voices.\nconst g = $('Gather what n8n knows').first().json;\nconst p = JSON.parse(replyText($json) || '{}');\nconst byId = Object.fromEntries((p.personas || []).map(x => [x.id, x]));\nconst ids = g.req.panel.map(m => m.id);\n// A different voice for each person, fitting their avatar (Sarvam speaker names)\nconst VOICES = {\"female\": [\"priya\", \"kavya\", \"neha\", \"ritu\", \"shreya\", \"simran\"], \"male\": [\"rahul\", \"aditya\", \"rohan\", \"amit\", \"kabir\", \"varun\", \"dev\"]};\nconst used = { female: 0, male: 0 };\nconst voiceFor = avatar => { const g = String(avatar).includes('female') ? 'female' : 'male'; return VOICES[g][used[g]++ % VOICES[g].length]; };\nconst chair = ids.includes(p.chair) ? p.chair : (g.req.panel.find(m => m.seat === 0) || g.req.panel[0] || {}).id;\nconst personas = g.req.panel.map(m => {\n  const x = byId[m.id] || {};\n  return { id: m.id, seat: m.seat, color: m.color, role: m.role, role_short: m.role_short, avatar: m.avatar,\n           display_name: m.display_name || x.display_name || m.role, priorities: x.priorities || [],\n           objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: o.source === 'deck' ? 'deck' : 'research' })),\n           difficulty: m.difficulty || 2, manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,\n           voice: voiceFor(m.avatar) };\n});\n// Slide times scaled so they add up to the pitch length\nconst pitchSeconds = g.minutes * 60;\nconst raw = g.slides.map(s => (p.slides || []).find(x => x.index === s.index) || { index: s.index, title: 'Slide ' + (s.index + 1), key_points: [], target_seconds: 60, rescue: {} });\nconst total = raw.reduce((a, s) => a + Math.max(5, s.target_seconds || 0), 0) || 1;\nconst slides = raw.map(s => ({ index: s.index, title: s.title || '', image_url: '', key_points: s.key_points || [],\n  target_seconds: Math.max(5, Math.round(Math.max(5, s.target_seconds || 0) * pitchSeconds / total)),\n  rescue: { calm: (s.rescue && s.rescue.calm) || 'Take a breath.', keyword: (s.rescue && s.rescue.keyword) || '', bridge: (s.rescue && s.rescue.bridge) || '' },\n  notes: null }));\nconst r = (p.rescue_after_s || []).map(Number).filter(n => n > 0).slice(0, 3);\nconst rescue = r.length === 3 && r[0] < r[1] && r[1] < r[2] ? r : [3, 6, 10];\nconst plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0)), after_pitch: Math.max(0, Math.round((p.plan && p.plan.after_pitch) || 0)),\n               why: (p.plan && p.plan.why) || '' };\nconst lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));\nreturn [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,\n                  rescue_after_s: rescue, slides, personas, lines, drill: null } }];"
     },
     "output": [
   {
     "session_id": "s1",
     "personas": [],
     "slides": [],
+    "lines": []
+  }
+]
+  }
+});
+
+const eachLine = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "One item per line",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).\nconst b = $input.first().json;\nconst req = $('Start a rehearsal (web app)').first().json.body;\nif (req.voices === false) return [];\nconst voice = Object.fromEntries(b.personas.map(p => [p.id, p.voice]));\nreturn b.lines.map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));"
+    },
+    "alwaysOutputData": true,
+    "output": [
+  {
+    "id": "l1",
+    "text": "Welcome, Aryan.",
+    "speaker": "priya"
+  }
+]
+  }
+});
+
+const voice = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Voice the line (Sarvam)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.sarvam.ai/text-to-speech",
+      "authentication": "genericCredentialType",
+      "genericAuthType": "httpHeaderAuth",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: 'bulbul:v3', speaker: $json.speaker, speech_sample_rate: 22050 }) }}"),
+      "options": {
+        "timeout": 30000
+      }
+    },
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1000,
+    "credentials": { "httpHeaderAuth": newCredential("Sarvam") },
+    "output": [
+  {
+    "request_id": "r1",
+    "audios": [
+      "UklGRg=="
+    ]
+  }
+]
+  }
+});
+
+const addVoices = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Add the voices",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// Each line's audio (base64 WAV) into the bundle; the laptop saves them and serves them to the headset\nconst b = $('Build the bundle').first().json;\nconst lines = $('One item per line').all().map(i => i.json);\nconst out = $input.all().map(i => i.json);\nconst audio = {};\nlines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });\nreturn [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_wav_base64: audio[l.id] } : l)) } }];"
+    },
+    "output": [
+  {
+    "session_id": "s1",
     "lines": []
   }
 ]
@@ -234,8 +307,12 @@ export default workflow('dryrun-rehearsal-prep', 'DryRun rehearsal prep')
   .to(gather)
   .to(plan)
   .to(bundle)
+  .to(eachLine)
+  .to(voice)
+  .to(addVoices)
   .to(reply)
   .add(plan.onError(planGroq))
   .add(planGroq)
   .to(bundle)
-  .group('Plan', [gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' });
+  .group('Plan', [gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
+  .group('Voices', [eachLine, voice, addVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\'s voice' });
