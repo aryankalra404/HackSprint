@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.23, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.24, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -162,7 +162,12 @@ Field notes:
 - `difficulty` is 1 to 3, set per person by the presenter (default 2).
 - `voices` (optional, default `true`): `false` leaves the `lines` without audio, for testing without spending TTS credits (the laptop sends it when `DRYRUN_VOICES=off`).
 
-Response:
+The answer is streamed *(0.24)*, so the practice page can show what n8n is doing (one execution, as before). n8n sends JSON objects one after another, each `{ "type": "begin" | "item" | "end" | "error", "content": … }` (n8n's streaming format); each `item`'s `content` is one of these, as a JSON string or an object:
+- after each stage, a progress chunk: `{ "progress": { "id": "gather" | "fallback" | "plan" | "voices", "detail": "string" } }`. The `gather` chunk (the first) also has `execution_id` and `workflow_id`, so the page can link to the run in n8n. `fallback` comes only when Gemini fails and Groq plans instead. `detail` is n8n's own summary (e.g. "7 objections, Priya chairs, 2 questions during the pitch and 3 after").
+- last, the bundle below.
+A progress chunk that fails never stops the run. The laptop also accepts the bundle as a plain JSON answer (before 0.24). It keeps the progress for the page (`GET /api/prep/progress?run=<id>`, laptop only, not in the room): its own steps (reading the deck, saving the voices) around n8n's.
+
+Response (the last chunk):
 ```json
 {
   "session_id": "string",
@@ -561,3 +566,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.21 (11 Oct): the room's `scripted`, for the sample meeting: a whole rehearsal without speaking and without n8n, the headset standing in for the presenter and the laptop answering turns from a script.
 - 0.22 (11 Oct): the proposed panel seats only the real attendees from outside the presenter's organisation (roles left empty when unknown); practice roles become ranked suggestions, each a whole person with a name and a face. Only a meeting with no known attendee gets two practice roles seated.
 - 0.23 (11 Oct): rehearse in the browser. The room gains `rehearse_in` (`"vr"` or `"browser"`, set when briefed and with `PUT /api/room/settings`; the headset doesn't take turns when it's `"browser"`) and `live.now` (who is speaking and who has a hand up, set with the new `POST /api/room/now`). The browser sends `/api/debrief` with `client: "web"` and its silences.
+- 0.24 (11 Oct): `/prep` streams its answer: a progress chunk after each stage (gathered, planned, voiced, and Groq standing in for Gemini), with the n8n execution on the first, then the bundle. The practice page has one "Rehearse" button that asks where (this laptop or the headset) and shows those steps live.

@@ -63,6 +63,7 @@ Sent when the presenter starts the rehearsal from the practice page. Input: the 
 4. **Plan the questions:** how many during and after the pitch, with a reason, from the length, the kind of meeting and the panel.
 5. **Voice lines ahead of time:** the chair's welcome and opening of the floor and a few acknowledgements per person, written for this meeting, so common reactions never wait on TTS.
 6. **Return the bundle;** the laptop saves the audio and puts the bundle in the room for the headset.
+The webhook streams its answer (contract 0.24): after loading, planning (or Groq standing in for Gemini) and voicing, a Respond to Webhook node sends a progress chunk with n8n's own summary, then the bundle. The practice page shows those steps live, with a link to the execution, in the same single execution.
 
 ## Workflow 2: Turn (built; the headset side is editor-tested) (`POST /dryrun/turn`)
 The headset sends what the presenter said at four moments: the `opening` (their first words), each slide's `segment`, an `answer`, and `pitch_end` (quiet on the last slide). The laptop adds the bundle, the turns so far and questions left unasked.

@@ -595,10 +595,21 @@ REHEARSAL_REQUEST = {"body": {"draft_id": "evt123", "presenter": {"name": "Aryan
                                          "avatar": "business_female_01", "difficulty": 2, "source": "email"}]}}
 
 
+def progress_chunk(var, name, step, detail_js, with_run=False):
+    """A streamed progress chunk for /prep (contract 0.24): { progress: { id, detail } }, plus which execution this is on the first one.
+    Respond to Webhook passes its input through, so the next node gets the same item."""
+    run = ", execution_id: $execution.id, workflow_id: $workflow.id" if with_run else ""
+    body = "{{ JSON.stringify({ progress: { id: '" + step + "', detail: " + detail_js + " }" + run + " }) }}"
+    return make_node(var, "node", "n8n-nodes-base.respondToWebhook", 1.5, name, {"respondWith": "json", "responseBody": Expr(body), "options": {}}, [{}],
+                     # A progress chunk that fails must never stop the rehearsal
+                     extra={"onError": "continueRegularOutput"})
+
+
 def rehearsal():
     c = IMPORTS
     c += make_node("prepTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "Start a rehearsal (web app)", {
-        "httpMethod": "POST", "path": "dryrun/prep", "responseMode": "responseNode", "options": {},
+        # Streaming (contract 0.24): a chunk after each stage, so the practice page shows n8n's progress, then the bundle
+        "httpMethod": "POST", "path": "dryrun/prep", "responseMode": "streaming", "options": {},
     }, [REHEARSAL_REQUEST])
     # The meeting's brief and research, saved by DryRun prep. A meeting missing from the table still gets a rehearsal.
     c += make_node("findMeeting", "node", "n8n-nodes-base.dataTable", 1.1, "Find the meeting", {
@@ -634,6 +645,12 @@ return [{ json: { req, minutes, presenter: (req.presenter && req.presenter.name)
                   history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
                            company: brief.company || {} } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
+    c += progress_chunk("saidGather", "Report: gathered", "gather",
+                        "[$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', "
+                        "$json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', "
+                        "$json.slides.length ? $json.slides.length + ' slides' : 'no deck', $json.minutes + ' min pitch', "
+                        "$json.last ? 'last rehearsal ' + $json.last.overall + '/100 with ' + $json.last.weak_spots.length + ' weak spots to press on' : 'the first rehearsal'].join(', ')",
+                        with_run=True)
     c += llm_nodes("plan", "Plan the rehearsal", json.dumps(REHEARSAL_PROMPT) +
                    ".replace('{presenter}', $json.presenter || 'the presenter').split('{minutes}').join(String($json.minutes))"
                    ".replace('{meeting}', JSON.stringify($json.meeting, null, 1)).replace('{brief}', JSON.stringify($json.brief, null, 1))"
@@ -677,6 +694,11 @@ const plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pit
 const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
 return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,
                   rescue_after_s: rescue, slides, personas, lines, drill: (g.last && g.last.drill) || null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
+    c += progress_chunk("saidPlan", "Report: planned", "plan",
+                        "(() => { const b = $json; const chair = b.personas.find(p => p.chair); const n = b.personas.reduce((a, p) => a + p.objections.length, 0); "
+                        "return [b.slides.length ? b.slides.length + ' slides timed to the pitch' : '', n + ' objections', chair ? chair.display_name.split(' ')[0] + ' chairs' : '', "
+                        "b.plan.during_pitch + ' questions during the pitch and ' + b.plan.after_pitch + ' after'].filter(Boolean).join(', '); })()")
+    c += progress_chunk("saidFallback", "Report: Groq instead", "fallback", "'Gemini did not answer, so Groq plans it instead'")
     c += code_node("eachLine", "One item per line", """
 // Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).
 const b = $input.first().json;
@@ -704,6 +726,9 @@ const out = $input.all().map(i => i.json);
 const audio = {};
 lines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });
 return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_base64: audio[l.id] } : l)) } }];""", [{"session_id": "s1", "lines": []}])
+    c += progress_chunk("saidVoices", "Report: voiced", "voices",
+                        "(() => { const n = $json.lines.length; const v = $json.lines.filter(l => l.audio_base64).length; "
+                        "return n ? v + ' of ' + n + ' lines voiced, each in the voice of whoever says it' : 'No lines to voice'; })()")
     c += make_node("reply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the bundle", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
     c += ("const about = sticky('## DryRun rehearsal prep\\nBriefs the practice panel for one rehearsal (POST /webhook/dryrun/prep, docs/CONTRACT.md): "
           "plans each slide and the rescue cues, what each person will push on, who interrupts and who chairs, how many questions to ask "
@@ -714,17 +739,21 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_bas
   .to(findMeeting)
   .to(lastRehearsal)
   .to(gather)
+  .to(saidGather)
   .to(plan)
   .to(bundle)
+  .to(saidPlan)
   .to(eachLine)
   .to(voice)
   .to(addVoices)
+  .to(saidVoices)
   .to(reply)
-  .add(plan.onError(planGroq))
-  .add(planGroq)
+  .add(plan.onError(saidFallback))
+  .add(saidFallback)
+  .to(planGroq)
   .to(bundle)
-  .group('Plan', [lastRehearsal, gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
-  .group('Voices', [eachLine, voice, addVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\\'s voice' });
+  .group('Plan', [lastRehearsal, gather, saidGather, plan, saidFallback, planGroq, bundle, saidPlan], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
+  .group('Voices', [eachLine, voice, addVoices, saidVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\\'s voice' });
 """
     return c
 

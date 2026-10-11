@@ -8,7 +8,7 @@ const prepTrigger = trigger({
     "parameters": {
       "httpMethod": "POST",
       "path": "dryrun/prep",
-      "responseMode": "responseNode",
+      "responseMode": "streaming",
       "options": {}
     },
     "output": [
@@ -155,6 +155,23 @@ const gather = node({
   }
 });
 
+const saidGather = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: gathered",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ progress: { id: 'gather', detail: [$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', $json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', $json.slides.length ? $json.slides.length + ' slides' : 'no deck', $json.minutes + ' min pitch', $json.last ? 'last rehearsal ' + $json.last.overall + '/100 with ' + $json.last.weak_spots.length + ' weak spots to press on' : 'the first rehearsal'].join(', ') }, execution_id: $execution.id, workflow_id: $workflow.id }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
+]
+  }
+});
+
 const plan = node({
   type: "n8n-nodes-base.httpRequest",
   version: 4.5,
@@ -251,6 +268,40 @@ const bundle = node({
   }
 });
 
+const saidPlan = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: planned",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ progress: { id: 'plan', detail: (() => { const b = $json; const chair = b.personas.find(p => p.chair); const n = b.personas.reduce((a, p) => a + p.objections.length, 0); return [b.slides.length ? b.slides.length + ' slides timed to the pitch' : '', n + ' objections', chair ? chair.display_name.split(' ')[0] + ' chairs' : '', b.plan.during_pitch + ' questions during the pitch and ' + b.plan.after_pitch + ' after'].filter(Boolean).join(', '); })() } }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
+]
+  }
+});
+
+const saidFallback = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: Groq instead",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ progress: { id: 'fallback', detail: 'Gemini did not answer, so Groq plans it instead' } }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
+]
+  }
+});
+
 const eachLine = node({
   type: "n8n-nodes-base.code",
   version: 2,
@@ -324,6 +375,23 @@ const addVoices = node({
   }
 });
 
+const saidVoices = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: voiced",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ progress: { id: 'voices', detail: (() => { const n = $json.lines.length; const v = $json.lines.filter(l => l.audio_base64).length; return n ? v + ' of ' + n + ' lines voiced, each in the voice of whoever says it' : 'No lines to voice'; })() } }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
+]
+  }
+});
+
 const reply = node({
   type: "n8n-nodes-base.respondToWebhook",
   version: 1.5,
@@ -347,14 +415,18 @@ export default workflow('dryrun-rehearsal-prep', 'DryRun rehearsal prep')
   .to(findMeeting)
   .to(lastRehearsal)
   .to(gather)
+  .to(saidGather)
   .to(plan)
   .to(bundle)
+  .to(saidPlan)
   .to(eachLine)
   .to(voice)
   .to(addVoices)
+  .to(saidVoices)
   .to(reply)
-  .add(plan.onError(planGroq))
-  .add(planGroq)
+  .add(plan.onError(saidFallback))
+  .add(saidFallback)
+  .to(planGroq)
   .to(bundle)
-  .group('Plan', [lastRehearsal, gather, plan, planGroq, bundle], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
-  .group('Voices', [eachLine, voice, addVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\'s voice' });
+  .group('Plan', [lastRehearsal, gather, saidGather, plan, saidFallback, planGroq, bundle, saidPlan], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
+  .group('Voices', [eachLine, voice, addVoices, saidVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\'s voice' });
