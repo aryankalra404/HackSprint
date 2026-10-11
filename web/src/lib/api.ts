@@ -43,18 +43,47 @@ export async function postToN8n<T>(path: string, body: unknown): Promise<T> {
 // Upcoming meetings n8n has picked up (contract: GET /meetings)
 export async function listMeetings(): Promise<Meeting[]> {
   if (!N8N_URL) return [demoSkippedMeeting, demoMeeting].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
-  const res = await fetch(`${N8N_URL}/meetings`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`n8n /meetings failed: ${res.status}`);
-  return ((await res.json()) as { meetings: Meeting[] }).meetings ?? [];
+  return readOnce("meetings", (ms: Meeting[]) => (ms.some((m) => m.status === "researching") ? FRESH_MS : SETTLED_MS), async () => {
+    const res = await fetch(`${N8N_URL}/meetings`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`n8n /meetings failed: ${res.status}`);
+    return ((await res.json()) as { meetings: Meeting[] }).meetings ?? [];
+  });
 }
 
 // One meeting with its brief and practice panel (contract: GET /meeting)
 export async function getMeeting(id: string): Promise<MeetingDetail | null> {
   if (!N8N_URL) return id === demoMeeting.id ? demoMeetingDetail : id === demoSkippedMeeting.id ? { meeting: demoSkippedMeeting, brief: null, proposal: null } : null;
-  const res = await fetch(`${N8N_URL}/meeting?id=${encodeURIComponent(id)}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`n8n /meeting failed: ${res.status}`);
-  const detail = (await res.json()) as MeetingDetail & { error?: string };
-  return detail.error ? null : detail;
+  return readOnce(`meeting:${id}`, (d: MeetingDetail | null) => (d?.meeting.status === "researching" ? FRESH_MS : SETTLED_MS), async () => {
+    const res = await fetch(`${N8N_URL}/meeting?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`n8n /meeting failed: ${res.status}`);
+    const detail = (await res.json()) as MeetingDetail & { error?: string };
+    return detail.error ? null : detail;
+  });
+}
+
+// Every read of n8n's meetings is an n8n execution, and the plan allows only so many (a page reloading in a loop once used up a
+// month's in an hour). So reads are shared: callers within a short time get the same answer, and one request is in flight per key.
+// A meeting n8n is still preparing is re-read after 2.5 s, in time for the 3 s refresh; anything else is kept for 30 s.
+const FRESH_MS = 2_500;
+const SETTLED_MS = 30_000;
+const reads = ((globalThis as { __dryrunReads?: Map<string, { until: number; value: Promise<unknown> }> }).__dryrunReads ??= new Map());
+
+function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Promise<T>): Promise<T> {
+  const hit = reads.get(key);
+  if (hit && Date.now() < hit.until) return hit.value as Promise<T>;
+  const value = load();
+  // In flight: everyone asking now shares this request
+  reads.set(key, { until: Number.POSITIVE_INFINITY, value });
+  value.then(
+    (v) => reads.set(key, { until: Date.now() + keepFor(v), value }),
+    () => reads.delete(key),
+  );
+  return value;
+}
+
+// After a change (a meeting added or retried), the next read goes to n8n
+export function forgetMeetingReads(): void {
+  reads.clear();
 }
 
 // The n8n editor page for a run, so the progress view can link to the real execution
@@ -67,6 +96,7 @@ export function n8nRunUrl(run: Meeting["run"]): string | null {
 export async function addMeeting(meeting: NewMeeting): Promise<void> {
   if (!N8N_URL) return;
   await postToN8n("/add-meeting", meeting);
+  forgetMeetingReads();
 }
 
 // Builds the rehearsal bundle for a practice panel (contract: POST /prep): n8n plans the slides, the panel, the questions and the
