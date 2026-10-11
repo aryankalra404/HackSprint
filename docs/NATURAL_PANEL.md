@@ -138,6 +138,27 @@ In the debrief workflow, for every thread that ended `parked` or `dodged` (and e
 
 This is what makes it a product: a stumble in rehearsal becomes an answer you know in the real meeting.
 
+## 4b. A fair report (judge only what the presenter had a chance to do)
+The first headset run's report (13/100, "a catastrophic failure…") was real n8n output, but mostly blamed the presenter for the system's mistakes:
+- "Nonsensical jargon" was Whisper's garble.
+- "Silent for 80 seconds" on slide 2 was the panel asking the same question three times, and the answers.
+- "Spent the entire time on the title" happened because the chair opened the floor at 0:19.
+
+A report that's wrong once is never trusted again, so:
+
+- **Slide time counts only the presenter's pitch time.** A Code node in **DryRun debrief** subtracts each exchange (from the question being asked to the end of the answer) from the slide it happened on. Exchanges show on the timeline but aren't "time on slide". Pacing and words per minute use the same corrected time; this also fixes the known follow-up in PLAN.md (words per minute counted question time).
+- **The debrief knows about system trouble,** listed by the Code node and given to the model as context to discount, not to judge:
+  - transcripts that look garbled (very short, or few words in common with the slide, the question and the deck);
+  - the panel cutting the pitch short (a question or `open_floor` before the presenter said ~30 words);
+  - turns that failed (the laptop knows from `/api/turn` errors; add them to telemetry as `{ type: "turn_failed", t, mode }`).
+  
+  The prompt says: never mark a quote from a transcript flagged as garbled; say "the transcript was unclear here" instead.
+- **Too little to judge, said plainly.** Under about 45 s of actual pitch, or fewer than ~60 words, the scores are `null` and the headline says "Too short to score: 0:19 of pitch. Try a 2-minute run." The talk tracks and weak spots are still given, since they help.
+- **Marks have to matter.** No "landed" for reading a title; at most one "landed" per slide, and only for a specific claim, number or answer that worked.
+- **Model answers for what you missed** (section 4): every `parked`, `dodged` or `partial` thread gets a suggested answer with sources, in the report and the email.
+- **Headset telemetry,** so a VR report isn't thinner than a browser one: `TurnTaker` sends `/api/debrief` with the silences (and rescue level), and `PanelAttention` sends head direction per person (`gaze_dwell_s`) and `facing_slides_s`. The report's "Who you faced" then works for VR, its main advantage over the browser.
+- Remove the old `/report` shortcut page (it redirects to the sample session).
+
 ## 5. Small fixes from the same run
 - The chair opened the floor at 0:19 on a `segment` (enforcement, section 1).
 - A question fired on a slide-title-only segment (enforcement, section 1).
@@ -158,6 +179,8 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 - `/turn` response gains `threads: [{ id, status }]` (changes to apply), `path: "planned" | "live"`, and each reaction gains `thread_id`.
 - Telemetry gains `{ type: "filler", t, persona_id }` and `{ type: "rescue", t, level, line_id }` events, for the report.
 - Debrief result gains `owed: [{ thread_id, persona_id, question, said, suggested, sources: [{ title, url }] }]`.
+- Debrief result: metric `score` may be `null` (too short to score), and gains `trouble: [{ t, kind: "garbled" | "cut_short" | "turn_failed", note }]`, shown quietly on the report's timeline.
+- Telemetry gains `{ type: "turn_failed", t, mode }`; the headset starts sending telemetry (`client: "vr"`, silences, `gaze_dwell_s`, `facing_slides_s`).
 
 ## Who builds what
 
@@ -172,6 +195,7 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 | 2c. Transcription | Whisper hint list | volume normalise | — | — |
 | 3. Voiced rescue | prep writes `rescue_soft` and `rescue_question` | — | play at levels 2 and 3 | monitor cues + play (VR cues not built yet) |
 | 4. Homework | **DryRun debrief**: owed answers, email | report section | debrief panel link | — |
+| 4b. Fair report | debrief Code node: pitch-only slide time, system trouble flags, too-short rule; prompt: discount flagged transcripts, stricter marks | log failed turns in telemetry; "too short" state on the report; remove `/report` | send `turn_failed` events | send telemetry (silences, who you faced) to `/api/debrief` |
 
 ## Order (each step usable on its own)
 1. **Threads and enforcement** (n8n turn workflow, laptop context). Fixes the repetition and the mid-pitch floor opening. About 1.5 h.
@@ -179,7 +203,8 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 3. **Transcription:** hint list and volume. About 30 min.
 4. **Planned replies and the fast path.** About 2–3 h. Measure: target ~2 s per turn on the fast path.
 5. **Voiced rescue** (both clients, plus VR monitor cues). About 2 h.
-6. **Homework** (debrief, report, email). About 2 h.
+6. **Homework and a fair report** (debrief, report, email; 4 and 4b, except headset telemetry). About 3 h. Do the time correction and system-trouble flags early: every test run's report depends on them.
+6b. **Headset telemetry** (silences, who you faced). About 1.5 h, with the Quest build.
 7. **Your goal** (0a): profile, n8n's guess and confirm, used by the brief, rehearsal prep and debrief. About 2 h. Can go first if the demo meeting needs a sharper panel.
 8. **Deck review** (0b): the new workflow, the brief and practice page sections, rehearsal prep reading it. About 2–3 h. Strong demo moment: upload the deck, and n8n says where it will get pushback, with sources.
 9. **Deck found** (0c). About 2 h; Gmail and Calendar attachments need testing with a real invite.
