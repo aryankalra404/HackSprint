@@ -32,6 +32,7 @@ export function MeetingList({ meetings }: { meetings: Meeting[] }) {
                 </span>
                 {m.why && <span className="text-sm text-ink-2">{m.why}</span>}
                 <PrepLine meeting={m} />
+                <PracticeLine meeting={m} />
               </span>
               <span className="flex shrink-0 items-start">
                 <MeetingStatus status={m.status} />
@@ -55,6 +56,19 @@ function PrepLine({ meeting }: { meeting: Meeting }) {
     <span className={`text-sm ${current.state === "error" ? "text-bad-ink" : "text-ink"}`}>
       Step {n} of {steps.length}: {current.detail}
       {current.state === "running" && <span className="animate-pulse">…</span>}
+    </span>
+  );
+}
+
+// Once rehearsed: how many times, and how the last one went (n8n's debrief)
+function PracticeLine({ meeting }: { meeting: Meeting }) {
+  const p = meeting.practice;
+  if (!p) return null;
+  return (
+    <span className="text-sm">
+      <span className="font-medium">Rehearsed {p.sessions === 1 ? "once" : `${p.sessions} times`}</span>
+      {p.last.overall != null && <span className="text-ink-2">, last {p.last.overall}/100</span>}
+      {p.last.headline && <span className="text-ink-2">: {p.last.headline}</span>}
     </span>
   );
 }

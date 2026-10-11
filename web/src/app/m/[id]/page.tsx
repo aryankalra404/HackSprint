@@ -10,6 +10,7 @@ import { PractiseButton } from "@/components/meetings/PractiseButton";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
 import { LiveProgress } from "@/components/meetings/LiveProgress";
 import { PrepareAnyway } from "@/components/meetings/PrepareAnyway";
+import { Rehearsals } from "@/components/meetings/Rehearsals";
 
 export const metadata = { title: "DryRun brief" };
 
@@ -49,6 +50,8 @@ async function Meeting({ id }: { id: string }) {
         {brief && meeting.progress && meeting.progress.length > 0 && <HowPrepared meeting={meeting} />}
       </section>
 
+      {detail.sessions && detail.sessions.length > 0 && <Rehearsals sessions={detail.sessions} />}
+
       {meeting.status === "skipped" ? (
         <section className="flex flex-col items-start gap-3 rounded-2xl border border-line bg-surface p-6">
           <h2 className="font-display text-2xl">n8n skipped this one</h2>
@@ -81,7 +84,7 @@ async function Meeting({ id }: { id: string }) {
       {brief && proposal && (
         <section id="practise" className="scroll-mt-6 flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-3">
-            <h2 className="font-display text-2xl">Practise this meeting</h2>
+            <h2 className="font-display text-2xl">{meeting.practice ? "Practise it again" : "Practise this meeting"}</h2>
             <p className="max-w-xl text-sm text-ink-2">
               Rehearse against the people coming, plus practice roles that usually weigh in on a decision like this. You can change anyone
               before you start. The practice roles are hypothetical and never appear in your brief.
