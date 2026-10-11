@@ -49,8 +49,8 @@ export function exchanges(telemetry: Telemetry): Exchange[] {
       const open = out.findLast((x) => !x.answer && x.persona_id === e.asked_by);
       if (open) open.answer = { t: e.t, transcript: e.transcript, verdict: e.answer_verdict };
     }
-    const r = e.reaction;
-    if (r && (r.kind === "question" || r.kind === "follow_up")) {
+    for (const r of e.reactions) {
+      if (r.kind !== "question" && r.kind !== "follow_up") continue;
       out.push({
         id: `q-${e.t}`,
         t: e.t,

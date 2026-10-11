@@ -21,12 +21,16 @@ const slides: Slide[] = slideTitles.map((title, index) => ({
   key_points: [],
   target_seconds: targets[index],
   rescue: { calm: "Take a breath.", keyword: "", bridge: "" },
+  notes: null,
 }));
 
 export const demoSession: SessionRecord = {
   bundle: {
     session_id: "demo",
     prospect: { company: "Kaveri Freight" },
+    pitch_seconds: targets.reduce((a, b) => a + b, 0),
+    plan: { during_pitch: 3, after_pitch: 1, why: "A 6-minute pitch to five people: the CFO and the CTO will interrupt, the others keep it for the end." },
+    rescue_after_s: [3, 6, 10],
     slides,
     personas: [
       {
@@ -41,6 +45,8 @@ export const demoSession: SessionRecord = {
         objections: [{ slide_index: 3, text: "What is the payback period at our fleet size?", source: "research" }],
         difficulty: 3,
         voice: "en-IN-male-1",
+        manner: "interrupts",
+        chair: true,
       },
       {
         id: "p3",
@@ -54,6 +60,8 @@ export const demoSession: SessionRecord = {
         objections: [{ slide_index: 4, text: "How do you integrate with SAP TM?", source: "deck" }],
         difficulty: 2,
         voice: "en-IN-female-1",
+        manner: "waits",
+        chair: false,
       },
       {
         id: "p2",
@@ -67,6 +75,8 @@ export const demoSession: SessionRecord = {
         objections: [{ slide_index: 3, text: "Why per-route pricing instead of per-vehicle?", source: "history" }],
         difficulty: 3,
         voice: "en-IN-male-2",
+        manner: "interrupts",
+        chair: false,
       },
       {
         id: "p4",
@@ -80,6 +90,8 @@ export const demoSession: SessionRecord = {
         objections: [{ slide_index: 5, text: "What happens if rollout overlaps Diwali volumes?", source: "research" }],
         difficulty: 2,
         voice: "en-IN-female-2",
+        manner: "waits",
+        chair: false,
       },
       {
         id: "p5",
@@ -93,8 +105,11 @@ export const demoSession: SessionRecord = {
         objections: [{ slide_index: 6, text: "How do you train 1,200 drivers?", source: "deck" }],
         difficulty: 1,
         voice: "en-IN-male-3",
+        manner: "waits",
+        chair: false,
       },
     ],
+    lines: [],
     drill: null,
   },
   status: {
@@ -131,16 +146,18 @@ export const demoSession: SessionRecord = {
       {
         t: 206,
         type: "turn",
-        mode: "slide_end",
+        mode: "segment",
         slide_index: 3,
         transcript: "…so at your scale that's a meaningful saving in the first year.",
-        reaction: {
-          persona_id: "p1",
-          kind: "question",
-          text: "“Meaningful” isn’t a number. At 400 trucks, when do we break even?",
-          audio_url: "",
-          reason: "The ROI slide claims savings but gives no payback period, and the CFO's top priority is payback inside 12 months.",
-        },
+        reactions: [
+          {
+            persona_id: "p1",
+            kind: "question",
+            text: "“Meaningful” isn’t a number. At 400 trucks, when do we break even?",
+            reason: "The ROI slide claims savings but gives no payback period, and the CFO's top priority is payback inside 12 months.",
+            raise_hand: true,
+          },
+        ],
         answer_verdict: null,
       },
       {
@@ -150,13 +167,15 @@ export const demoSession: SessionRecord = {
         slide_index: 3,
         asked_by: "p1",
         transcript: "Most customers see it pay back fairly quickly, usually within the first year or so.",
-        reaction: {
-          persona_id: "p2",
-          kind: "question",
-          text: "And why per-route pricing? Every other vendor quotes us per vehicle.",
-          audio_url: "",
-          reason: "Per-route pricing makes Procurement's costs unpredictable, and they raised the same point in the last session.",
-        },
+        reactions: [
+          {
+            persona_id: "p2",
+            kind: "question",
+            text: "And why per-route pricing? Every other vendor quotes us per vehicle.",
+            reason: "Per-route pricing makes Procurement's costs unpredictable, and they raised the same point in the last session.",
+            raise_hand: true,
+          },
+        ],
         answer_verdict: "partial",
       },
       {
@@ -166,23 +185,25 @@ export const demoSession: SessionRecord = {
         slide_index: 3,
         asked_by: "p2",
         transcript: "That's a good question. I think we can look at different options there.",
-        reaction: null,
+        reactions: [],
         answer_verdict: "dodged",
       },
       { t: 262, type: "slide", slide_index: 4 },
       {
         t: 318,
         type: "turn",
-        mode: "slide_end",
+        mode: "segment",
         slide_index: 4,
         transcript: "…and the connector syncs every fifteen minutes.",
-        reaction: {
-          persona_id: "p3",
-          kind: "question",
-          text: "Is that a certified SAP TM connector, or something we'd maintain?",
-          audio_url: "",
-          reason: "Kaveri runs SAP TM, and the CTO wants to avoid owning custom integration code.",
-        },
+        reactions: [
+          {
+            persona_id: "p3",
+            kind: "question",
+            text: "Is that a certified SAP TM connector, or something we'd maintain?",
+            reason: "Kaveri runs SAP TM, and the CTO wants to avoid owning custom integration code.",
+            raise_hand: true,
+          },
+        ],
         answer_verdict: null,
       },
       {
@@ -192,7 +213,7 @@ export const demoSession: SessionRecord = {
         slide_index: 4,
         asked_by: "p3",
         transcript: "It's SAP-certified, we maintain it, and it's live at two other carriers on TM 9.6.",
-        reaction: { persona_id: "p3", kind: "acknowledge", text: "Good, that helps.", audio_url: "", reason: "" },
+        reactions: [{ persona_id: "p3", kind: "acknowledge", text: "Good, that helps.", raise_hand: false, reason: "" }],
         answer_verdict: "resolved",
       },
       { t: 352, type: "slide", slide_index: 5 },
@@ -201,16 +222,18 @@ export const demoSession: SessionRecord = {
       {
         t: 448,
         type: "turn",
-        mode: "slide_end",
+        mode: "segment",
         slide_index: 6,
         transcript: "…so we're asking for a 60-truck pilot starting in November.",
-        reaction: {
-          persona_id: "p5",
-          kind: "question",
-          text: "Who trains the drivers? Most of them won't read an English manual.",
-          audio_url: "",
-          reason: "The deck has no plan for driver training, and adoption is the End User Lead's only priority.",
-        },
+        reactions: [
+          {
+            persona_id: "p5",
+            kind: "question",
+            text: "Who trains the drivers? Most of them won't read an English manual.",
+            reason: "The deck has no plan for driver training, and adoption is the End User Lead's only priority.",
+            raise_hand: true,
+          },
+        ],
         answer_verdict: null,
       },
       {
@@ -220,7 +243,7 @@ export const demoSession: SessionRecord = {
         slide_index: 6,
         asked_by: "p5",
         transcript: "We have training videos, and the app supports Hindi.",
-        reaction: null,
+        reactions: [],
         answer_verdict: "partial",
       },
     ],
@@ -300,9 +323,13 @@ export const demoSession: SessionRecord = {
         evidence: [{ t: 24, slide_index: 1, quote: "Every fourth truck you run is driving empty." }],
       },
     ],
+    // The transcript slide by slide comes with the report (contract 0.18)
+    slides: [],
+    facing: { slides_s: 31, longest_gap: { persona_id: "p2", seconds: 140, from_slide: 4, to_slide: 6 } },
     drill: { title: "Defend the price", focus_persona: "p2", slides: [3], minutes: 3 },
     actions_taken: ["report_emailed", "drill_scheduled", "weak_spots_saved"],
   },
+  debrief_status: { done: true, steps: [] },
   history: [
     { session_id: "s1", at: "2026-10-08T18:30:00+05:30", overall: 54 },
     { session_id: "s2", at: "2026-10-09T19:05:00+05:30", overall: 63 },
@@ -314,5 +341,6 @@ export const demoPrepSession: SessionRecord = {
   ...demoSession,
   bundle: { ...demoSession.bundle, session_id: "demo-prep" },
   telemetry: null,
+  debrief_status: null,
   debrief: null,
 };

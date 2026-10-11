@@ -19,7 +19,7 @@ interface Store {
   headsetVia: "wifi" | "usb";
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0 };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5 };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };
@@ -103,7 +103,7 @@ export function changeSession(action: SessionAction, by: SessionActor): { ok: tr
   const now = new Date().toISOString();
   if (action === "start") {
     if (room.phase !== "briefed") return { ok: false, error: `Can't start: the room is ${room.phase}, not briefed.`, room };
-    return { ok: true, room: updateRoom({ phase: "live", slide: 0, live: { started_at: now, started_by: by, ended_at: null, ended_by: null } }) };
+    return { ok: true, room: updateRoom({ phase: "live", slide: 0, live: { started_at: now, started_by: by, ended_at: null, ended_by: null, stage: "opening", feed: [] } }) };
   }
   if (action === "restart") {
     // Go again with the same panel and bundle

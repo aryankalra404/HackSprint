@@ -27,6 +27,9 @@ export function mockPrep(panel: DraftMember[]): Bundle {
         ? [{ slide_index: 3, text: m.will_push_on, source: "research" }]
         : (known?.objections ?? [{ slide_index: 3, text: `How does this affect my team as ${m.role}?`, source: "deck" }]),
       difficulty: m.difficulty,
+      manner: known?.manner ?? (m.difficulty >= 3 ? "interrupts" : "waits"),
+      // The person at the head of the table chairs
+      chair: m.seat === 0,
       voice: known?.voice ?? "en-IN-neutral-1",
     };
   });

@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.15).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.18).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -42,10 +42,22 @@ export interface PanelMember extends Seating {
   will_push_on?: string;
 }
 
+// The deck as /prep gets it: each slide's text, extracted by the laptop (n8n can't reach its files)
+export interface DeckText {
+  name: string;
+  slides: { index: number; text: string }[];
+}
+
 export interface BriefInput {
   presenter: { name: string; email: string };
-  deck: { pdf_url: string; slide_image_urls: string[] };
+  deck: DeckText | null;
   prospect: { company: string; website: string; context: string };
+}
+
+// n8n's suggested pitch length for a meeting, from the invite and the kind of meeting
+export interface PitchSuggestion {
+  minutes: number;
+  why: string;
 }
 
 // A panel member after the presenter's edits: in the room while drafting, and sent to /prep.
@@ -61,6 +73,8 @@ export interface PanelProposal {
   draft_id: string;
   members: PanelMember[];
   suggestions: { role: string; role_short: string; why: string }[];
+  // Missing on meetings prepared before contract 0.18
+  pitch?: PitchSuggestion;
 }
 
 export interface Slide {
@@ -70,13 +84,31 @@ export interface Slide {
   key_points: string[];
   target_seconds: number;
   rescue: { calm: string; keyword: string; bridge: string };
+  // The talk track from the last debrief of this meeting, for the speaker view; null on a first rehearsal
+  notes: string | null;
 }
 
 export interface Persona extends Seating {
   priorities: string[];
   objections: { slide_index: number; text: string; source: "deck" | "research" | "history" }[];
   difficulty: 1 | 2 | 3;
+  // interrupts: raises a hand during the pitch; waits: keeps it for the questions
+  manner: "interrupts" | "waits";
+  // Exactly one person chairs: welcomes the presenter, opens the floor and closes the meeting
+  chair: boolean;
+  // TTS voice name
   voice: string;
+}
+
+// A short line voiced ahead of time in /prep, so common reactions play without waiting.
+// n8n sends audio_wav_base64; the laptop saves it and puts audio_url (/api/audio/<id>.wav) in the room's bundle.
+export interface VoicedLine {
+  id: string;
+  persona_id: PersonaId;
+  kind: "welcome" | "open_floor" | "acknowledge";
+  text: string;
+  audio_wav_base64?: string;
+  audio_url?: string;
 }
 
 export interface Drill {
@@ -89,41 +121,91 @@ export interface Drill {
 export interface Bundle {
   session_id: string;
   prospect: { company: string };
+  pitch_seconds: number;
+  // How many questions n8n means to ask during and after the pitch, and why; /turn can change its mind
+  plan: { during_pitch: number; after_pitch: number; why: string };
+  // Seconds of silence before the calm, keyword and bridge cues
+  rescue_after_s: [number, number, number];
   slides: Slide[];
   personas: Persona[];
+  lines: VoicedLine[];
   drill: Drill | null;
 }
 
 export type Verdict = "resolved" | "partial" | "dodged";
 
+export type TurnMode = "opening" | "segment" | "answer" | "pitch_end";
+
 export interface Reaction {
   persona_id: PersonaId;
-  kind: "question" | "follow_up" | "acknowledge";
+  kind: "welcome" | "question" | "follow_up" | "acknowledge" | "open_floor" | "closing";
   text: string;
-  audio_url: string;
+  // One of the bundle's lines, played instead of new audio
+  line_id?: string;
+  // n8n to laptop
+  audio_wav_base64?: string;
+  // laptop to headset: /api/audio/<id>.wav
+  audio_url?: string;
+  // Raise a hand and wait for the presenter to pause before speaking
+  raise_hand: boolean;
   reason: string;
+}
+
+// POST /turn, headset to laptop
+export interface TurnRequest {
+  session_id: string;
+  mode: TurnMode;
+  slide_index: number;
+  t: number;
+  audio_wav_base64: string;
+  asked_by?: PersonaId;
+}
+
+// A turn as the laptop logs it and sends it back to n8n as context (no audio)
+export interface LoggedTurn {
+  mode: TurnMode;
+  slide_index: number;
+  t: number;
+  asked_by?: PersonaId;
+  transcript: string;
+  note?: string;
+  reactions: Pick<Reaction, "persona_id" | "kind" | "text" | "raise_hand" | "reason">[];
+  answer_verdict: Verdict | null;
+}
+
+// What the laptop adds before forwarding a turn to n8n, which keeps no state between turns
+export interface TurnContext {
+  bundle: Bundle;
+  elapsed_s: number;
+  turns: LoggedTurn[];
+  // Questions whose hand went down unasked because the presenter talked on
+  pending: { persona_id: PersonaId; text: string; slide_index: number }[];
+}
+
+export interface TurnResponse {
+  transcript: string;
+  // n8n's one-line reading of the turn, also when nobody reacts
+  note: string;
+  reactions: Reaction[];
+  answer_verdict: Verdict | null;
+  // The reactions end with the chair's closing: the headset ends the session once they've played
+  end_session: boolean;
 }
 
 export type TelemetryEvent =
   | { t: number; type: "slide"; slide_index: number }
   | { t: number; type: "silence"; duration_s: number; rescue_level: 0 | 1 | 2 | 3 }
-  | {
-      t: number;
-      type: "turn";
-      mode: "slide_end" | "answer";
-      slide_index: number;
-      asked_by?: PersonaId;
-      transcript: string;
-      reaction: Reaction | null;
-      answer_verdict: Verdict | null;
-    };
+  | ({ type: "turn" } & Omit<LoggedTurn, "note">);
 
 export interface Telemetry {
   session_id: string;
   client: "vr" | "web";
   duration_s: number;
   events: TelemetryEvent[];
+  // Seconds the presenter's head faced each person (head direction: the Quest 3S has no eye tracking)
   gaze_dwell_s?: Record<PersonaId, number>;
+  // Seconds turned to the TV behind them
+  facing_slides_s?: number;
 }
 
 export interface Evidence {
@@ -146,12 +228,42 @@ export interface StakeholderVerdict {
   deciding_moment: Evidence | null;
 }
 
+// One mark on the transcript; quote is copied exactly from it, so the report can underline it
+export interface TranscriptMark {
+  quote: string;
+  kind: "filler" | "hedge" | "unsupported" | "wrong_fact" | "dodged" | "landed";
+  note: string;
+  // A way to say it instead; empty for "landed"
+  better: string;
+}
+
+// What the presenter said on one slide, with n8n's marks and a talk track for next time
+export interface DebriefSlide {
+  index: number;
+  transcript: string;
+  seconds: number;
+  target_seconds: number;
+  words_per_minute: number;
+  covered: string[];
+  missed: string[];
+  marks: TranscriptMark[];
+  notes: string;
+}
+
+// Who you faced (VR only)
+export interface Facing {
+  slides_s: number;
+  longest_gap: { persona_id: PersonaId; seconds: number; from_slide: number; to_slide: number } | null;
+}
+
 export interface Debrief {
   headline: string;
   overall: number;
   previous_overall: number | null;
   stakeholders: StakeholderVerdict[];
   metrics: Metric[];
+  slides: DebriefSlide[];
+  facing: Facing | null;
   drill: Drill;
   actions_taken: string[];
 }
@@ -174,6 +286,8 @@ export interface SessionRecord {
   status: PrepStatus;
   // Null until the session has been rehearsed and debriefed.
   telemetry: Telemetry | null;
+  // n8n's steps through the debrief, saved after each one; the dashboard shows them until debrief arrives
+  debrief_status: PrepStatus | null;
   debrief: Debrief | null;
   history: { session_id: string; at: string; overall: number }[];
 }
@@ -246,6 +360,8 @@ export interface Room {
   slide: number;
   // Metres to raise (or lower, if negative) the presenter's eyes in VR, from -0.5 to 0.5; 0 unless moved on the web
   height_offset: number;
+  // How long the presenter means to pitch, sent to /prep; starts at n8n's suggestion, or 5
+  pitch_minutes: number;
 }
 
 // One slide image on the laptop: `image_url` is a path there (GET /api/deck/<id>/<n>.jpg)
@@ -273,4 +389,7 @@ export interface LiveSession {
   started_by: SessionActor;
   ended_at: string | null;
   ended_by: SessionActor | null;
+  // Kept by the laptop from the turns it forwards
+  stage: "opening" | "pitch" | "questions" | "closing";
+  feed: LoggedTurn[];
 }

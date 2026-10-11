@@ -15,7 +15,7 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
   const panel: DraftMember[] = proposal.members.map((m) => ({ ...m, difficulty: 2 }));
   const input: BriefInput = {
     presenter: { name: "", email: "" },
-    deck: { pdf_url: "", slide_image_urls: [] },
+    deck: null,
     prospect: { company: meeting.company, website: "", context: meeting.title },
   };
   // A deck belongs to its meeting: seating another meeting's panel takes it off the screens

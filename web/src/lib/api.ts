@@ -19,7 +19,7 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
     const steps = demoPrepSession.status.steps.map((s) =>
       s.id === "personas" ? { ...s, detail: `${n} stakeholders, ${room.bundle!.personas.reduce((a, p) => a + p.objections.length, 0)} objections` } : s,
     );
-    return { bundle: room.bundle, status: { done: true, steps }, telemetry: null, debrief: null, history: [] };
+    return { bundle: room.bundle, status: { done: true, steps }, telemetry: null, debrief_status: null, debrief: null, history: [] };
   }
   if (!N8N_URL) return MOCKS[sessionId] ?? null;
 
