@@ -47,7 +47,7 @@ The dashboard's room panel opens on **Headset view**: what the presenter sees in
 - Only a Quest build streams (not the Unity editor). Over USB, `npm run quest` forwards port 3001 too.
 
 ## Connecting to n8n
-Set `DRYRUN_N8N_URL=https://aryankalra.app.n8n.cloud/webhook/dryrun` and `DRYRUN_OWNER_EMAIL=<where briefs go>` in `.env.local`, and `DRYRUN_PRESENTER_NAME=<your name>` so the panel can greet you by name. Without `DRYRUN_N8N_URL`, the app serves sample meetings and sessions from `src/lib/mock/`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
+Set `DRYRUN_N8N_URL=https://aryankalra47.app.n8n.cloud/webhook/dryrun` and `DRYRUN_OWNER_EMAIL=<where briefs go>` in `.env.local`, and `DRYRUN_PRESENTER_NAME=<your name>` so the panel can greet you by name. Without `DRYRUN_N8N_URL`, the app serves sample meetings and sessions from `src/lib/mock/`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
 
 ## Layout
 - `src/app/page.tsx`: home (meetings); `src/app/m/[id]`: the brief and `practise/`; `src/app/m/actions.ts`: practise, brief the panel, retry a failed meeting; `src/app/new`: add a meeting

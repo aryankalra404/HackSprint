@@ -1,11 +1,12 @@
 # n8n workflows
 
-DryRun's brain, running on n8n Cloud (`https://aryankalra.app.n8n.cloud`). The webhook shapes are defined in [../docs/CONTRACT.md](../docs/CONTRACT.md).
+DryRun's brain, running on n8n Cloud (`https://aryankalra47.app.n8n.cloud`). The webhook shapes are defined in [../docs/CONTRACT.md](../docs/CONTRACT.md).
 
 | Workflow | What it does |
 |---|---|
 | **DryRun prep** (`wf1-prep.json`) | Watches Google Calendar. For each new event, Gemini decides whether it's worth preparing for, and why. If not, the meeting is saved as `skipped` with that reason (the web app lists it with "Prepare anyway"). If so: reads your recent emails with the attendees, reads the news about the company (Google News) and its website (if there are fewer than 3 stories, it also asks Gemini to search the web, which needs billing on the Gemini key; without it the run carries on), writes the brief, proposes the panel and suggests how long to pitch (from the slot's length and the kind of meeting), saves it to the **DryRun meetings** data table and emails you. Every Gemini step (decide, research, brief) falls back to the same prompt on Groq (`openai/gpt-oss-120b`, free tier) if Gemini fails, so a quota or billing problem doesn't stop a run. It saves its progress after each stage (shown live on the web app's brief page), and if a run fails it marks the meeting failed with the reason. The web app can also add a meeting by hand: `POST /webhook/dryrun/add-meeting`. |
 | **DryRun rehearsal prep** (`wf2-rehearsal-prep.json`) | `POST /webhook/dryrun/prep`, when the presenter starts a rehearsal. From the meeting's brief (in the data table), the confirmed panel, the deck's slide text and the pitch length, Gemini (Groq if it fails) plans each slide (key points, target time, rescue cues), what each person will push on, who interrupts and who waits, who chairs, how many questions to ask during and after the pitch (with its reason) and short lines to voice ahead of time. Nothing about the meeting is fixed in code. Each line is then voiced by Sarvam (`bulbul:v3`) in that person's voice, one call per line (a line that fails is left silent); the web app's `DRYRUN_VOICES=off` skips this. |
+| **DryRun turn** (`wf3-turn.json`) | `POST /webhook/dryrun/turn`, each time the presenter has said something (the laptop forwards it from the headset with the context: the bundle, the turns so far and the open questions). Groq Whisper transcribes it (hinted with the company, slide titles and names), Groq decides whether anyone reacts, who, what and why, with Gemini as the fallback, and Sarvam voices any new line (lines voiced in prep play as they are). Returns the transcript, a one-line note for the dashboard and the reactions. Keeps no state. |
 | **DryRun meetings API** (`wf0-meetings-api.json`) | `GET /webhook/dryrun/meetings` (upcoming meetings) and `GET /webhook/dryrun/meeting?id=` (one meeting with its brief and panel), from the data table. |
 
 ## How they're built
@@ -14,12 +15,14 @@ DryRun's brain, running on n8n Cloud (`https://aryankalra.app.n8n.cloud`). The w
 - `wf*.json` are exports of the live workflows with credentials removed, for reading or importing elsewhere.
 
 ## Live in n8n Cloud
+Moved to a new n8n Cloud account (`aryankalra47`) on 11 Oct, after the first one used up its 1,000 executions. DryRun prep was imported from `wf1-prep.json` (too large to paste through MCP): an imported workflow has to be switched to "Available in MCP" in its settings before the MCP server can edit it, and its canvas groups are set again with `setNodeGroups`.
 | What | ID |
 |---|---|
-| DryRun prep (published) | `E1Tq9CN9LY7CPlzo` |
-| DryRun meetings API (published) | `uc3ZgfQvtK08Iv15` |
-| DryRun rehearsal prep (published) | `wSC9ilSTmF9eQiig` |
-| DryRun meetings data table | `86BWrDlUXrOWFgqc` |
+| DryRun prep (published) | `hlNp38zOOc3D9NTH` |
+| DryRun meetings API (published) | `GBgpM9Yq9qF7pGCV` |
+| DryRun rehearsal prep (published) | `8uXBbDqskDlv8YBC` |
+| DryRun turn (published) | `DMvVTOcJ9GwDSMFn` |
+| DryRun meetings data table | `wURCb4PjdZLpttns` |
 
 Columns of the data table: `meeting_id, title, start, company, kind, why, attendees, owner_email, status, brief, proposal, updated_at, progress, started_at, execution_id, workflow_id` (JSON is stored as strings). `status` is `researching`, `ready`, `failed` or `skipped`.
 
@@ -40,7 +43,7 @@ Planned: Gemini through Vertex AI on the team's Google Cloud project `trio-50711
 - **From the calendar:** add an event with someone outside your organisation as a guest. Within a couple of minutes it appears in the DryRun meetings table as `ready`, and you get "Your brief for … is ready". An internal event is saved as `skipped` with the reason, and shows under "Skipped by n8n" on the web app's home page. To try the skip path without the calendar, run the workflow with `test_workflow`, pinning "New calendar event" and "Worth preparing?".
 - **From the web app (or curl):**
   ```bash
-  curl -X POST https://aryankalra.app.n8n.cloud/webhook/dryrun/add-meeting -H "Content-Type: application/json" \
+  curl -X POST https://aryankalra47.app.n8n.cloud/webhook/dryrun/add-meeting -H "Content-Type: application/json" \
     -d '{"title":"RouteIQ pitch","company":"Delhivery","context":"Demo for ops and finance","attendees":[{"name":"Priya Nair","email":"priya.nair@delhivery.com"}],"owner_email":"you@example.com"}'
-  curl https://aryankalra.app.n8n.cloud/webhook/dryrun/meetings
+  curl https://aryankalra47.app.n8n.cloud/webhook/dryrun/meetings
   ```

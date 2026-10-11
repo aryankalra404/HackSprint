@@ -30,7 +30,7 @@ MIN_NEWS = 3
 SARVAM_TTS = "https://api.sarvam.ai/text-to-speech"
 SARVAM_MODEL = "bulbul:v3"
 VOICES = {"female": ["priya", "kavya", "neha", "ritu", "shreya", "simran"], "male": ["rahul", "aditya", "rohan", "amit", "kabir", "varun", "dev"]}
-MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "86BWrDlUXrOWFgqc", "cachedResultName": "DryRun meetings"}
+MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "wURCb4PjdZLpttns", "cachedResultName": "DryRun meetings"}
 
 IMPORTS = ("import { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, "
            "nextBatch, languageModel, memory, tool, outputParser, embedding, embeddings, vectorStore, retriever, documentLoader, "
