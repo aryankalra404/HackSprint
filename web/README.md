@@ -10,7 +10,7 @@ npm run dev
 Pages:
 - http://localhost:3000/: your upcoming meetings (from n8n), with a "prepare for this meeting?" pop-up for the next one whose brief is ready, and the meetings n8n skipped (with its reason and "Prepare anyway")
 - http://localhost:3000/m/<id>: a meeting's brief (facts only). While n8n is still preparing it, the page shows each step live, with a link to the run in n8n
-- http://localhost:3000/m/<id>/practise: the practice panel (the attendees plus practice roles), editable on a drawing of the table and live in the headset; your deck under it (upload, page through, replace); "Start the rehearsal" briefs the panel and opens the dashboard
+- http://localhost:3000/m/<id>/practise: the practice panel (the attendees plus practice roles), editable on a drawing of the table and live in the headset; your deck under it (upload, page through, replace); the pitch length (n8n's suggestion for the meeting, if it gave one); "Start the rehearsal" briefs the panel and opens the dashboard
 - http://localhost:3000/new: add a meeting by hand; n8n prepares it in about 20 seconds
 - http://localhost:3000/s/<session id>: the dashboard for the big screen. For the session in the room it starts, ends and restarts the rehearsal, shows the room plan while waiting and switches to the headset view when the session goes live
 - http://localhost:3000/about: what DryRun is
@@ -35,7 +35,7 @@ It runs `adb reverse tcp:3000 tcp:3000` and, if [scrcpy](https://github.com/Geny
 Over USB the headset reaches the app at `http://localhost:3000`. It uses USB whenever Wi-Fi isn't answering, and moves to Wi-Fi when it is. Either way it keeps `GET /api/room?since=<version>&client=headset` open and seats the panel as it's edited on the practice page; `/api/turn` and `/api/debrief` forward to n8n. The room is saved to `.room.json` (not committed). See Room API in `docs/CONTRACT.md`.
 
 ## The deck
-Upload a PDF, PowerPoint (`.pptx`, `.ppt`) or Keynote file on the practice page. The laptop converts it to one JPEG per slide in `.decks/<id>/` (not committed) and serves them at `/api/deck/<id>/<n>.jpg`; the headset downloads them all. It needs Ghostscript and ImageMagick (`brew install ghostscript imagemagick`) and, for PowerPoint and Keynote, LibreOffice (`brew install --cask libreoffice`). A deck takes about 10 seconds. If a slide looks wrong (LibreOffice doesn't draw everything PowerPoint does, e.g. rotated text boxes), export the deck as a PDF and upload that.
+Upload a PDF, PowerPoint (`.pptx`, `.ppt`) or Keynote file on the practice page. The laptop converts it to one JPEG per slide in `.decks/<id>/` (not committed), with each slide's text next to it for n8n's `/prep`, and serves them at `/api/deck/<id>/<n>.jpg`; the headset downloads them all. It needs Ghostscript and ImageMagick (`brew install ghostscript imagemagick`) and, for PowerPoint and Keynote, LibreOffice (`brew install --cask libreoffice`). A deck takes about 10 seconds. If a slide looks wrong (LibreOffice doesn't draw everything PowerPoint does, e.g. rotated text boxes), export the deck as a PDF and upload that.
 Change slides from the practice page, the dashboard's header (a presentation clicker works there: Page Down, Page Up, arrows) or the headset (a quick pinch with hands: right hand next, left hand back; the triggers with controllers); they all follow the room's `slide`.
 
 **Height in VR**, in the header of the practice page and the dashboard, opens a vertical bar that raises or lowers the presenter's eyes in the headset (up to 50 cm either way), for when the room feels too tall or too short.
@@ -47,7 +47,7 @@ The dashboard's room panel opens on **Headset view**: what the presenter sees in
 - Only a Quest build streams (not the Unity editor). Over USB, `npm run quest` forwards port 3001 too.
 
 ## Connecting to n8n
-Set `DRYRUN_N8N_URL=https://aryankalra.app.n8n.cloud/webhook/dryrun` and `DRYRUN_OWNER_EMAIL=<where briefs go>` in `.env.local`. Without `DRYRUN_N8N_URL`, the app serves sample meetings and sessions from `src/lib/mock/`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
+Set `DRYRUN_N8N_URL=https://aryankalra.app.n8n.cloud/webhook/dryrun` and `DRYRUN_OWNER_EMAIL=<where briefs go>` in `.env.local`, and `DRYRUN_PRESENTER_NAME=<your name>` so the panel can greet you by name. Without `DRYRUN_N8N_URL`, the app serves sample meetings and sessions from `src/lib/mock/`. Calls to n8n are made server-side, so the browser never needs CORS access to n8n.
 
 ## Layout
 - `src/app/page.tsx`: home (meetings); `src/app/m/[id]`: the brief and `practise/`; `src/app/m/actions.ts`: practise, brief the panel, retry a failed meeting; `src/app/new`: add a meeting

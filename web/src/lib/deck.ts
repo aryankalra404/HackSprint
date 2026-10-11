@@ -4,14 +4,16 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:f
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { Deck } from "./contract";
+import type { Deck, DeckText } from "./contract";
 
 // The presenter's deck (contract: POST /api/room/deck). The laptop turns the upload into one JPEG per slide and serves
 // them itself, so the headset never needs the internet: PowerPoint and Keynote go through LibreOffice to a PDF, and every
-// PDF through Ghostscript to images.
+// PDF through Ghostscript to images. Each slide's text is kept next to its image (<n>.txt), for n8n's /prep.
 export const DECKS_DIR = path.join(process.cwd(), ".decks");
 export const MAX_DECK_BYTES = 100 * 1024 * 1024;
 const MAX_SLIDES = 200;
+// Enough of a slide's text for n8n to know what it says; decks with pages of small print are cut short
+const MAX_SLIDE_CHARS = 2000;
 // Long side of a slide image: enough for the TV in VR, small enough for the headset to hold the whole deck
 const SLIDE_PX = 1920;
 const OFFICE = [".pptx", ".ppt", ".key", ".odp"];
@@ -60,6 +62,7 @@ export async function convertDeck(name: string, data: Buffer): Promise<Deck> {
     const out = path.join(work, "slides");
     await mkdir(out);
     await pdfToImages(pdf, out);
+    await pdfToText(pdf, out);
     const files = (await readdir(out)).filter((f) => /^\d+\.jpg$/.test(f)).sort((a, b) => parseInt(a) - parseInt(b));
     if (files.length === 0) throw new DeckError("The file has no pages we could read.", 400);
     const slides = await Promise.all(
@@ -74,6 +77,22 @@ export async function convertDeck(name: string, data: Buffer): Promise<Deck> {
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+// Each slide's text, for /prep (contract 0.18). Empty for a slide with no text, or a deck converted before text was kept.
+export async function deckText(deck: Deck): Promise<DeckText> {
+  const slides = await Promise.all(
+    deck.slides.map(async ({ index }) => {
+      let text = "";
+      try {
+        text = (await readFile(path.join(deckDir(deck.id), `${index + 1}.txt`), "utf8")).replace(/\s+/g, " ").trim().slice(0, MAX_SLIDE_CHARS);
+      } catch {
+        // No text kept for this slide
+      }
+      return { index, text };
+    }),
+  );
+  return { name: deck.name, slides };
 }
 
 // Removes a deck's images once the room no longer uses it
@@ -112,6 +131,15 @@ async function pdfToImages(pdf: string, out: string): Promise<void> {
     await run(magick(), ["mogrify", "-resize", `${SLIDE_PX}x${SLIDE_PX}>`, "-quality", "85", path.join(out, "*.jpg")], { timeout: 300_000 });
   } catch {
     // Without ImageMagick the slides are just bigger than they need to be
+  }
+}
+
+// One <n>.txt per page, next to the images. A deck without text (e.g. slides that are all pictures) still works.
+async function pdfToText(pdf: string, out: string): Promise<void> {
+  try {
+    await run(gs(), ["-q", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=txtwrite", `-dLastPage=${MAX_SLIDES}`, `-sOutputFile=${path.join(out, "%d.txt")}`, pdf], { timeout: 120_000 });
+  } catch {
+    // The slides still show; n8n just gets no text for them
   }
 }
 

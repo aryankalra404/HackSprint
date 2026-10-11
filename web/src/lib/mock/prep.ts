@@ -6,8 +6,9 @@ import { demoSession } from "./session";
 const NAMES = { female: ["Kavya Iyer", "Meera Kulkarni", "Sana Qureshi"], male: ["Rohan Bhatt", "Karthik Reddy", "Imran Sheikh"] };
 
 // What n8n's /prep would return for an edited panel, for running without n8n:
-// people from the sample keep their brief, anyone added gets a short generic one.
-export function mockPrep(panel: DraftMember[]): Bundle {
+// people from the sample keep their brief, anyone added gets a short generic one, and the sample's slide times are
+// stretched to the pitch length.
+export function mockPrep(panel: DraftMember[], pitchMinutes: number): Bundle {
   const sample = demoSession.bundle;
   const used = { female: 0, male: 0 };
   const personas: Persona[] = panel.map((m) => {
@@ -33,5 +34,14 @@ export function mockPrep(panel: DraftMember[]): Bundle {
       voice: known?.voice ?? "en-IN-neutral-1",
     };
   });
-  return { ...sample, session_id: "room", personas };
+  const pitchSeconds = pitchMinutes * 60;
+  const scale = pitchSeconds / sample.pitch_seconds;
+  const slides = sample.slides.map((s) => ({ ...s, target_seconds: Math.round(s.target_seconds * scale) }));
+  const interrupting = personas.filter((p) => p.manner === "interrupts").length;
+  const plan = {
+    during_pitch: Math.min(interrupting, Math.floor(pitchMinutes / 2)),
+    after_pitch: Math.min(personas.length, Math.max(1, Math.ceil(pitchMinutes / 3))),
+    why: "Sample plan (n8n's /prep isn't built yet).",
+  };
+  return { ...sample, session_id: "room", pitch_seconds: pitchSeconds, plan, slides, personas };
 }

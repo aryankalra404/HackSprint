@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { BriefInput, DraftMember, PanelProposal, Room, Seat } from "@/lib/contract";
+import type { BriefInput, DraftMember, PanelProposal, PitchSuggestion, Room, Seat } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
@@ -11,6 +11,7 @@ import { useRoom } from "@/lib/useRoom";
 import { NameCardsToggle } from "../room/NameCardsToggle";
 import { HeightControl } from "../room/HeightControl";
 import { DeckPanel } from "../room/DeckPanel";
+import { PitchLength } from "./PitchLength";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
 
@@ -19,6 +20,8 @@ interface Props {
   // The practice panel as it is in the room, so a reload carries on where it left off
   input: BriefInput;
   draft: Draft;
+  // n8n's suggested pitch length for this meeting, if it gave one
+  pitch?: PitchSuggestion;
   panel: DraftMember[];
   nameCards: boolean;
   // The laptop's room, followed live for the deck (the headset changes the slide too)
@@ -27,7 +30,7 @@ interface Props {
 
 // Practise a meeting: its panel (real attendees plus practice roles) on the table, editable, then briefed.
 // Every edit is saved to the room on the laptop, and the headset seats the panel as it changes.
-export function Practice({ meeting, input, draft, panel, nameCards, room: initialRoom }: Props) {
+export function Practice({ meeting, input, draft, pitch, panel, nameCards, room: initialRoom }: Props) {
   const proposal = draft;
   const room = useRoom(initialRoom);
   const [members, setMembers] = useState<DraftMember[]>(panel);
@@ -160,7 +163,8 @@ export function Practice({ meeting, input, draft, panel, nameCards, room: initia
               onAdd={add}
             />
           </div>
-          <footer className="flex flex-col gap-2 border-t border-line p-5">
+          <footer className="flex flex-col gap-3 border-t border-line p-5">
+            <PitchLength initial={initialRoom.pitch_minutes} suggestion={pitch} />
             {error && <p role="alert" className="text-sm text-bad-ink">{error}</p>}
             <button
               type="button"

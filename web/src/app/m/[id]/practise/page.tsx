@@ -39,6 +39,7 @@ async function PracticeFromRoom({ id }: { id: string }) {
       meeting={{ id, title: detail?.meeting.title ?? "Meeting", company: room.prospect?.company ?? detail?.meeting.company ?? "" }}
       input={brief.input}
       draft={{ draft_id: brief.draft_id, suggestions: brief.suggestions }}
+      pitch={brief.pitch}
       panel={room.panel}
       nameCards={room.name_cards}
       room={room}

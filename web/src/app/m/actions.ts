@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 import type { BriefInput, DraftMember } from "@/lib/contract";
+import { deckText } from "@/lib/deck";
 import { addMeeting, getMeeting, prepSession } from "@/lib/api";
-import { getBrief, panelProblem, setDeck, updateRoom } from "@/lib/room";
+import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -14,15 +15,16 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
   const { meeting, proposal } = detail;
   const panel: DraftMember[] = proposal.members.map((m) => ({ ...m, difficulty: 2 }));
   const input: BriefInput = {
-    presenter: { name: "", email: "" },
+    presenter: { name: process.env.DRYRUN_PRESENTER_NAME ?? "", email: process.env.DRYRUN_OWNER_EMAIL ?? "" },
     deck: null,
     prospect: { company: meeting.company, website: "", context: meeting.title },
   };
   // A deck belongs to its meeting: seating another meeting's panel takes it off the screens
   if (getBrief()?.draft_id !== meeting.id) setDeck(null);
+  // The pitch length starts at n8n's suggestion for this meeting; the presenter can change it on the practice page
   updateRoom(
-    { phase: "drafting", prospect: { company: meeting.company }, panel, bundle: null, session_id: null },
-    { input, draft_id: meeting.id, suggestions: proposal.suggestions },
+    { phase: "drafting", prospect: { company: meeting.company }, panel, bundle: null, session_id: null, pitch_minutes: proposal.pitch?.minutes ?? 5 },
+    { input, draft_id: meeting.id, suggestions: proposal.suggestions, pitch: proposal.pitch },
   );
   redirect(`/m/${encodeURIComponent(meeting.id)}/practise`);
 }
@@ -59,7 +61,10 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
 
   let sessionId: string;
   try {
-    const bundle = await prepSession({ ...input, draft_id: draftId, panel });
+    // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
+    const room = getRoom();
+    const deck = room.deck ? await deckText(room.deck) : null;
+    const bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel });
     sessionId = bundle.session_id;
     updateRoom({
       phase: "briefed",

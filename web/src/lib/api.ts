@@ -1,4 +1,4 @@
-import type { Bundle, BriefInput, DraftMember, Meeting, MeetingDetail, NewMeeting, SessionRecord } from "./contract";
+import type { Bundle, Meeting, MeetingDetail, NewMeeting, PrepRequest, SessionRecord } from "./contract";
 import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meetings";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
@@ -70,6 +70,6 @@ export async function addMeeting(meeting: NewMeeting): Promise<void> {
 
 // Builds the rehearsal bundle for a practice panel. n8n's /prep workflow isn't built yet, so this uses the sample deck and
 // the panel's own focus (from the brief) as their objections.
-export async function prepSession(input: BriefInput & { draft_id: string; panel: DraftMember[] }): Promise<Bundle> {
-  return mockPrep(input.panel);
+export async function prepSession(input: PrepRequest): Promise<Bundle> {
+  return mockPrep(input.panel, input.pitch_minutes);
 }

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { BriefInput, Deck, DraftMember, PanelProposal, Room, SessionAction, SessionActor } from "./contract";
+import type { BriefInput, Deck, DraftMember, PanelProposal, PitchSuggestion, Room, SessionAction, SessionActor } from "./contract";
 import { removeDeckFiles } from "./deck";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "./personas";
 
@@ -11,7 +11,7 @@ const FILE = path.join(process.cwd(), ".room.json");
 interface Store {
   room: Room;
   // What the Brief screen needs to pick up where it left off; not part of the room the headset sees
-  brief: { input: BriefInput; draft_id: string; suggestions: PanelProposal["suggestions"] } | null;
+  brief: { input: BriefInput; draft_id: string; suggestions: PanelProposal["suggestions"]; pitch?: PitchSuggestion } | null;
   waiters: Set<() => void>;
   // When the headset last had a poll open (it renews every 25 s)
   headsetSeen: number;

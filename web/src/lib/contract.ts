@@ -69,6 +69,13 @@ export interface DraftMember extends Omit<PanelMember, "gender" | "why" | "sourc
   difficulty: 1 | 2 | 3;
 }
 
+// POST /prep: the brief inputs, the confirmed panel and how long the presenter means to pitch
+export interface PrepRequest extends BriefInput {
+  draft_id: string;
+  pitch_minutes: number;
+  panel: DraftMember[];
+}
+
 export interface PanelProposal {
   draft_id: string;
   members: PanelMember[];
