@@ -72,6 +72,8 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
       session_id: sessionId,
       live: null,
       debrief: null,
+      // TEMPORARY TEST: a real brief ends the scripted run
+      scripted: false,
       panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
     });
   } catch {

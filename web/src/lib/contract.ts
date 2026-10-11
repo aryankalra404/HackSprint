@@ -388,6 +388,8 @@ export interface Room {
   pitch_minutes: number;
   // The debrief of the run that just ended (0.20); null until a session ends, and again once one starts
   debrief: RoomDebrief | null;
+  // TEMPORARY TEST: the headset stands in for the presenter and the laptop replays a scripted run (web/src/lib/scripted.ts)
+  scripted?: boolean;
 }
 
 export interface RoomDebrief {
