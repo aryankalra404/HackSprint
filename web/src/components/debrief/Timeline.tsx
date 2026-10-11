@@ -123,7 +123,7 @@ export function Timeline({ bundle, duration, segments, exchanges, freezes, qaSta
 
             <div className="relative flex-1">
               {selection && (
-                <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-px bg-ink/50" style={{ left: pct(selection.t, duration) }} />
+                <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 z-[5] w-px bg-ink/50" style={{ left: pct(selection.t, duration) }} />
               )}
 
               {/* Slides, then the questions after the pitch */}

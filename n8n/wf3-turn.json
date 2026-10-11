@@ -21,8 +21,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        224,
-        0
+        272,
+        128
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
@@ -35,8 +35,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        448,
-        0
+        496,
+        128
       ],
       "parameters": {
         "method": "POST",
@@ -81,8 +81,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        672,
-        0
+        800,
+        128
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
@@ -95,8 +95,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        896,
-        0
+        1024,
+        128
       ],
       "parameters": {
         "method": "POST",
@@ -117,8 +117,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        1120,
-        0
+        1248,
+        208
       ],
       "parameters": {
         "method": "POST",
@@ -139,13 +139,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1344,
-        0
+        1472,
+        128
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// What n8n decided, held to the contract: real people and lines, only a welcome at the opening, the session ends only on a closing.\n// New lines go to the voice; lines voiced ahead of time play as they are.\nconst r = $('What the room knows').first().json;\nconst d = JSON.parse(replyText($json) || '{}');\nconst people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]));\nconst lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));\nconst KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'open_floor', 'closing'];\nlet reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id]));\nif (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);\nreactions = reactions.slice(0, 3).map(x => {\n  const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;\n  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : String(x.text), raise_hand: r.mode === 'segment' && x.kind === 'question', reason: x.reason || '' };\n  return line ? { ...out, line_id: line.id } : out;\n});\nconst verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;\n// A bundle briefed before voices existed has none: fall back to a voice that fits the avatar\nconst voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');\nconst toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);\nreturn [{ json: { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, end_session: reactions.some(x => x.kind === 'closing') },\n                  to_voice: toVoice } }];"
+        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// What n8n decided, held to the contract: real people and lines, only a welcome at the opening, the session ends only on a closing.\n// New lines go to the voice; lines voiced ahead of time play as they are.\nconst r = $('What the room knows').first().json;\nconst d = JSON.parse(replyText($json) || '{}');\nconst people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]));\nconst lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));\nconst KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'open_floor', 'closing'];\nlet reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id]));\nif (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);\n// The model sometimes starts a line with who says it (\"Rohan: ...\"), which the voice would read out\nconst unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];\n  return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };\nreactions = reactions.slice(0, 3).map(x => {\n  const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;\n  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : unnamed(people[x.persona_id], x.text), raise_hand: r.mode === 'segment' && x.kind === 'question', reason: x.reason || '' };\n  return line ? { ...out, line_id: line.id } : out;\n});\nconst verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;\n// A bundle briefed before voices existed has none: fall back to a voice that fits the avatar\nconst voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');\nconst toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);\nreturn [{ json: { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, end_session: reactions.some(x => x.kind === 'closing') },\n                  to_voice: toVoice } }];"
       }
     },
     {
@@ -153,8 +153,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1568,
-        0
+        1328,
+        208
       ],
       "parameters": {
         "conditions": {
@@ -183,8 +183,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1792,
-        0
+        1552,
+        128
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
@@ -197,8 +197,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        2016,
-        0
+        1776,
+        128
       ],
       "parameters": {
         "method": "POST",
@@ -219,8 +219,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2240,
-        0
+        2000,
+        208
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
@@ -233,7 +233,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        2464,
+        1808,
         0
       ],
       "parameters": {
@@ -305,17 +305,6 @@
         ]
       ]
     },
-    "Decide who reacts (Gemini)": {
-      "main": [
-        [
-          {
-            "node": "Check the reactions",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Check the reactions": {
       "main": [
         [
@@ -372,6 +361,17 @@
         [
           {
             "node": "Send the reactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide who reacts (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Check the reactions",
             "type": "main",
             "index": 0
           }

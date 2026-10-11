@@ -32,7 +32,7 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
     <section aria-label="Speaker view" className="flex min-h-0 flex-col gap-3 rounded-2xl border border-line bg-surface p-4">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold">
-          Slide {slide + 1} of {count}
+          {count > 0 ? `Slide ${slide + 1} of ${count}` : "No deck"}
           {planned?.title && <span className="ml-2 font-normal text-ink-2">{planned.title}</span>}
         </h2>
         <p className={`inline-flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap ${over ? "font-medium text-warn-ink" : "text-ink-2"}`} aria-live="off">
@@ -56,7 +56,7 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
         />
       ) : (
         <div className="flex min-h-0 flex-col gap-2 rounded-md border border-line bg-paper p-4">
-          <p className="font-display text-lg leading-tight">{planned?.title ?? `Slide ${slide + 1}`}</p>
+          <p className="font-display text-lg leading-tight">{planned?.title ?? (count > 0 ? `Slide ${slide + 1}` : `A ${Math.round(bundle.pitch_seconds / 60)} min pitch`)}</p>
           {planned?.key_points.length ? (
             <ul className="list-disc pl-5 text-sm text-ink-2">
               {planned.key_points.map((k) => (
@@ -64,7 +64,7 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted">No deck: talk to the time.</p>
+            <p className="text-sm text-muted">{count > 0 ? "No notes for this slide: talk to the time." : "No slides: talk to the time."}</p>
           )}
         </div>
       )}
@@ -107,7 +107,8 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
         )}
       </div>
 
-      <div className="mt-auto flex gap-2">
+      {/* Without a deck there's nothing to page through */}
+      <div className={`mt-auto flex gap-2 ${count === 0 ? "hidden" : ""}`}>
         <button type="button" onClick={() => onGo(slide - 1)} disabled={slide === 0} className="rounded-full border border-line px-4 py-2 text-sm hover:border-ink disabled:opacity-40">
           ← Back
         </button>
