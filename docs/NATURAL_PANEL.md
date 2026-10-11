@@ -27,6 +27,39 @@ The panel runs the meeting like real people: every question has a life (asked, f
 
 n8n stays the brain: it plans the threads, the lines, the branches and the rescue in `/prep`, decides every live turn in `/turn`, and writes the homework in the debrief. Clients only decide *when* something plays (ground rules 1 and 3).
 
+## 0. Know your side (the meeting, not just the company)
+Today the calendar prep knows the invite, your emails with the attendees, the news and their website, so the brief is about **them**. Rehearsal prep adds your deck's text when you press Rehearse. What n8n never learns is **your side**: what you're pitching and what you want from the meeting. So the brief's hardest questions are generic, and the panel can press on the wrong thing. Researching early and tailoring late is the right shape; these fill the gap.
+
+### 0a. Your goal, in one line, with n8n's guess
+- **One-time profile:** what you offer, in one or two lines ("RouteIQ: route optimisation for logistics fleets"), set once on the web and sent with every prep.
+- **Per meeting:** what you want from it ("a paid 3-month pilot approved"). n8n **infers it** in the calendar prep from the invite and your emails with the attendees, and shows its guess in the "prepare for this meeting?" pop-up and on the brief: "n8n thinks you want: a paid pilot of RouteIQ". One click to confirm, or edit it.
+- **Where it's used:**
+  - The brief's hardest questions and risks become about *your* ask.
+  - Rehearsal prep aims objections at the ask.
+  - The chair's closing fits it ("We'll take the pilot proposal to the committee").
+  - The debrief judges whether you made the ask clearly.
+- If you change it, the brief isn't rebuilt (that costs an execution); the next rehearsal prep uses the new goal.
+
+### 0b. When the deck arrives, n8n reviews it against the research
+- A new step when the deck is uploaded (a small workflow, **DryRun deck review**, one execution per upload): your slides' claims against what n8n found about the company and its people.
+- Output, added to the brief as **"Where your deck will get pushback"**, 3 to 5 items, each with:
+  - the slide;
+  - your claim ("30% lower fuel cost");
+  - what they know or care about, with the source ("their FY25 report says fuel cost already fell 18%");
+  - who will push ("Rajiv, finance");
+  - a suggested fix to the slide or the answer.
+- Facts only from the sources, as the brief's rules already require. Never invent facts about the presenter's own product.
+- Rehearsal prep reads the review, so the panel's objections match what the brief warned about (today they're made separately and hidden in the bundle).
+- Also shown on the practice page under the deck, so you see it before you rehearse.
+
+### 0c. n8n finds the deck itself
+- In the calendar prep, n8n looks for a PDF, PowerPoint or Keynote attached to the invite, or in the latest email thread with the attendees, and attaches it to the meeting.
+- The practice page then shows "Deck found in Rajiv's email (RouteIQ_Delhivery.pdf): use it?". Upload stays as the fallback.
+- The laptop still converts it (n8n can't reach the laptop's files, so n8n passes the file's Drive or Gmail link and the laptop downloads it, or n8n sends the file itself).
+
+### 0d. Reading charts (paused for now)
+Slide images to Gemini so a chart's numbers can be challenged; today a slide that's mostly a chart is just "Slide 4". Paused: it costs Gemini's free quota and prep time. Revisit after the demo path works.
+
 ## 1. Question threads (fixes the repetition)
 Every question n8n asks is a **thread**:
 
@@ -112,6 +145,12 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 - Demo setting: a 1-minute pitch leaves no room for any of this. Use 2–3 minutes with 3–4 slides.
 
 ## Contract 0.26 (draft)
+- Know your side:
+  - The web keeps a profile `{ offer: string }`, sent as `presenter.offer` with `/add-meeting` and `/prep`.
+  - The meeting gains `goal: { text, source: "n8n" | "presenter" }`, inferred by the calendar prep; the web can set it with a new `POST /meeting-goal`, which only saves it (no new brief).
+  - `/prep` takes `goal`.
+  - New `POST /deck-review` (laptop to n8n) with the meeting id and slide text, answered with `{ items: [{ slide_index, claim, pushback, source: { title, url }, persona_hint, fix }] }` and saved on the meeting; `/meeting` returns it as `deck_review`.
+  - The meeting gains `found_deck: { name, from, link } | null`.
 - Bundle `lines[].kind` gains `filler` (shared per voice, `audio_url` under `/api/voices/...`), `park`, `move_on`, `hand_back`, `rescue_soft`, `rescue_question` (with `slide_index`), `ask` and `follow_up` (with `thread_id`).
 - Bundle gains `threads_planned: [{ id, persona_id, slide_index | null, text, ask_line_id, follow_up_line_id }]`.
 - `/prep` request gains `cached_fillers: string[]`.
@@ -124,6 +163,9 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 
 | Part | n8n | Laptop (web) | Browser rehearsal | Headset (Unity) |
 |---|---|---|---|---|
+| 0a. Your goal | calendar prep infers it; brief, rehearsal prep and debrief use it | profile page, goal on the pop-up and brief (confirm or edit) | — | — |
+| 0b. Deck review | new **DryRun deck review** workflow; rehearsal prep reads it | call it on upload, show it on the brief and practice page | — | — |
+| 0c. Deck found | calendar prep looks in the invite and the email thread | offer it on the practice page, download and convert | — | — |
 | 1. Threads | prompt + enforcement Code node in **DryRun turn** | keep `threads` in the room, send in context | — | — |
 | 2a. Fillers | voice missing fillers in **rehearsal prep** | cache per voice, serve, tell `/prep` what it has | play on `answer` / `pitch_end` | same in `TurnTaker` |
 | 2b. Planned replies | prep writes and voices branches; turn fast path (small model) | nothing new (lines already resolved) | — | — |
@@ -138,6 +180,10 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 4. **Planned replies and the fast path.** About 2–3 h. Measure: target ~2 s per turn on the fast path.
 5. **Voiced rescue** (both clients, plus VR monitor cues). About 2 h.
 6. **Homework** (debrief, report, email). About 2 h.
+7. **Your goal** (0a): profile, n8n's guess and confirm, used by the brief, rehearsal prep and debrief. About 2 h. Can go first if the demo meeting needs a sharper panel.
+8. **Deck review** (0b): the new workflow, the brief and practice page sections, rehearsal prep reading it. About 2–3 h. Strong demo moment: upload the deck, and n8n says where it will get pushback, with sources.
+9. **Deck found** (0c). About 2 h; Gmail and Calendar attachments need testing with a real invite.
+- Paused: reading charts (0d).
 
 ## Testing (keep executions low)
 - Each step first against stand-in turns (`DRYRUN_FAKE_TURNS=1`) and n8n Code nodes run locally on recorded `live.feed` data, like 0.25.
@@ -145,6 +191,7 @@ This is what makes it a product: a stumble in rehearsal becomes an answer you kn
 - About 8–10 executions a run; budget 4 runs for all of this.
 
 ## Demo (what this buys)
+0. Before rehearsing: the brief says what n8n thinks you want ("a paid pilot"); you upload the deck and n8n flags "slide 3's 30% savings will get pushback from finance: their FY25 report says fuel cost already fell 18%".
 1. You pitch; Sneha raises a hand at the planned point and asks about open-source backdoors.
 2. You say "I'm not sure." Sneha: "That's fine, send it to us after. Please, go on."
 3. You freeze on slide 3. The chair: "Take your time." Then: "Maybe walk us through the pilot numbers?" You recover.
