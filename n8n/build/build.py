@@ -30,6 +30,16 @@ MIN_NEWS = 3
 SARVAM_TTS = "https://api.sarvam.ai/text-to-speech"
 SARVAM_MODEL = "bulbul:v3"
 VOICES = {"female": ["priya", "kavya", "neha", "ritu", "shreya", "simran"], "male": ["rahul", "aditya", "rohan", "amit", "kabir", "varun", "dev"]}
+# Lines that say nothing about the meeting (contract 0.26): voiced once per voice and cached by the laptop, so after a voice's first
+# rehearsal they cost nothing and play at once. Two sets, so two people at the table don't use the same words. n8n still decides
+# when one fits; anything with content is written live.
+GENERIC_LINES = [
+    {"filler": ["Mm-hm.", "Right.", "Okay.", "I see."], "park": ["That's fine, send it to us after.", "No problem, you can follow up on that."],
+     "move_on": ["Okay, let's leave that there.", "Alright, let's move on."], "hand_back": ["Thanks. Please, go on.", "Got it, carry on."]},
+    {"filler": ["Mm.", "Okay.", "Hm, right.", "Sure."], "park": ["Fair enough, come back to us on that.", "That's okay, send it over later."],
+     "move_on": ["Okay, we'll leave it there.", "Fine, let's keep going."], "hand_back": ["Thank you, please continue.", "Okay, go ahead."]},
+]
+GENERIC_CHAIR = {"thanks": ["Thank you."], "rescue_soft": ["Take your time."]}
 MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "wURCb4PjdZLpttns", "cachedResultName": "DryRun meetings"}
 # One row per rehearsal: its bundle, what happened, the debrief's progress and the debrief (JSON as strings)
 SESSIONS_TABLE = {"__rl": True, "mode": "id", "value": "xzUZexBbX6bcX18F", "cachedResultName": "DryRun sessions"}
@@ -691,6 +701,7 @@ const pitchSeconds = g.minutes ? g.minutes * 60 : raw.length ? total : 300;
 const slides = raw.map(s => ({ index: s.index, title: s.title || '', image_url: '', key_points: s.key_points || [],
   target_seconds: Math.max(5, Math.round(Math.max(5, Math.min(900, s.target_seconds || 0)) * pitchSeconds / total)),
   rescue: { calm: (s.rescue && s.rescue.calm) || 'Take a breath.', keyword: (s.rescue && s.rescue.keyword) || '', bridge: (s.rescue && s.rescue.bridge) || '' },
+  question: (s.rescue && s.rescue.question) || '',
   // The talk track from the last debrief of this meeting, on the speaker view (null on a first rehearsal)
   notes: (g.last && g.last.notes[s.index]) || null }));
 const r = (p.rescue_after_s || []).map(Number).filter(n => n > 0).slice(0, 3);
@@ -718,6 +729,17 @@ const KINDS = ['welcome', 'open_floor', 'acknowledge', 'time_nudge', 'time_up'];
 const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text && KINDS.includes(l.kind))
   .filter(l => !l.kind.startsWith('time_') || (time && l.persona_id === chairId && (l.kind === 'time_nudge' || cut > 0)))
   .map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
+// The chair's way back in for a presenter who froze, one per slide (0.26)
+slides.filter(s => s.question).forEach(s => lines.push({ id: 'l' + (lines.length + 1), persona_id: chairId, kind: 'rescue_question', text: s.question, slide_index: s.index }));
+slides.forEach(s => { delete s.question; });
+// Lines that say nothing about the meeting, the same in any of them (0.26): voiced once per voice, then cached by the laptop
+const GENERIC = """ + json.dumps(GENERIC_LINES) + """;
+const CHAIR = """ + json.dumps(GENERIC_CHAIR) + """;
+personas.forEach((x, k) => {
+  const set = Object.assign({}, GENERIC[k % GENERIC.length], x.chair ? CHAIR : {});
+  let n = 0;
+  Object.entries(set).forEach(([kind, texts]) => texts.forEach(text => lines.push({ id: 'g-' + x.id + '-' + (++n), persona_id: x.id, kind, text, generic: true, voice: x.voice })));
+});
 return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, time, plan,
                   rescue_after_s: rescue, slides, personas, lines, drill: (g.last && g.last.drill) || null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
     c += progress_chunk("saidPlan", "Report: planned", "plan",
@@ -729,11 +751,14 @@ return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company
     c += progress_chunk("saidFallback", "Report: Groq instead", "fallback", "'Gemini did not answer, so Groq plans it instead'")
     c += code_node("eachLine", "One item per line", """
 // Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).
+// Generic lines the laptop already has in that voice (cached_voices, 0.26) aren't voiced again.
 const b = $input.first().json;
 const req = $('Start a rehearsal (web app)').first().json.body;
 if (req.voices === false) return [];
 const voice = Object.fromEntries(b.personas.map(p => [p.id, p.voice]));
-return b.lines.map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));""", [{"id": "l1", "text": "Welcome, Aryan.", "speaker": "priya"}], extra={"alwaysOutputData": True})
+const cached = req.cached_voices || {};
+return b.lines.filter(l => !(l.generic && (cached[l.voice] || []).includes(l.text)))
+  .map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));""", [{"id": "l1", "text": "Welcome, Aryan.", "speaker": "priya"}], extra={"alwaysOutputData": True})
     c += make_node("voice", "node", "n8n-nodes-base.httpRequest", 4.5, "Voice the line (Sarvam)", {
         "method": "POST",
         "url": SARVAM_TTS,
@@ -742,7 +767,8 @@ return b.lines.map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.pers
         "sendBody": True,
         "specifyBody": "json",
         "jsonBody": Expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: '" + SARVAM_MODEL + "', speaker: $json.speaker, speech_sample_rate: 22050, output_audio_codec: 'mp3' }) }}"),
-        "options": {"timeout": 30000},
+        # A few lines at a time, so a first rehearsal with new voices (their generic lines too) doesn't take a minute
+        "options": {"timeout": 30000, "batching": {"batch": {"batchSize": 4, "batchInterval": 0}}},
     }, [{"request_id": "r1", "audios": ["UklGRg=="]}], credentials={"httpHeaderAuth": "Sarvam"},
         # A line that fails to voice is left without audio; the rehearsal still goes ahead
         extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2, "waitBetweenTries": 1000})
@@ -755,8 +781,9 @@ const audio = {};
 lines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });
 return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_base64: audio[l.id] } : l)) } }];""", [{"session_id": "s1", "lines": []}])
     c += progress_chunk("saidVoices", "Report: voiced", "voices",
-                        "(() => { const n = $json.lines.length; const v = $json.lines.filter(l => l.audio_base64).length; "
-                        "return n ? v + ' of ' + n + ' lines voiced, each in the voice of whoever says it' : 'No lines to voice'; })()")
+                        "(() => { const own = $json.lines.filter(l => !l.generic); const v = own.filter(l => l.audio_base64).length; const g = $json.lines.filter(l => l.generic); const gv = g.filter(l => l.audio_base64).length; "
+                        "return (own.length ? v + ' of ' + own.length + ' lines for this meeting voiced, each in the voice of whoever says it' : 'No lines to voice') + "
+                        "(g.length ? (gv ? ', and ' + gv + ' everyday lines for new voices' : ', and the everyday lines came from the laptop') : ''); })()")
     c += make_node("reply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the bundle", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
     c += ("const about = sticky('## DryRun rehearsal prep\\nBriefs the practice panel for one rehearsal (POST /webhook/dryrun/prep, docs/CONTRACT.md): "
           "plans each slide and the rescue cues, what each person will push on, who interrupts and who chairs, how many questions to ask "
@@ -813,7 +840,9 @@ const people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]))
 const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
 const name = id => ((people[id] || {}).display_name || id).split(' ')[0];
 const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'park', 'move_on', 'hand_back', 'open_floor', 'closing'];
-let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id])).map(x => ({ ...x }));
+// Park, move-on and hand-back need no text: a generic line plays (0.26)
+const SOCIAL = ['park', 'move_on', 'hand_back'];
+let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id] || SOCIAL.includes(x.kind))).map(x => ({ ...x }));
 if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
 // Stopped for time, the chair has already moved to the questions with a line the headset played (0.25)
 if (r.mode === 'pitch_end' && r.time_up) reactions = reactions.filter(x => x.kind !== 'open_floor');
@@ -839,11 +868,14 @@ const like = text => threads.find(t => asks(t).some(a => near(a, text)));
 const changed = new Set();
 const pitchOver = r.mode === 'pitch_end' || r.turns.some(t => t.mode === 'pitch_end');
 const said = words(r.transcript).length;
-// A line voiced ahead of time of this kind for this person, or new text
+// A line voiced ahead of time of this kind for this person (one not said yet this run, if there is one), or new text
+const saidBefore = new Set(r.turns.flatMap(t => (t.reactions || []).map(x => x.text)));
 const say = (pid, kind, text, reason, threadId) => {
-  const l = (r.bundle.lines || []).find(x => x.persona_id === pid && x.kind === kind);
+  const own = (r.bundle.lines || []).filter(x => x.persona_id === pid && x.kind === kind);
+  const l = own.find(x => !saidBefore.has(x.text)) || own[0];
   return { persona_id: pid, kind, text: l ? l.text : text, line_id: l ? l.id : '', raise_hand: false, reason, thread_id: threadId || '' };
 };
+reactions = reactions.map(x => (SOCIAL.includes(x.kind) ? say(x.persona_id, x.kind, x.text || "Okay.", x.reason || '', x.thread_id) : x));
 
 // An answer closes its thread, or earns its one follow-up
 const verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;
@@ -971,8 +1003,14 @@ const askedDuring = turns.filter((t, i) => (pitchEnd < 0 || i < pitchEnd) && t.m
 const askedAfter = pitchEnd < 0 ? 0 : turns.slice(pitchEnd).reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
 // Every question's life (0.26), kept by the laptop. An older laptop sends only the pending questions: they become open threads.
 const threads = (ctx.threads || (ctx.pending || []).map((q, i) => ({ id: 'q' + (i + 1), persona_id: q.persona_id, text: q.text, slide_index: q.slide_index, status: 'open', follow_ups: 0, planned: false })));
-// An answer answers the asker's latest thread that's still open
-const answering = b.mode === 'answer' && b.asked_by ? threads.filter(t => t.persona_id === b.asked_by && (t.status === 'open' || t.status === 'followed_up')).pop() : null;
+// An answer answers the asker's latest thread that's still open. With none, it answers the chair's way-back-in question after a freeze,
+// which the client asked from the bundle without n8n (0.26): that becomes a thread too.
+let answering = b.mode === 'answer' && b.asked_by ? threads.filter(t => t.persona_id === b.asked_by && (t.status === 'open' || t.status === 'followed_up')).pop() : null;
+const rescue = b.mode === 'answer' && !answering ? (bundle.lines || []).find(l => l.kind === 'rescue_question' && l.persona_id === b.asked_by && l.slide_index === b.slide_index) : null;
+if (rescue) {
+  answering = { id: 'q' + (threads.length + 1), persona_id: rescue.persona_id, text: rescue.text, slide_index: b.slide_index, status: 'open', follow_ups: 0, planned: true };
+  threads.push(answering);
+}
 const json = { session_id: b.session_id, mode: b.mode, slide_index: b.slide_index, t: b.t, asked_by: b.asked_by || '', mid_slide: !!b.mid_slide, time_up: !!b.time_up,
                bundle, elapsed: Math.round(ctx.elapsed_s || b.t || 0),
                turns, threads, answering_id: answering ? answering.id : '', asked_during: askedDuring, asked_after: askedAfter };
@@ -1015,7 +1053,8 @@ const parts = {
   time: b.time && b.time.limit_s ? r.elapsed + ' seconds in, for a pitch of ' + b.time.limit_s + ' seconds' + (b.time.cut_at_s ? '; the chair stops the pitch at ' + b.time.cut_at_s + ' seconds' : '') + '.'
     : b.time === null ? r.elapsed + ' seconds in. No time limit (about ' + (b.pitch_seconds || 0) + ' seconds is only an estimate).'
     : r.elapsed + ' seconds in, for a pitch of ' + (b.pitch_seconds || 0) + ' seconds.',
-  personas: JSON.stringify(personas), lines: JSON.stringify((b.lines || []).map(l => ({ line_id: l.id, persona_id: l.persona_id, kind: l.kind, text: l.text }))),
+  // Generic lines (0.26) aren't listed: n8n's code picks them for a park, move-on or hand-back
+  personas: JSON.stringify(personas), lines: JSON.stringify((b.lines || []).filter(l => !l.generic && l.kind !== 'rescue_question').map(l => ({ line_id: l.id, persona_id: l.persona_id, kind: l.kind, text: l.text }))),
   slide: slide ? JSON.stringify({ number: slide.index + 1, title: slide.title, key_points: slide.key_points }) : 'No slides.',
   turns: history,
   threads: r.threads.length ? r.threads.map(t => t.id + ' (' + name(t.persona_id) + ', ' + t.status + ', follow-ups ' + (t.follow_ups || 0) + '): "' + t.text + '"').join('; ') : 'None yet.',

@@ -117,8 +117,10 @@ The last rehearsal of this meeting (empty if this is the first):
 Decide, for this meeting and this panel (never a generic template):
 - slides: for each slide in the deck, a short title, its 1 to 3 key points (what the presenter must get across), target_seconds
   (all slides together {pace}, more time where the slide carries more), and rescue cues for when the presenter
-  freezes: calm (a few calming words), keyword (the one word or number that unlocks the slide), bridge (a phrase to carry on from).
-  A slide with no text: title "Slide <n>" (n from 1), no key points and a calm cue only; never guess what it shows. No deck: an empty list.
+  freezes: calm (a few calming words), keyword (the one word or number that unlocks the slide), bridge (a phrase to carry on from),
+  and question: a short, kind question the chair could ask to bring a presenter who froze on this slide back in, built from its
+  main key point (e.g. "Maybe walk us through the pilot numbers?"), under 12 words.
+  A slide with no text: title "Slide <n>" (n from 1), no key points, a calm cue and an empty question only; never guess what it shows. No deck: an empty list.
 - personas: for each panel member, by id: display_name (keep the given name; invent a realistic Indian name only if it is empty),
   priorities (what they care about most in this meeting), and objections tied to slides (slide_index, or -1 when there is no deck or it
   could come at any time), grounded in the deck and the research, with source "deck" or "research". If there was a last rehearsal,
@@ -151,8 +153,8 @@ REHEARSAL_SCHEMA = {"type": "object", "properties": {
         "index": {"type": "integer"}, "title": {"type": "string"},
         "key_points": {"type": "array", "items": {"type": "string"}},
         "target_seconds": {"type": "integer"},
-        "rescue": {"type": "object", "properties": {"calm": {"type": "string"}, "keyword": {"type": "string"}, "bridge": {"type": "string"}},
-                   "required": ["calm", "keyword", "bridge"]}},
+        "rescue": {"type": "object", "properties": {"calm": {"type": "string"}, "keyword": {"type": "string"}, "bridge": {"type": "string"}, "question": {"type": "string"}},
+                   "required": ["calm", "keyword", "bridge", "question"]}},
         "required": ["index", "title", "key_points", "target_seconds", "rescue"]}},
     "personas": {"type": "array", "items": {"type": "object", "properties": {
         "id": {"type": "string"}, "display_name": {"type": "string"},
@@ -230,6 +232,7 @@ What to do for each moment:
   During the pitch, unless there is a follow-up, the asker then hands back to the pitch, kind "hand_back" ("Thanks, please go on."),
   and nobody asks anything new. After the pitch, add what comes next: the next "question" from whoever matters most (an open thread
   first, with its thread_id), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
+- park, move_on and hand_back: leave text and line_id empty; a line voiced ahead of time plays.
 - Threads: every question has one life: asked, at most one follow-up, then closed (answered, parked or dodged). Never ask a closed
   thread again or anything close to it. To ask an open thread again (a hand that went down), give its thread_id; a new question has
   an empty thread_id; a follow-up, park, move_on or hand_back has the thread_id of the thread being answered.

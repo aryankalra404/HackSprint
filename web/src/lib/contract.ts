@@ -77,6 +77,8 @@ export interface PrepRequest extends BriefInput {
   panel: DraftMember[];
   // false skips voicing the lines (testing without spending TTS credits); default true
   voices?: boolean;
+  // The generic lines the laptop already has, by voice (0.26): n8n doesn't voice them again
+  cached_voices?: Record<string, string[]>;
 }
 
 export interface PanelSuggestion {
@@ -126,12 +128,20 @@ export interface Persona extends Seating {
 export interface VoicedLine {
   id: string;
   persona_id: PersonaId;
-  // The chair's time_nudge and time_up (0.25) are played by the client itself when time runs out
-  kind: "welcome" | "open_floor" | "acknowledge" | "time_nudge" | "time_up";
+  // The chair's time_nudge and time_up (0.25) are played by the client itself when time runs out. 0.26: the generic lines (filler,
+  // thanks, park, move_on, hand_back, rescue_soft) and the chair's rescue_question per slide.
+  kind: "welcome" | "open_floor" | "acknowledge" | "time_nudge" | "time_up" | "rescue_question" | GenericKind;
   text: string;
+  // A line that says nothing about the meeting, voiced once per voice and cached by the laptop (0.26)
+  generic?: boolean;
+  voice?: string;
+  // rescue_question: the slide it brings the presenter back to
+  slide_index?: number;
   audio_base64?: string;
   audio_url?: string;
 }
+
+export type GenericKind = "filler" | "thanks" | "park" | "move_on" | "hand_back" | "rescue_soft";
 
 export interface Drill {
   title: string;

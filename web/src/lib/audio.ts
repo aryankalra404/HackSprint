@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -23,8 +23,7 @@ function isWav(data: Buffer): boolean {
 }
 
 // Saves one voice as WAV and returns its path on the laptop, or null if it couldn't be read
-export async function saveAudio(base64: string): Promise<string | null> {
-  const id = `a${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+export async function saveAudio(base64: string, id = `a${Date.now().toString(36)}${randomBytes(3).toString("hex")}`): Promise<string | null> {
   const out = path.join(AUDIO_DIR, `${id}.wav`);
   const data = Buffer.from(base64, "base64");
   await mkdir(AUDIO_DIR, { recursive: true });
@@ -62,13 +61,54 @@ export async function compressSpeech(wavBase64: string): Promise<{ base64: strin
   }
 }
 
-// The bundle as the room keeps it: each line voiced in /prep becomes an audio_url instead of base64
+// Generic lines (contract 0.26) say nothing about the meeting, so each is kept by its voice and text and reused by every later
+// rehearsal: n8n only voices the ones this index doesn't list (/prep's cached_voices).
+const VOICES_INDEX = path.join(AUDIO_DIR, "voices.json");
+
+function genericId(voice: string, text: string): string {
+  return `ag${createHash("sha1").update(`${voice}\n${text}`).digest("hex").slice(0, 16)}`;
+}
+
+export async function cachedVoices(): Promise<Record<string, string[]>> {
+  try {
+    return JSON.parse(await readFile(VOICES_INDEX, "utf8")) as Record<string, string[]>;
+  } catch {
+    return {};
+  }
+}
+
+// The bundle as the room keeps it: each line voiced in /prep becomes an audio_url instead of base64, and a generic line n8n left
+// unvoiced gets the laptop's copy
 export async function saveBundleAudio(bundle: Bundle): Promise<Bundle> {
+  const voiceOf = new Map(bundle.personas.map((p) => [p.id, p.voice]));
+  const index = await cachedVoices();
   const lines = await Promise.all(
     bundle.lines.map(async ({ audio_base64, ...line }) => {
-      const url = audio_base64 ? await saveAudio(audio_base64) : null;
-      return url ? { ...line, audio_url: url } : line;
+      const voice = line.voice ?? voiceOf.get(line.persona_id);
+      if (!line.generic || !voice) {
+        const url = audio_base64 ? await saveAudio(audio_base64) : null;
+        return url ? { ...line, audio_url: url } : line;
+      }
+      const id = genericId(voice, line.text);
+      if (audio_base64) {
+        const url = await saveAudio(audio_base64, id);
+        if (url) index[voice] = [...new Set([...(index[voice] ?? []), line.text])];
+        return url ? { ...line, audio_url: url } : line;
+      }
+      const cached = (index[voice] ?? []).includes(line.text) && (await exists(path.join(AUDIO_DIR, `${id}.wav`)));
+      return cached ? { ...line, audio_url: `/api/audio/${id}.wav` } : line;
     }),
   );
+  await mkdir(AUDIO_DIR, { recursive: true });
+  await writeFile(VOICES_INDEX, JSON.stringify(index, null, 1));
   return { ...bundle, lines };
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch {
+    return false;
+  }
 }

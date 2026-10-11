@@ -5,7 +5,7 @@ import { SAMPLE_ID, sampleBundle, sampleDetail } from "./mock/sample";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
 import { getRoom } from "./room";
-import { saveBundleAudio } from "./audio";
+import { cachedVoices, saveBundleAudio } from "./audio";
 import { cachedSession } from "./sessions";
 import type { N8nProgress } from "./prepProgress";
 
@@ -164,7 +164,7 @@ export async function addMeeting(meeting: NewMeeting): Promise<void> {
 export async function prepSession(input: PrepRequest, deck: Deck | null, onProgress?: (p: N8nProgress, n8nUrl: string | null) => void): Promise<Bundle> {
   if (!N8N_URL) return mockPrep(input.panel, input.pitch_minutes);
   // DRYRUN_VOICES=off skips voicing the lines (testing without spending TTS credits)
-  const bundle = await saveBundleAudio(await streamPrep({ ...input, voices: process.env.DRYRUN_VOICES !== "off" }, onProgress));
+  const bundle = await saveBundleAudio(await streamPrep({ ...input, voices: process.env.DRYRUN_VOICES !== "off", cached_voices: await cachedVoices() }, onProgress));
   const images = new Map((deck?.slides ?? []).map((s) => [s.index, s.image_url]));
   return { ...bundle, slides: bundle.slides.map((s) => ({ ...s, image_url: images.get(s.index) ?? "" })) };
 }

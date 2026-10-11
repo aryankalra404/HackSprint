@@ -26,6 +26,8 @@ export const gapS = 0.4;
 export const questionsQuietEndS = 25;
 export const wrapUpSilence = 4;
 export const wrapUpCountdown = 3;
+// A filler that hasn't started this long after the answer went is dropped (0.26)
+export const fillerLateS = 1.5;
 // The opening goes once this much is said; an answer needs this much speech to count
 const openingMinS = 0.4;
 const answerMinS = 0.5;
@@ -99,8 +101,10 @@ interface Queued {
   // undefined while loading, null if it failed; "text" for a reaction with no voice (shown as a caption for a while)
   clip: Clip | null | undefined | "text";
   hand: { since: number; speechAt: number } | null;
-  // The chair keeping time: played by this client, never late, and time_up ends the pitch once it's said
-  local?: "time_nudge" | "time_up";
+  // The chair keeping time: played by this client, never late, and time_up ends the pitch once it's said. A filler (0.26) is played
+  // by this client the moment an answer goes, and dropped if it can't start soon.
+  local?: "time_nudge" | "time_up" | "filler";
+  queuedAt?: number;
 }
 
 interface Speaking {
@@ -147,6 +151,7 @@ export class TurnTaker {
   private silence: { from: number; level: 0 | 1 | 2 | 3 } | null = null;
   private silences: TelemetryEvent[] = [];
   private cue: TurnView["cue"] = null;
+  private lastFiller: string | null = null;
 
   constructor(
     private readonly bundle: Bundle,
@@ -186,6 +191,7 @@ export class TurnTaker {
     this.silence = null;
     this.silences = [];
     this.cue = null;
+    this.lastFiller = null;
     this.ears.beginRecording(preRollS);
     this.publish();
   }
@@ -343,11 +349,24 @@ export class TurnTaker {
     return this.bundle.lines.find((l) => l.persona_id === personaId && l.kind === kind);
   }
 
+  // 0.26 The panel answers at once while n8n decides: the asker's "Mm-hm" when an answer goes, the chair's "Thank you" at the pitch
+  // end. Only a voiced one (a filler as a caption would be noise), never the same one twice in a row.
+  private filler(personaId: PersonaId | undefined, kind: "filler" | "thanks"): void {
+    if (!personaId) return;
+    const own = this.bundle.lines.filter((l) => l.persona_id === personaId && l.kind === kind && l.audio_url);
+    const pick = own.filter((l) => l.id !== this.lastFiller);
+    const line = pick[Math.floor(Math.random() * pick.length)] ?? own[0];
+    if (!line) return;
+    this.lastFiller = line.id;
+    this.say(line, "filler");
+  }
+
   // Queues a line voiced ahead of time, played by this client
-  private say(line: VoicedLine, local: "time_nudge" | "time_up"): void {
+  private say(line: VoicedLine, local: "time_nudge" | "time_up" | "filler"): void {
     const run = this.run;
-    const reaction: Reaction = { persona_id: line.persona_id, kind: local, text: line.text, line_id: line.id, raise_hand: false, reason: "Keeping time" };
-    const item: Queued = { reaction, mode: "segment", slide: this.slide, speechAtSend: this.speechClock, clip: line.audio_url ? undefined : "text", hand: null, local };
+    const reason = local === "filler" ? "Listening" : "Keeping time";
+    const reaction: Reaction = { persona_id: line.persona_id, kind: local === "filler" ? "acknowledge" : local, text: line.text, line_id: line.id, raise_hand: false, reason };
+    const item: Queued = { reaction, mode: "segment", slide: this.slide, speechAtSend: this.speechClock, clip: line.audio_url ? undefined : "text", hand: null, local, queuedAt: this.deps.now() };
     this.queue.push(item);
     if (line.audio_url)
       this.deps.load(line.audio_url).then(
@@ -374,7 +393,7 @@ export class TurnTaker {
 
     while (this.queue.length) {
       const first = this.queue[0];
-      if (!this.isLate(first, slideNow)) break;
+      if (!this.isLate(first, slideNow, now)) break;
       this.queue.shift();
     }
     const first = this.queue[0];
@@ -387,7 +406,8 @@ export class TurnTaker {
     this.speak(first, now);
   }
 
-  private isLate(q: Queued, slideNow: number): boolean {
+  private isLate(q: Queued, slideNow: number, now: number): boolean {
+    if (q.local === "filler") return q.clip === null || now - (q.queuedAt ?? now) > fillerLateS;
     if (q.local) return false;
     if (q.clip === null) return true;
     if (q.mode === "opening" && this.speechClock - q.speechAtSend > welcomeLateS) return true;
@@ -402,7 +422,8 @@ export class TurnTaker {
     this.queue.shift();
     this.ears.mute();
     const { reaction } = item;
-    this.caption = { persona_id: reaction.persona_id, text: reaction.text, until: Infinity };
+    // A filler is only heard, never captioned
+    if (item.local !== "filler") this.caption = { persona_id: reaction.persona_id, text: reaction.text, until: Infinity };
     this.lastActivity = now;
     const speaking: Speaking = { item, start: now, until: null, stop: null, handDown: !item.hand };
     this.current = speaking;
@@ -525,6 +546,8 @@ export class TurnTaker {
       ...flags,
     };
     const speechAtSend = this.speechClock;
+    if (mode === "answer") this.filler(askedBy, "filler");
+    if (mode === "pitch_end") this.filler(this.bundle.personas.find((p) => p.chair)?.id, "thanks");
     this.inFlight++;
     this.lastActivity = now;
     this.deps.send(request, mode === "pitch_end" ? pitchEndTimeoutS : turnTimeoutS).then(
