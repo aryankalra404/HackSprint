@@ -10,6 +10,7 @@ import { Timeline, type Selection } from "./Timeline";
 import { Metrics } from "./Metrics";
 import { GazeMap } from "./GazeMap";
 import { Actions } from "./Actions";
+import { Transcript } from "./Transcript";
 
 export function DebriefView({ session }: { session: DebriefedSession }) {
   const { bundle, telemetry, debrief, history } = session;
@@ -71,6 +72,8 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
         selection={selection}
         onSelect={setSelection}
       />
+
+      {debrief.slides?.length > 0 && <Transcript slides={debrief.slides} bundle={bundle} />}
 
       <div className="grid items-start gap-6 lg:grid-cols-[2fr_1fr]">
         <Metrics metrics={debrief.metrics} onSelect={selectAt} />
