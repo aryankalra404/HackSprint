@@ -1,4 +1,4 @@
-import type { Bundle, Deck, Meeting, MeetingDetail, NewMeeting, PrepRequest, SessionRecord } from "./contract";
+import type { Bundle, Deck, Meeting, MeetingDetail, NewMeeting, PrepRequest, PrepStep, SessionRecord } from "./contract";
 import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meetings";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
@@ -16,11 +16,7 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
   if (MOCKS[sessionId]) return MOCKS[sessionId];
   const room = getRoom();
   if (room.session_id === sessionId && room.bundle) {
-    const n = room.bundle.personas.length;
-    const steps = demoPrepSession.status.steps.map((s) =>
-      s.id === "personas" ? { ...s, detail: `${n} stakeholders, ${room.bundle!.personas.reduce((a, p) => a + p.objections.length, 0)} objections` } : s,
-    );
-    return { bundle: room.bundle, status: { done: true, steps }, telemetry: null, debrief_status: null, debrief: null, history: [] };
+    return { bundle: room.bundle, status: { done: true, steps: prepSteps(room.bundle) }, telemetry: null, debrief_status: null, debrief: null, history: [] };
   }
   if (!N8N_URL) return MOCKS[sessionId] ?? null;
 
@@ -28,6 +24,33 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`n8n /session failed: ${res.status}`);
   return res.json();
+}
+
+// What n8n's rehearsal prep did, read from its bundle, so the dashboard's feed shows this panel's real prep
+function prepSteps(bundle: Bundle): PrepStep[] {
+  const objections = bundle.personas.reduce((n, p) => n + p.objections.length, 0);
+  const chair = bundle.personas.find((p) => p.chair);
+  const interrupts = bundle.personas.filter((p) => p.manner === "interrupts").map((p) => p.display_name.split(" ")[0]);
+  const cues = bundle.slides.filter((s) => s.rescue).length * 3;
+  const voiced = bundle.lines.filter((l) => l.audio_url).length;
+  const steps: PrepStep[] = [];
+  if (bundle.slides.length > 0)
+    steps.push({ id: "deck", label: "Read the deck", state: "done", detail: `${bundle.slides.length} slides, key points and a target time for each` });
+  steps.push({
+    id: "personas",
+    label: "Briefed the panel",
+    state: "done",
+    detail: `${bundle.personas.length} people, ${objections} objections${chair ? `; ${chair.display_name.split(" ")[0]} chairs` : ""}${interrupts.length ? `; ${interrupts.join(", ")} may interrupt` : ""}`,
+  });
+  steps.push({
+    id: "plan",
+    label: `Planned ${bundle.plan.during_pitch} questions during the pitch and ${bundle.plan.after_pitch} after`,
+    state: "done",
+    detail: bundle.plan.why,
+  });
+  if (voiced > 0) steps.push({ id: "lines", label: `Voiced ${voiced} lines ahead of time`, state: "done", detail: "The welcome, opening the floor and acknowledgements, so they play at once" });
+  if (cues > 0) steps.push({ id: "rescue", label: "Prepared rescue cues", state: "done", detail: `${cues} cues across ${bundle.slides.length} slides` });
+  return steps;
 }
 
 export async function postToN8n<T>(path: string, body: unknown): Promise<T> {
