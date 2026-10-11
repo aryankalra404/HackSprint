@@ -1,4 +1,4 @@
-import type { Bundle, Meeting, MeetingDetail, NewMeeting, PrepRequest, SessionRecord } from "./contract";
+import type { Bundle, Deck, Meeting, MeetingDetail, NewMeeting, PrepRequest, SessionRecord } from "./contract";
 import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meetings";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
@@ -68,8 +68,11 @@ export async function addMeeting(meeting: NewMeeting): Promise<void> {
   await postToN8n("/add-meeting", meeting);
 }
 
-// Builds the rehearsal bundle for a practice panel. n8n's /prep workflow isn't built yet, so this uses the sample deck and
-// the panel's own focus (from the brief) as their objections.
-export async function prepSession(input: PrepRequest): Promise<Bundle> {
-  return mockPrep(input.panel, input.pitch_minutes);
+// Builds the rehearsal bundle for a practice panel (contract: POST /prep): n8n plans the slides, the panel, the questions and the
+// lines. Each slide's image is the laptop's own (n8n leaves image_url empty). Without n8n, the sample bundle stands in.
+export async function prepSession(input: PrepRequest, deck: Deck | null): Promise<Bundle> {
+  if (!N8N_URL) return mockPrep(input.panel, input.pitch_minutes);
+  const bundle = await postToN8n<Bundle>("/prep", input);
+  const images = new Map((deck?.slides ?? []).map((s) => [s.index, s.image_url]));
+  return { ...bundle, slides: bundle.slides.map((s) => ({ ...s, image_url: images.get(s.index) ?? "" })) };
 }

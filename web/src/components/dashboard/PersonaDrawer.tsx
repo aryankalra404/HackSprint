@@ -63,7 +63,8 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
               <li key={o.text} className="text-sm">
                 <p>{o.text}</p>
                 <p className="mt-0.5 text-[11px] text-muted">
-                  {SOURCE_LABEL[o.source]}, about {slideLabel(o.slide_index).toLowerCase()}
+                  {/* -1: not tied to a slide (no deck, or it could come at any time) */}
+                  {SOURCE_LABEL[o.source]}, {o.slide_index < 0 ? "at any time" : `about ${slideLabel(o.slide_index).toLowerCase()}`}
                 </p>
               </li>
             ))}

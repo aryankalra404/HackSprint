@@ -172,9 +172,11 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
               disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
               className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-50"
             >
-              {briefing ? "Briefing the panel…" : `Start the rehearsal (${members.length})`}
+              {briefing ? "n8n is planning the rehearsal…" : `Start the rehearsal (${members.length})`}
             </button>
-            <p className="text-xs text-muted">Then put on the headset: the panel is already seated.</p>
+            <p className="text-xs text-muted">
+              {briefing ? "It plans each slide, what everyone will push on and when they ask. About 20 seconds." : "Then put on the headset: the panel is already seated."}
+            </p>
           </footer>
         </aside>
       </main>

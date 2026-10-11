@@ -64,7 +64,7 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
     // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
     const room = getRoom();
     const deck = room.deck ? await deckText(room.deck) : null;
-    const bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel });
+    const bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel }, room.deck);
     sessionId = bundle.session_id;
     updateRoom({
       phase: "briefed",
