@@ -14,8 +14,8 @@ DryRun prepares you for high-stakes meetings and lets you rehearse them. n8n wat
 - **n8n access:** n8n Cloud account `aryankalra47` (since 11 Oct; the first account ran out of executions). The n8n MCP server is set up for this project in Claude Code (local scope; the token isn't in the repo). Workflow IDs, how to change and redeploy them, and credentials: `n8n/README.md`. The Gemini key is on the free tier, with a Groq fallback on every Gemini step; watch the quotas (PLAN.md, Risks).
 
 ## Planned, not built (ask first)
-- The ideas for the rest of the week are in `docs/PLAN.md` ("Mon 12 – Fri 16: the plan to win") and, in detail, `docs/NATURAL_PANEL.md`. They are **proposals the user hasn't approved yet**.
-- Before building any of them, explain the idea in a few lines (what it does, why it helps, what it costs) and ask. Don't implement on the strength of the plan alone.
+- The ideas for the rest of the week are in `docs/PLAN.md` ("Mon 12 – Fri 16: the plan to win") and, in detail, `docs/NATURAL_PANEL.md`. The `NATURAL_PANEL.md` items (threads, fair report and homework, fillers and social lines, faster live path, transcription, voiced rescue, your goal, deck review, headset telemetry) were **approved on 12 Oct** and are being built in its order. The rest of the week plan (after-the-meeting workflow, error workflow, Vertex) is still a **proposal the user hasn't approved yet**.
+- Before building any unapproved one, explain the idea in a few lines (what it does, why it helps, what it costs) and ask. Don't implement on the strength of the plan alone.
 - When the user asks what's left, what the plan is, or what to do next, remind them of these items, grouped and in the proposed order, and say which are approved or built.
 
 ## Where things live

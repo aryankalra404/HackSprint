@@ -144,8 +144,8 @@ Nothing in the meeting is scripted: n8n decides who speaks, what they say and wh
 - [ ] VR side of 0.23 on the main laptop: the headset stays idle when `rehearse_in` is `browser`
 - [x] Contract 0.25 (11 Oct): time no longer decides when the panel hears the presenter. Each slide is sent whole when they move on (one turn per slide, however long), and mid-slide only at the interruption points n8n plans in `/prep` (`plan.interrupts`: who, which slide, after how many seconds of speech). The pitch length can be "No time limit". With a limit, n8n decides how the chair keeps time (`time`: a nudge near the limit and, in a strict meeting, stopping the pitch for questions) and voices the chair's `time_nudge` and `time_up` lines, which the client plays at a pause without calling n8n; the pitch clock (speaker view, VR monitor) turns amber near the limit and red past it. Built in the web turn-taker, `TurnTaker.cs`/`SessionController.cs` (compiles) and n8n (rehearsal prep, turn, debrief: deployed and published). Tested with a simulation of the browser turn-taker and the n8n Code nodes run locally; not yet in a real run
 
-### Mon 12 – Fri 16: the plan to win (proposed 11 Oct, not approved yet)
-Ideas from the first headset test. **Nothing here is approved yet: explain each item and ask before building it.** The full design of the panel items is in `docs/NATURAL_PANEL.md` (a temporary file: delete it once its items are built and folded into this plan, the contract and the architecture).
+### Mon 12 – Fri 16: the plan to win (proposed 11 Oct; the panel and loop items approved 12 Oct)
+Ideas from the first headset test. **The items under "The panel feels real", "The loop" and "Know your side" were approved on 12 Oct (revised, see Decisions) and are being built in `NATURAL_PANEL.md`'s order. Everything else here is still a proposal: explain each item and ask before building it.** The full design of the panel items is in `docs/NATURAL_PANEL.md` (a temporary file: delete it once its items are built and folded into this plan, the contract and the architecture).
 
 Why: the first real headset run (11 Oct) had the panel ask one question five times, 8–9 s of silence after every answer, and a report (13/100) that blamed the presenter for a transcription error and the panel's own mistakes. Judges and mentors will try it themselves, so how it feels decides more than features.
 
@@ -154,8 +154,8 @@ What each audience wants (Direction, above): n8n mentors want real reasoning in 
 **The panel feels real** (`NATURAL_PANEL.md`):
 - [ ] Question threads: each question is asked, followed up at most once, then answered, parked or dodged, and never asked again; n8n enforces it in code. No `open_floor` mid-pitch
 - [ ] "I'm not sure" is parked ("That's fine, send it to us after"); a hand-back after a mid-pitch question
-- [ ] Filler sounds ("Mm.", "Right…"), voiced once per voice and kept on the laptop, played the moment an answer ends
-- [ ] Fast path: replies planned and voiced in prep, picked live by a small fast model (about 2 s a turn instead of 6); the big model writes a new line whenever the answer is unexpected
+- [ ] Filler sounds ("Mm.", "Right…") and generic social lines (park, move on, hand back, "Take your time"), voiced once per voice and kept on the laptop; fillers play the moment an answer ends
+- [ ] A faster live path: a faster model, a shorter prompt, only new lines voiced, the answer's end caught sooner (about 3 s a turn instead of 6), and the panel sometimes talking to each other. No scripted replies: anything with content is written live
 - [ ] The panel catches a freeze: "Take your time", then a way-back-in question from that slide's key point, played offline
 - [ ] Transcription: the question in Whisper's hint list, the volume normalised; test **Sarvam speech-to-text** against Whisper on 5 recorded answers (Sarvam mentor)
 
@@ -167,7 +167,7 @@ What each audience wants (Direction, above): n8n mentors want real reasoning in 
 **Know your side:**
 - [ ] Your goal for the meeting in one line (n8n guesses it from the invite and emails; you confirm), plus a one-time "what I offer"
 - [ ] Deck review when the deck is uploaded: "where your deck will get pushback", with sources; built as an **n8n AI Agent with tools** (n8n mentor)
-- [ ] n8n finds the deck in the invite or the email thread (lower priority); reading charts is paused
+- ~~n8n finds the deck in the invite or the email thread~~ (dropped 12 Oct); reading charts is paused
 
 **Show n8n doing the whole job** (problem statement: minimal human intervention, beyond simple automation):
 - [ ] A slim "after the real meeting" workflow (WF4, was parked): a one-minute voice note (Sarvam), what each person raised and what you promised, a follow-up email drafted and sent only after you approve it (Gmail send-and-wait), and a small **people** table keyed by email so the next brief says "Since last time…". The full twins and triage stay parked
@@ -180,7 +180,7 @@ What each audience wants (Direction, above): n8n mentors want real reasoning in 
 - [ ] Check n8n's execution count under Usage; it has to last through testing, Rounds 2–3 and the final
 - [ ] At the venue: laptop and headset on the same phone hotspot (the first headset test failed because they weren't), USB as the fallback
 
-Proposed order: Mon threads, park and hand-back, fillers, the report's time fix, the Sarvam speech-to-text test; Tue fast path, freeze rescue, your goal; Wed homework, deck review, headset telemetry; Thu after-the-meeting workflow, error workflow, Vertex, 5 Quest runs, backup video; Fri features frozen, pitch deck, rehearse the pitch in DryRun. If it slips, cut headset telemetry, then the found deck, then the freeze rescue, then after-the-meeting; never cut threads, fillers, the fair report or homework.
+Order for the approved items (12 Oct): threads, the fair report and homework, fillers and social lines, the faster live path, transcription, freeze rescue, your goal, deck review, then headset telemetry if there's time. The rest as proposed: Thu after-the-meeting workflow, error workflow, Vertex, 5 Quest runs, backup video; Fri features frozen, pitch deck, rehearse the pitch in DryRun. If it slips, cut headset telemetry, then the freeze rescue, then after-the-meeting; never cut threads, fillers, the fair report or homework.
 
 ### Thu 15
 - [ ] Full end-to-end runs × 5 on the Quest, on venue-like Wi-Fi and a hotspot; tune latency and speech detection
@@ -254,6 +254,7 @@ Proposed order: Mon threads, park and hand-back, fillers, the report's time fix,
 | 11 Oct | Time doesn't decide when the panel hears you: a slide goes to n8n whole when you move on, and mid-slide only where n8n planned an interruption (`plan.interrupts`), so talking long costs no extra executions and the transcript stays per slide. Sending a long slide at every pause past its target was rejected: it pushed the presenter to keep to n8n's slide times and cost an execution per pause. The pitch length is optional; with one, the chair keeps time as n8n decided for the meeting (nudge, maybe stop the pitch), from lines voiced ahead of time. Contract 0.25 | Accepted |
 | 11 Oct | n8n's rehearsal prep streams its progress (webhook `responseMode: streaming`, a Respond to Webhook node after each stage) so the practice page shows what n8n is doing, as it does it, during the demo's longest wait. Polling n8n for progress was rejected: every read is an execution. Reading the execution through n8n's API was rejected: it needs an API key on the laptop and saving progress per node. Without chunks (an older workflow) the page shows one "n8n is planning" step, never made-up steps | Accepted |
 | 11 Oct | The browser's voice activity learns the background only from quiet windows (below the threshold), not from every window while not speaking as the plan describes for `VoiceActivity.cs`. Tested with recorded speech, learning during the 0.6 s onset hold raised the threshold above normal speech within a few sentences, so everything after the opening went unheard. The cost: a lasting jump in room noise above 3× the background now counts as speech until it stops. Compare with the headset's `VoiceActivity.cs` on the main laptop and keep the two the same | Proposed: check on the main laptop |
+| 12 Oct | Build the panel plan (`NATURAL_PANEL.md`), revised: no scripted replies. Canned audio is only for content-free sounds and social lines (fillers, park, move on, hand back, "Take your time"), voiced once per voice and reused across meetings; questions and follow-ups are always written live, made faster instead (a faster model, a shorter prompt, the answer's end caught sooner). The first draft's per-question pre-written follow-ups picked by a small model were rejected: a script that breaks when the presenter says something unexpected. n8n finding the deck in the invite or email was dropped (decks are rarely there; uploading is one click). The fair report moves up to second, since every test run's report depends on it | Accepted |
 
 ## Risks
 - **The Unity project only has local Git** (since 11 Oct), so a dead disk would still lose it. Copy it to an external drive or a private remote before the event. Disk: 16 GB free after clearing an old copy's cache.
