@@ -5,6 +5,8 @@ import type { BriefInput, DraftMember } from "@/lib/contract";
 import { deckText } from "@/lib/deck";
 import { addMeeting, getMeeting, prepSession } from "@/lib/api";
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
+import { SAMPLE_ID, sampleDeck } from "@/lib/mock/sample";
+import { briefSample } from "@/lib/sample";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -20,7 +22,7 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
     prospect: { company: meeting.company, website: "", context: meeting.title },
   };
   // A deck belongs to its meeting: seating another meeting's panel takes it off the screens
-  if (getBrief()?.draft_id !== meeting.id) setDeck(null);
+  if (getBrief()?.draft_id !== meeting.id) setDeck(meeting.id === SAMPLE_ID ? sampleDeck : null);
   // The pitch length starts at n8n's suggestion for this meeting; the presenter can change it on the practice page
   updateRoom(
     { phase: "drafting", prospect: { company: meeting.company }, panel, bundle: null, session_id: null, pitch_minutes: proposal.pitch?.minutes ?? 5 },
@@ -58,6 +60,8 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
   const problem = panel.length === 0 ? "The panel needs at least one person." : panelProblem(panel);
   if (problem) return { ok: false, error: problem };
   if (panel.some((m) => !m.role.trim())) return { ok: false, error: "Everyone needs a role." };
+  // The sample is briefed on the laptop, with its own panel: no n8n call
+  if (draftId === SAMPLE_ID) redirect(`/s/${briefSample()}`);
 
   let sessionId: string;
   try {
@@ -72,7 +76,7 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
       session_id: sessionId,
       live: null,
       debrief: null,
-      // TEMPORARY TEST: a real brief ends the scripted run
+      // A real brief ends the sample's scripted run
       scripted: false,
       panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
     });

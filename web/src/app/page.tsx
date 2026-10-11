@@ -3,6 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { listMeetings, n8nProblem } from "@/lib/api";
 import type { Meeting } from "@/lib/contract";
+import { sampleMeeting } from "@/lib/mock/sample";
 import { MeetingList } from "@/components/meetings/MeetingList";
 import { PreparePopup } from "@/components/meetings/PreparePopup";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
@@ -30,8 +31,26 @@ export default function Home() {
       <Suspense fallback={<p className="text-sm text-muted">Loading your meetings…</p>}>
         <Meetings />
       </Suspense>
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display text-xl">Try the sample</h2>
+          <p className="max-w-2xl text-sm text-ink-2">
+            A made-up meeting to see everything without speaking: its brief, its practice panel, and a scripted rehearsal in the headset where the
+            panel raises hands, asks and follows up. Nothing in it calls n8n or an AI.
+          </p>
+        </div>
+        <Suspense fallback={null}>
+          <Sample />
+        </Suspense>
+      </section>
     </div>
   );
+}
+
+// The sample meeting, read at request time like the others (its card says how far off it is)
+async function Sample() {
+  await connection();
+  return <MeetingList meetings={[sampleMeeting]} />;
 }
 
 async function Meetings() {

@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.20, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.21, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -450,7 +450,8 @@ Long poll: answers as soon as the room's `version` is greater than `since`, or a
   "slide": 0,
   "height_offset": 0,
   "pitch_minutes": 5,
-  "debrief": { "run_id": "string", "state": "running | done | failed | skipped", "steps": [], "error": null, "overall": 63, "headline": "string" }
+  "debrief": { "run_id": "string", "state": "running | done | failed | skipped", "steps": [], "error": null, "overall": 63, "headline": "string" },
+  "scripted": false
 }
 ```
 Field notes:
@@ -468,6 +469,7 @@ Field notes:
 - `debrief` *(0.20)*: the debrief of the run that just ended, `null` until a session ends (and again once one starts or restarts). `run_id` is that run's session id for `/debrief`, `GET /session` and the report (`/s/<run_id>/report`): the bundle's `session_id` plus the run's start time, so each run of the same panel gets its own report. `steps` are n8n's `debrief_status.steps` as the laptop last read them. `skipped` when there was nothing to debrief (no turns), `failed` with `error` when n8n failed. `overall` and `headline` are the debrief's, once `done`. `POST /api/room/debrief` (web) tries a failed debrief again.
 - `pitch_minutes` *(0.18)*: how long the presenter means to pitch, sent to `/prep`. Set on the practice page; it starts at n8n's suggestion (`proposal.pitch.minutes`), or 5 without one.
 - `height_offset` raises (or, if negative, lowers) the presenter's eyes in VR, in metres from -0.5 to 0.5, to the centimetre; 0 unless moved on the web. It's for when the headset's floor is off. The headset eases to it and keeps it after teleporting.
+- `scripted` *(0.21)*: `true` while the sample meeting is in the room. Its bundle, slides and voices are files on the laptop (`/sample/...`), nothing goes to n8n, and the laptop answers `/api/turn` from the sample's script. The headset then stands in for the presenter: it sends each moment without audio once the panel is quiet (the opening after 3 s, a `segment` every 8 s, moving to the next slide, an `answer` 3 s after a question, `pitch_end` on the last slide) and ignores the mic. A run of the sample isn't debriefed (`debrief.state` `skipped`). Absent or `false` otherwise; briefing a real panel turns it off.
 - When the deck is converted, the laptop also extracts each slide's text, which it sends to `/prep` (not in the room).
 
 ### PUT `/api/room/panel`
@@ -541,3 +543,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.18 (11 Oct): the rehearsal becomes a meeting. Nothing about the conversation is fixed in code: `/prep` takes `pitch_minutes` and the deck's slide text, and returns n8n's `plan` (how many questions, when), each person's `manner`, the `chair`, rescue timings, the last run's `notes` per slide and `lines` voiced ahead of time. `/turn` gains the modes `opening` and `pitch_end` (`slide_end` becomes `segment`), the laptop adds `context` (bundle, turns, pending questions), and the response has `reactions` (several, with `raise_hand` and `line_id`), `note` and `end_session`. Voices come back as WAV and the laptop serves them (`GET /api/audio/<id>.wav`). `/debrief` is answered at once and followed through `GET /session` (`debrief_status`); its result gains `slides` (the transcript per slide with marks and a talk track) and `facing`; `gaze_dwell_s` is head direction ("Who you faced"), and `facing_slides_s` is new. The room gains `pitch_minutes`, `live.stage` and `live.feed`; `/meeting`'s proposal gains `pitch`.
 - 0.19 (11 Oct): the room's `live.thinking`, the turns waiting on n8n, for the dashboard's live feed.
 - 0.20 (11 Oct): debriefs. `/debrief` from the laptop gains `meeting_id`, `owner_email`, `presenter`, the turns' `note` and the slide changes the laptop saw; n8n answers when done with the session record (it saves progress on the way, read through `GET /session`), and the result gains `weak_spots` and fixed metric names. `/meetings` gains `practice`, `/meeting` gains `sessions`, the room gains `debrief` (each run of a panel is its own session), and `/prep` uses the meeting's last debrief (talk track, weak spots, drill). `GET /session` answers `404` for an unknown session.
+- 0.21 (11 Oct): the room's `scripted`, for the sample meeting: a whole rehearsal without speaking and without n8n, the headset standing in for the presenter and the laptop answering turns from a script.

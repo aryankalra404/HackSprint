@@ -12,6 +12,7 @@ import { NameCardsToggle } from "../room/NameCardsToggle";
 import { HeightControl } from "../room/HeightControl";
 import { DeckPanel } from "../room/DeckPanel";
 import { PitchLength } from "./PitchLength";
+import { SAMPLE_ID } from "@/lib/mock/sample";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
 
@@ -77,6 +78,9 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
     }, 200);
     return () => clearTimeout(timer);
   }, [members, proposal]);
+
+  // The sample's run is scripted for its own five, briefed on the laptop
+  const sample = meeting.id === SAMPLE_ID;
 
   function brief() {
     setError(null);
@@ -172,10 +176,14 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
               disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
               className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-50"
             >
-              {briefing ? "n8n is planning the rehearsal…" : `Start the rehearsal (${members.length})`}
+              {briefing ? (sample ? "Seating the sample…" : "n8n is planning the rehearsal…") : `Start the rehearsal (${sample ? 5 : members.length})`}
             </button>
             <p className="text-xs text-muted">
-              {briefing ? "It plans each slide, what everyone will push on and when they ask. About 20 seconds." : "Then put on the headset: the panel is already seated."}
+              {sample
+                ? "The sample seats these five with their slides and recorded voices, whatever you change, and the headset plays a scripted run without you speaking. Nothing calls n8n or an AI."
+                : briefing
+                  ? "It plans each slide, what everyone will push on and when they ask. About 20 seconds."
+                  : "Then put on the headset: the panel is already seated."}
             </p>
           </footer>
         </aside>

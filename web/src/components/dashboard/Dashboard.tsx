@@ -108,7 +108,7 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
             </>
           )}
         </section>
-        <AgentFeed items={feed} status={status} />
+        <AgentFeed items={feed} status={status ?? (room?.scripted ? "Sample: scripted on the laptop" : undefined)} />
       </main>
 
       <BottomStrip session={session} />

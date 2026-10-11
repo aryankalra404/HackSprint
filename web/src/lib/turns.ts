@@ -2,7 +2,7 @@ import type { Bundle, LiveSession, LoggedTurn, Reaction, ThinkingTurn, TurnConte
 import { postToN8n } from "./api";
 import { compressSpeech, saveAudio } from "./audio";
 import { getRoom, updateRoom } from "./room";
-import { SCRIPTED, scriptedReply } from "./scripted";
+import { sampleReply } from "./sample";
 
 // The laptop's side of a turn (contract: POST /turn). The headset sends what the presenter said; the laptop adds what n8n needs to
 // decide (the bundle, the turns so far, the questions still open), so n8n keeps no state. n8n's voices are saved here and handed to
@@ -78,8 +78,8 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
   const context: TurnContext = { bundle: withoutAudio(room.bundle), elapsed_s: body.t, turns: feed, pending: pendingQuestions(feed) };
   let reply: TurnResponse;
   try {
-    // TEMPORARY TEST: a scripted room replays its run instead of asking n8n
-    reply = SCRIPTED && room.scripted ? await scriptedReply(body, feed) : await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
+    // The sample meeting's run is scripted on the laptop: no n8n call
+    reply = room.scripted ? await sampleReply(body, feed) : await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
   } catch (err) {
     throw new TurnError(err instanceof Error ? err.message : "n8n failed", 502);
   }
