@@ -1180,7 +1180,7 @@ const step = (id, label, done, running, doneText, runningText) => ({ id, label, 
 const debriefSteps = [
   step('read', 'Read the transcript', true, false, read.summary, ''),
   step('judge', 'Judged the pitch', !!judged, true,
-    judged ? 'Scored ' + judged.debrief.metrics.length + ' things with evidence, marked ' + judged.marks + ' moments, ' + judged.backs + ' of ' + judged.debrief.stakeholders.length + ' would back it' : '',
+    judged ? (judged.debrief.overall == null ? 'Too short to score, so no scores; marked ' : 'Scored ' + judged.debrief.metrics.length + ' things with evidence, marked ') + judged.marks + ' moments, ' + judged.backs + ' of ' + judged.debrief.stakeholders.length + ' would back it' : '',
     'Marking the transcript, scoring the answers and reading the room'),
   step('plan', 'Planned the next rehearsal', !!judged, !!judged,
     judged ? (judged.debrief.owed.length ? 'Drafted answers to ' + judged.debrief.owed.length + ' question' + (judged.debrief.owed.length === 1 ? '' : 's') + ' you owe them. ' : '')
