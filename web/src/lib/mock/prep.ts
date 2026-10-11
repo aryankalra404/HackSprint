@@ -7,8 +7,8 @@ const NAMES = { female: ["Kavya Iyer", "Meera Kulkarni", "Sana Qureshi"], male: 
 
 // What n8n's /prep would return for an edited panel, for running without n8n:
 // people from the sample keep their brief, anyone added gets a short generic one, and the sample's slide times are
-// stretched to the pitch length.
-export function mockPrep(panel: DraftMember[], pitchMinutes: number): Bundle {
+// stretched to the pitch length (kept as they are with no time limit).
+export function mockPrep(panel: DraftMember[], pitchMinutes: number | null): Bundle {
   const sample = demoSession.bundle;
   const used = { female: 0, male: 0 };
   const personas: Persona[] = panel.map((m) => {
@@ -34,14 +34,19 @@ export function mockPrep(panel: DraftMember[], pitchMinutes: number): Bundle {
       voice: known?.voice ?? "en-IN-neutral-1",
     };
   });
-  const pitchSeconds = pitchMinutes * 60;
+  const pitchSeconds = pitchMinutes ? pitchMinutes * 60 : sample.pitch_seconds;
+  const minutes = pitchSeconds / 60;
   const scale = pitchSeconds / sample.pitch_seconds;
   const slides = sample.slides.map((s) => ({ ...s, target_seconds: Math.round(s.target_seconds * scale) }));
-  const interrupting = personas.filter((p) => p.manner === "interrupts").length;
+  const interrupting = personas.filter((p) => p.manner === "interrupts");
+  const during = Math.min(interrupting.length, Math.floor(minutes / 2));
   const plan = {
-    during_pitch: Math.min(interrupting, Math.floor(pitchMinutes / 2)),
-    after_pitch: Math.min(personas.length, Math.max(1, Math.ceil(pitchMinutes / 3))),
-    why: "Sample plan (n8n's /prep isn't built yet).",
+    during_pitch: during,
+    after_pitch: Math.min(personas.length, Math.max(1, Math.ceil(minutes / 3))),
+    why: "Sample plan (n8n isn't connected).",
+    // Each interrupter's first objection, once they've heard a little of that slide
+    interrupts: interrupting.slice(0, during).map((p) => ({ persona_id: p.id, slide_index: Math.max(0, p.objections[0]?.slide_index ?? 0), after_s: 15, about: p.objections[0]?.text ?? "" })),
   };
-  return { ...sample, session_id: "room", pitch_seconds: pitchSeconds, plan, slides, personas };
+  const time = pitchMinutes ? { limit_s: pitchSeconds, nudge_at_s: pitchSeconds, cut_at_s: Math.round(pitchSeconds * 1.25), why: "Sample time keeping." } : null;
+  return { ...sample, session_id: "room", pitch_seconds: pitchSeconds, time, plan, slides, personas };
 }

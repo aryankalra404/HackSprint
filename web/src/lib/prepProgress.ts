@@ -38,7 +38,7 @@ function patchStep(run: PrepRun, id: string, patch: Partial<PrepStep>): PrepStep
 }
 
 // The laptop has read the deck and is sending everything to n8n
-export function prepStarted(id: string | undefined, deckSlides: number | null, panel: number, minutes: number) {
+export function prepStarted(id: string | undefined, deckSlides: number | null, panel: number, minutes: number | null) {
   if (!id) return;
   const steps: PrepStep[] = [];
   if (deckSlides != null) steps.push({ id: "deck", label: "Read your deck", state: "done", detail: `The text of ${deckSlides} slide${deckSlides === 1 ? "" : "s"}, for n8n` });
@@ -46,7 +46,7 @@ export function prepStarted(id: string | undefined, deckSlides: number | null, p
     id: "n8n",
     label: "n8n is planning the rehearsal",
     state: "running",
-    detail: `For ${panel} ${panel === 1 ? "person" : "people"} and a ${minutes} min pitch. Usually about 30 seconds.`,
+    detail: `For ${panel} ${panel === 1 ? "person" : "people"} and ${minutes ? `a ${minutes} min pitch` : "no time limit"}. Usually about 30 seconds.`,
   });
   set({ id, started_at: Date.now(), state: "running", steps, error: null, n8n_url: null });
 }

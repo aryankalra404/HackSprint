@@ -17,7 +17,8 @@ export async function PUT(request: Request) {
   }
   if (body.pitch_minutes !== undefined) {
     const m = body.pitch_minutes;
-    if (typeof m !== "number" || !Number.isInteger(m) || m < 1 || m > 60) return Response.json({ error: "pitch_minutes must be a whole number from 1 to 60" }, { status: 400 });
+    // null: no time limit (0.25)
+    if (m !== null && (typeof m !== "number" || !Number.isInteger(m) || m < 1 || m > 60)) return Response.json({ error: "pitch_minutes must be a whole number from 1 to 60, or null for no limit" }, { status: 400 });
     const { phase } = getRoom();
     if (phase !== "empty" && phase !== "drafting") return Response.json({ error: "The panel is already briefed for this pitch length. Go back to the practice page to change it." }, { status: 409 });
     patch.pitch_minutes = m;

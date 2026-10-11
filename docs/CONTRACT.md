@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.24, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.25, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -156,7 +156,7 @@ Sent by the laptop when the presenter confirms the panel ("Start the rehearsal")
 ```
 Field notes:
 - `draft_id` is the meeting's id, so n8n can find its brief, research and earlier rehearsals.
-- `pitch_minutes` is how long the presenter means to pitch, set on the practice page (n8n's `proposal.pitch` suggestion unless changed). The questions come on top of it.
+- `pitch_minutes` is how long the presenter means to pitch, set on the practice page (n8n's `proposal.pitch` suggestion unless changed). The questions come on top of it. `null` *(0.25)*: no time limit; n8n paces the slides at a natural speed and nobody keeps time.
 - `deck` is `null` without a deck. Otherwise the laptop sends the text of each slide (extracted when the deck is converted), since n8n can't reach the laptop's files. Slide images stay on the laptop.
 - `panel` is the proposal after the presenter's edits: moved, renamed, re-roled, re-faced, removed or added people. Everyone has a `seat`, `color` and `avatar`. Added people have an id from the client (`p7`, `p8`, …), no `gender`, and may have an empty `display_name`; n8n names them to fit their avatar.
 - `difficulty` is 1 to 3, set per person by the presenter (default 2).
@@ -173,7 +173,13 @@ Response (the last chunk):
   "session_id": "string",
   "prospect": { "company": "string" },
   "pitch_seconds": 300,
-  "plan": { "during_pitch": 2, "after_pitch": 2, "why": "string" },
+  "time": { "limit_s": 300, "nudge_at_s": 300, "cut_at_s": 375, "why": "string" },
+  "plan": {
+    "during_pitch": 2,
+    "after_pitch": 2,
+    "why": "string",
+    "interrupts": [{ "persona_id": "p3", "slide_index": 2, "after_s": 15, "about": "string" }]
+  },
   "rescue_after_s": [3, 6, 10],
   "slides": [
     {
@@ -204,7 +210,7 @@ Response (the last chunk):
     }
   ],
   "lines": [
-    { "id": "l1", "persona_id": "p1", "kind": "welcome | open_floor | acknowledge", "text": "string", "audio_base64": "string" }
+    { "id": "l1", "persona_id": "p1", "kind": "welcome | open_floor | acknowledge | time_nudge | time_up", "text": "string", "audio_base64": "string" }
   ],
   "drill": null
 }
@@ -212,13 +218,16 @@ Response (the last chunk):
 Field notes:
 - `personas` are the confirmed panel. Every other field that names a person (`asked_by`, `persona_id`, `focus_persona`, the keys of `gaze_dwell_s`) uses `persona.id`.
 - **Nothing here is fixed in code; n8n decides it for this meeting.** `plan` is how many questions n8n means to ask during the pitch and after it, with its reason, from the pitch length, the kind of meeting, the slides, each person's objections and difficulty, and weak spots from earlier rehearsals. `/turn` can change its mind as the pitch goes (time left, what's been covered).
+- `pitch_seconds` is the pitch length; with no limit *(0.25)*, n8n's estimate of a natural length for this deck (the slides' `target_seconds` still add up to it).
+- `time` *(0.25)*: how the chair keeps time, decided by n8n for this kind of meeting; `null` with no time limit (nobody keeps time, and the slides' times are only a guide). `nudge_at_s`: seconds into the session when the chair says time is nearly up (the `time_nudge` line). `cut_at_s`: when the chair stops the pitch and moves to the questions (the `time_up` line, then `pitch_end`); `0` when this chair lets the presenter finish. The client plays both at the presenter's next pause, from the lines voiced ahead of time, with nothing sent to n8n; only during the pitch, never while someone on the panel speaks, has a hand up or a turn is on its way, and never during the wrap-up countdown.
+- `plan.interrupts` *(0.25)*: where n8n means to give someone the chance to interrupt mid-slide: `persona_id` (whose `manner` is `interrupts`), `slide_index` (0 without a deck), `after_s` (seconds of the presenter's speech on that slide before the hand could go up; without a deck, speech since the pitch began) and `about` (a few words). Nothing about time decides when the client sends a slide: it sends each slide whole when the presenter moves on, and mid-slide only at the next pause after an interruption point is reached (see `/turn`, `segment`). n8n still decides at that moment whether the hand goes up.
 - `manner`: `interrupts` raises a hand during the pitch; `waits` keeps it for the questions. From the role and `difficulty`.
 - `chair` is true for exactly one person, who welcomes the presenter, opens the floor and closes the meeting (usually the most senior person, at the head of the table).
 - `voice` is the TTS voice for that person, chosen to fit their avatar.
 - `slides` follow the deck (empty without one); `target_seconds` add up to `pitch_seconds`. `image_url` is left empty by n8n and filled in by the laptop with its path for that slide. `notes` is the talk track from the last debrief of this meeting (what to say, with the last run's mistakes fixed), shown on the confidence monitor's speaker view; `null` on a first rehearsal.
 - *(0.20)* For a meeting rehearsed before, n8n reads its last debrief: each slide's `notes` is that run's talk track, a person whose topic is among its `weak_spots` gets an objection on it (`source: "history"`) and one more `difficulty` (at most 3), and `drill` is that run's drill.
 - `rescue_after_s`: seconds of silence before the calm, keyword and bridge cues. n8n can shorten or lengthen them for a presenter who froze or didn't last time.
-- `lines` are short lines voiced ahead of time, written for this meeting and this presenter (e.g. the chair's welcome, opening the floor, a few acknowledgements per person), so the common reactions play without waiting for a voice. The laptop saves each `audio_base64` as WAV and puts `audio_url` (`/api/audio/<id>.wav`) in its place in the room's bundle.
+- `lines` are short lines voiced ahead of time, written for this meeting and this presenter (e.g. the chair's welcome, opening the floor, a few acknowledgements per person), so the common reactions play without waiting for a voice. With a time limit *(0.25)*, the chair also has a `time_nudge` and, when `time.cut_at_s` is set, a `time_up` line, which the client plays itself (above). The laptop saves each `audio_base64` as WAV and puts `audio_url` (`/api/audio/<id>.wav`) in its place in the room's bundle.
 - `difficulty` is an integer from 1 to 3; weak spots from earlier sessions can raise it.
 - `drill` holds a drill from an earlier session if one exists.
 
@@ -233,14 +242,16 @@ Headset to laptop:
   "slide_index": 2,
   "t": 143.2,
   "audio_wav_base64": "string",
-  "asked_by": "p1"
+  "asked_by": "p1",
+  "mid_slide": false,
+  "time_up": false
 }
 ```
 Field notes:
 - `opening`: the presenter's first words, up to their first pause. n8n decides whether that was an introduction or a greeting that deserves a welcome, or the pitch itself (then nobody says anything).
-- `segment`: what they said on one slide, sent when they change slide. On a slide that runs past its `target_seconds`, also sent at the next pause, so a long slide doesn't keep the panel waiting.
+- `segment`: what they said on one slide, sent when they change slide, however long they spent on it *(0.25)*. Also sent mid-slide, with `mid_slide: true`, at the next pause once the presenter has said `after_s` seconds on a slide that has an entry in the bundle's `plan.interrupts` (once per entry), so that person can raise a hand in time. A slide recorded for over 5 minutes is also sent at the next pause (only so each upload stays small). Before 0.25 a slide past its `target_seconds` was sent at every pause.
 - `answer`: their answer to a question; `asked_by` is who asked (only sent with `answer`).
-- `pitch_end`: what they said on the last slide, once they go quiet there. This moves the session to the questions (before 0.18 the session ended there).
+- `pitch_end`: what they said on the last slide, once they go quiet there. This moves the session to the questions (before 0.18 the session ended there). `time_up: true` *(0.25)*: the chair stopped the pitch for time with the `time_up` line, so n8n doesn't open the floor again and goes straight to the first question. The laptop keeps `time_up` on the turn in `live.feed`.
 
 Laptop to n8n: the same, except the audio is compressed (`audio_wav_base64` becomes `audio_base64` with `"audio_format": "m4a"`, or `"wav"` if compressing failed), plus `context`:
 ```json
@@ -478,7 +489,7 @@ Field notes:
 - `slide` is the slide on screen, from 0. It goes back to 0 when a session starts or restarts, and when a deck is uploaded.
 - `debrief` *(0.20)*: the debrief of the run that just ended, `null` until a session ends (and again once one starts or restarts). `run_id` is that run's session id for `/debrief`, `GET /session` and the report (`/s/<run_id>/report`): the bundle's `session_id` plus the run's start time, so each run of the same panel gets its own report. `steps` are n8n's `debrief_status.steps` as the laptop last read them. `skipped` when there was nothing to debrief (no turns), `failed` with `error` when n8n failed. `overall` and `headline` are the debrief's, once `done`. `POST /api/room/debrief` (web) tries a failed debrief again.
 - `rehearse_in` *(0.23)*: where the presenter rehearses this panel, `"vr"` (the headset, the default, and for rooms saved before 0.23) or `"browser"` (the web app's rehearsal page, `/s/<session_id>/rehearse`). Set when the panel is briefed. **When it's `"browser"`, the headset** keeps seating the panel and showing slides, but doesn't start the session on speech or A, doesn't record or take turns, and its monitor says "Rehearsing in the browser". The browser page, when it's `"vr"`, offers "Rehearse here instead", which sets it to `"browser"`.
-- `pitch_minutes` *(0.18)*: how long the presenter means to pitch, sent to `/prep`. Set on the practice page; it starts at n8n's suggestion (`proposal.pitch.minutes`), or 5 without one.
+- `pitch_minutes` *(0.18)*: how long the presenter means to pitch, sent to `/prep`. Set on the practice page; it starts at n8n's suggestion (`proposal.pitch.minutes`), or 5 without one. `null` *(0.25)*: no time limit.
 - `height_offset` raises (or, if negative, lowers) the presenter's eyes in VR, in metres from -0.5 to 0.5, to the centimetre; 0 unless moved on the web. It's for when the headset's floor is off. The headset eases to it and keeps it after teleporting.
 - `scripted` *(0.21)*: `true` while the sample meeting is in the room. Its bundle, slides and voices are files on the laptop (`/sample/...`), nothing goes to n8n, and the laptop answers `/api/turn` from the sample's script. The headset then stands in for the presenter: it sends each moment without audio once the panel is quiet (the opening after 3 s, a `segment` every 8 s, moving to the next slide, an `answer` 3 s after a question, `pitch_end` on the last slide) and ignores the mic. A run of the sample isn't debriefed (`debrief.state` `skipped`). The sample is always rehearsed in the headset: briefing it sets `rehearse_in` to `"vr"`, and `PUT /api/room/settings` refuses `"browser"` (`409`). Absent or `false` otherwise; briefing a real panel turns it off.
 - When the deck is converted, the laptop also extracts each slide's text, which it sends to `/prep` (not in the room).
@@ -487,7 +498,7 @@ Field notes:
 Web only: saves the presenter's edits while drafting. Body: `{ "panel": [...] }` (the same items as `/prep`'s `panel`). Bumps `version`.
 
 ### PUT `/api/room/settings`
-Web only. Body: `{ "name_cards": true, "height_offset": 0.12, "pitch_minutes": 5, "rehearse_in": "browser" }`, any of them. `pitch_minutes` is a whole number from 1 to 60, allowed only before the panel is briefed. `rehearse_in` *(0.23)* is `"vr"` or `"browser"`, allowed while `briefed` or `done` (`409` otherwise). `height_offset` is clamped to -0.5 to 0.5 and rounded to the centimetre; the web sends it several times a second while its height bar is dragged. Answers with the room, or `400` with `{ "error": "string" }`. Bumps `version`.
+Web only. Body: `{ "name_cards": true, "height_offset": 0.12, "pitch_minutes": 5, "rehearse_in": "browser" }`, any of them. `pitch_minutes` is a whole number from 1 to 60, or `null` for no time limit *(0.25)*, allowed only before the panel is briefed. `rehearse_in` *(0.23)* is `"vr"` or `"browser"`, allowed while `briefed` or `done` (`409` otherwise). `height_offset` is clamped to -0.5 to 0.5 and rounded to the centimetre; the web sends it several times a second while its height bar is dragged. Answers with the room, or `400` with `{ "error": "string" }`. Bumps `version`.
 
 ### POST `/api/room/deck`
 Web only: uploads the presenter's deck. Body: `multipart/form-data` with one `file`: a PDF, PowerPoint (`.pptx`, `.ppt`) or Keynote (`.key`) file, up to 100 MB. The laptop converts it (PowerPoint and Keynote through LibreOffice, then every format through Ghostscript), which takes a few seconds, and answers with the room. Errors answer `400` (wrong type, empty, unreadable) or `500` (conversion failed) with `{ "error": "string" }`. Bumps `version`.
@@ -567,3 +578,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.22 (11 Oct): the proposed panel seats only the real attendees from outside the presenter's organisation (roles left empty when unknown); practice roles become ranked suggestions, each a whole person with a name and a face. Only a meeting with no known attendee gets two practice roles seated.
 - 0.23 (11 Oct): rehearse in the browser. The room gains `rehearse_in` (`"vr"` or `"browser"`, set when briefed and with `PUT /api/room/settings`; the headset doesn't take turns when it's `"browser"`) and `live.now` (who is speaking and who has a hand up, set with the new `POST /api/room/now`). The browser sends `/api/debrief` with `client: "web"` and its silences.
 - 0.24 (11 Oct): `/prep` streams its answer: a progress chunk after each stage (gathered, planned, voiced, and Groq standing in for Gemini), with the n8n execution on the first, then the bundle. The practice page has one "Rehearse" button that asks where (this laptop or the headset) and shows those steps live.
+- 0.25 (11 Oct): time no longer decides when the panel hears the presenter. A slide is sent whole when they move on, and mid-slide only at the interruption points n8n plans (`plan.interrupts`; `/turn` gains `mid_slide`). The pitch length can be `null` (no time limit). With a limit, n8n decides how the chair keeps time (`time`: nudge, and maybe stop the pitch for questions) and voices the chair's `time_nudge` and `time_up` lines, which the client plays itself; `pitch_end` gains `time_up`.

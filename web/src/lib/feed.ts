@@ -120,7 +120,7 @@ function what(turn: LoggedTurn | ThinkingTurn, first: (id: string) => string): s
     case "answer":
       return turn.asked_by ? `your answer to ${first(turn.asked_by)}` : "your answer";
     case "pitch_end":
-      return "the end of your pitch";
+      return "time_up" in turn && turn.time_up ? "the end of your pitch, stopped for time" : "the end of your pitch";
   }
 }
 
@@ -138,6 +138,9 @@ function reacted(r: Pick<Reaction, "kind" | "text" | "raise_hand">, name: string
       return `${name} opened the floor`;
     case "closing":
       return `${name} closed the meeting`;
+    case "time_nudge":
+    case "time_up":
+      return `${name}: ${r.text}`;
   }
 }
 

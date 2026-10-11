@@ -15,18 +15,19 @@ interface Props {
   live: boolean;
   cue: TurnView["cue"];
   wrapUp: number | null;
+  time: TurnView["time"];
   onGo: (index: number) => void;
 }
 
-// What the presenter sees while pitching, like the confidence monitor in VR: the slide, how long they've been on it against n8n's
-// target, the next slide, last time's talk track and, when they freeze, the Rescue Agent's cue under the slide.
-export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onGo }: Props) {
+// What the presenter sees while pitching, like the confidence monitor in VR: the slide, how long they've been on it (n8n's time for it
+// is only a guide), the pitch against its limit if there is one, the next slide, last time's talk track and, when they freeze, the
+// Rescue Agent's cue under the slide.
+export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, time, onGo }: Props) {
   const planned = bundle.slides[slide];
   const image = deck?.slides[slide];
   const next = slide + 1 < count ? { image: deck?.slides[slide + 1], title: bundle.slides[slide + 1]?.title } : null;
   const target = planned?.target_seconds ?? 0;
   const onSlide = useTimeOnSlide(slide, live);
-  const over = live && target > 0 && onSlide > target;
 
   return (
     <section aria-label="Speaker view" className="flex min-h-0 flex-col gap-3 rounded-2xl border border-line bg-surface p-4">
@@ -35,16 +36,11 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
           {count > 0 ? `Slide ${slide + 1} of ${count}` : "No deck"}
           {planned?.title && <span className="ml-2 font-normal text-ink-2">{planned.title}</span>}
         </h2>
-        <p className={`inline-flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap ${over ? "font-medium text-warn-ink" : "text-ink-2"}`} aria-live="off">
-          {over && (
-            <>
-              <StatusIcon tone="warn" />
-              Over time:{" "}
-            </>
-          )}
-          {live ? `${clock(onSlide)} of ${clock(target)}` : target ? `Target ${clock(target)}` : null}
+        <p className="shrink-0 text-xs whitespace-nowrap text-ink-2" aria-live="off">
+          {live ? `${clock(onSlide)} on this slide${target ? `, about ${clock(target)} planned` : ""}` : target ? `About ${clock(target)}` : null}
         </p>
       </div>
+      {time && <PitchClock time={time} />}
 
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element -- slide images come from the laptop, sized by the parent
@@ -56,7 +52,7 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
         />
       ) : (
         <div className="flex min-h-0 flex-col gap-2 rounded-md border border-line bg-paper p-4">
-          <p className="font-display text-lg leading-tight">{planned?.title ?? (count > 0 ? `Slide ${slide + 1}` : `A ${Math.round(bundle.pitch_seconds / 60)} min pitch`)}</p>
+          <p className="font-display text-lg leading-tight">{planned?.title ?? (count > 0 ? `Slide ${slide + 1}` : bundle.time === null ? "No time limit" : `A ${Math.round(bundle.pitch_seconds / 60)} min pitch`)}</p>
           {planned?.key_points.length ? (
             <ul className="list-disc pl-5 text-sm text-ink-2">
               {planned.key_points.map((k) => (
@@ -64,7 +60,7 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted">{count > 0 ? "No notes for this slide: talk to the time." : "No slides: talk to the time."}</p>
+            <p className="text-sm text-muted">{count > 0 ? "No notes for this slide." : "No slides: just talk."}</p>
           )}
         </div>
       )}
@@ -118,6 +114,18 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, onG
         <span className="ml-auto self-center text-xs text-muted">Page Down, Page Up or a clicker work too</span>
       </div>
     </section>
+  );
+}
+
+// The pitch against its limit: amber when it's close, red once it's over (the chair then keeps time, as n8n planned it)
+function PitchClock({ time }: { time: NonNullable<TurnView["time"]> }) {
+  const label = time.tone === "over" ? "Over time" : time.tone === "near" ? "Nearly at time" : "Pitch";
+  const ink = time.tone === "over" ? "text-bad-ink" : time.tone === "near" ? "text-warn-ink" : "text-ink-2";
+  return (
+    <p className={`-mt-1 inline-flex items-center gap-1.5 text-sm ${ink} ${time.tone === "ok" ? "" : "font-medium"}`} aria-live="off">
+      {time.tone !== "ok" && <StatusIcon tone={time.tone === "over" ? "bad" : "warn"} />}
+      {label} <span className="font-display tabular-nums">{clock(time.elapsed)}</span> of {clock(time.limit)}
+    </p>
   );
 }
 

@@ -1,12 +1,13 @@
-import type { Bundle, LiveSession, PersonaId, Reaction, TelemetryEvent, TurnMode, TurnRequest, TurnResponse } from "../contract";
+import type { Bundle, LiveSession, PersonaId, Reaction, TelemetryEvent, TurnMode, TurnRequest, TurnResponse, VoicedLine } from "../contract";
 import type { Recording } from "./voice-activity";
 import { minimumLevel } from "./voice-activity";
 import { concat, encodeWav, toBase64, trimSilence } from "./wav";
 
 // How the browser takes turns with the panel: a port of the headset's TurnTaker.cs and SessionController.WrapUp (tuned there; keep
 // the numbers and their names), plus the Rescue Agent's cues. n8n decides who reacts and what they say; this only decides when to send
-// what the presenter said, when someone may speak, and which reactions are too late to play. Everything it touches is injected, so it
-// runs without a browser.
+// what the presenter said, when someone may speak, and which reactions are too late to play. Time never decides when a slide is sent
+// (0.25): each slide goes whole when the presenter moves on, and mid-slide only at the interruption points n8n planned. With a time
+// limit, the chair keeps time with lines n8n voiced ahead of time. Everything it touches is injected, so it runs without a browser.
 
 // Seconds
 export const turnTimeoutS = 15;
@@ -15,7 +16,8 @@ export const minSpeechS = 1.5;
 export const preRollS = 1;
 export const answerPauseS = 1.2;
 export const maxTurnS = 90;
-export const defaultSlideS = 60;
+// A slide recorded for longer than this goes at the next pause anyway, only so each upload stays small
+export const maxSegmentS = 300;
 export const minHandS = 1.2;
 export const handTimeoutS = 15;
 export const welcomeLateS = 3;
@@ -84,6 +86,8 @@ export interface TurnView {
   cue: { level: 1 | 2 | 3; text: string } | null;
   // Seconds left before the questions, while counting down
   wrapUp: number | null;
+  // The pitch against its time limit, during the opening and the pitch; null with no limit
+  time: { elapsed: number; limit: number; tone: "ok" | "near" | "over" } | null;
   inFlight: number;
 }
 
@@ -95,6 +99,8 @@ interface Queued {
   // undefined while loading, null if it failed; "text" for a reaction with no voice (shown as a caption for a while)
   clip: Clip | null | undefined | "text";
   hand: { since: number; speechAt: number } | null;
+  // The chair keeping time: played by this client, never late, and time_up ends the pitch once it's said
+  local?: "time_nudge" | "time_up";
 }
 
 interface Speaking {
@@ -106,7 +112,9 @@ interface Speaking {
   handDown: boolean;
 }
 
-const EMPTY_VIEW: TurnView = { active: false, stage: "opening", speaking: null, hands: [], caption: null, prompt: null, cue: null, wrapUp: null, inFlight: 0 };
+const EMPTY_VIEW: TurnView = { active: false, stage: "opening", speaking: null, hands: [], caption: null, prompt: null, cue: null, wrapUp: null, time: null, inFlight: 0 };
+// The pitch clock turns amber at this share of the limit
+const nearShare = 0.8;
 
 export class TurnTaker {
   view: TurnView = EMPTY_VIEW;
@@ -119,8 +127,11 @@ export class TurnTaker {
   private mode: "opening" | "segment" | "answer" = "opening";
   private askedBy: PersonaId | null = null;
   private slide = 0;
-  private slideSince = 0;
+  // The speech clock when the current slide began, for the interruption points
+  private slideSpeechFrom = 0;
   private speechClock = 0;
+  private points: { slide: number; after: number; used: boolean }[] = [];
+  private timeKept = { nudged: false, cut: false };
   private held: Recording[] = [];
   private inFlight = 0;
   private queue: Queued[] = [];
@@ -157,8 +168,10 @@ export class TurnTaker {
     this.mode = stage === "opening" ? "opening" : stage === "pitch" ? "segment" : "answer";
     this.askedBy = null;
     this.slide = this.deps.slide();
-    this.slideSince = now;
     this.speechClock = 0;
+    this.slideSpeechFrom = 0;
+    this.points = (this.bundle.plan.interrupts ?? []).map((p) => ({ slide: p.slide_index, after: p.after_s, used: false }));
+    this.timeKept = { nudged: false, cut: false };
     this.held = [];
     this.inFlight = 0;
     this.queue = [];
@@ -207,11 +220,12 @@ export class TurnTaker {
     }
     const slideNow = this.deps.slide();
 
-    if (this.stage === "opening" && this.mode === "opening") this.opening(paused, slideNow, now);
-    else if (this.mode === "answer" && this.askedBy) this.answering(speaking, slideNow, now);
-    else if (this.stage === "pitch" && this.mode === "segment") this.pitching(paused, slideNow, now);
+    if (this.stage === "opening" && this.mode === "opening") this.opening(paused, slideNow);
+    else if (this.mode === "answer" && this.askedBy) this.answering(speaking, slideNow);
+    else if (this.stage === "pitch" && this.mode === "segment") this.pitching(paused, slideNow);
 
     if (this.active) this.wrapUp(speaking, slideNow, now);
+    if (this.active) this.keepTime();
     if (this.active) this.playQueue(speaking, slideNow, now);
     if (this.active) this.rescue(speaking, now);
     if (this.active) this.maybeEnd(speaking, now);
@@ -219,18 +233,22 @@ export class TurnTaker {
   }
 
   // 6.2 Opening: the first pause (or a slide change) sends what was said, then the pitch starts
-  private opening(paused: boolean, slideNow: number, now: number): void {
+  private opening(paused: boolean, slideNow: number): void {
     if (!((paused && this.ears.recordedSpeech > openingMinS) || slideNow !== this.slide)) return;
     const rec = this.ears.takeRecording();
     if (rec.speech > openingMinS) this.send("opening", this.slide, [rec]);
     this.stage = "pitch";
     this.mode = "segment";
+    this.toSlide(slideNow);
+  }
+
+  private toSlide(slideNow: number): void {
     this.slide = slideNow;
-    this.slideSince = now;
+    this.slideSpeechFrom = this.speechClock;
   }
 
   // An answer is done at a pause; during the pitch a slide change or a long answer cuts it off
-  private answering(speaking: boolean, slideNow: number, now: number): void {
+  private answering(speaking: boolean, slideNow: number): void {
     const moved = this.stage === "pitch" && slideNow !== this.slide;
     const done = !speaking && this.ears.quietFor >= answerPauseS && this.ears.recordedSpeech > answerMinS;
     if (!done && !moved && this.ears.recordedSeconds <= maxTurnS) return;
@@ -244,32 +262,26 @@ export class TurnTaker {
     if (moved) {
       const held = this.takeHeld();
       if (sum(held) >= minSpeechS) this.send("segment", this.slide, held);
-      this.slide = slideNow;
-      this.slideSince = now;
+      this.toSlide(slideNow);
     }
   }
 
-  private pitching(paused: boolean, slideNow: number, now: number): void {
+  // Each slide goes whole when the presenter moves on, however long they took. Mid-slide only at the next pause once they've said
+  // enough to reach one of n8n's interruption points on it, so that person can raise a hand in time (n8n still decides if they do).
+  private pitching(paused: boolean, slideNow: number): void {
     if (slideNow !== this.slide) {
       const rec = [...this.takeHeld(), this.ears.takeRecording()];
       if (sum(rec) >= minSpeechS) this.send("segment", this.slide, rec);
-      this.slide = slideNow;
-      this.slideSince = now;
+      this.toSlide(slideNow);
       return;
     }
-    // A long slide goes in parts, at a pause, so n8n hears it in time to react
-    const target = this.bundle.slides[this.slide]?.target_seconds ?? defaultSlideS;
-    const long = now - this.slideSince > target || this.ears.recordedSeconds > maxTurnS;
-    if (long && paused && !this.onLastSlide(slideNow)) {
-      const rec = [...this.takeHeld(), this.ears.takeRecording()];
-      if (sum(rec) >= minSpeechS) this.send("segment", this.slide, rec);
-      this.slideSince = now;
-    }
-  }
-
-  private onLastSlide(slideNow: number): boolean {
-    const count = this.deps.slideCount();
-    return count != null && slideNow >= count - 1;
+    if (!paused) return;
+    const said = this.speechClock - this.slideSpeechFrom;
+    const due = this.points.filter((p) => !p.used && p.slide === this.slide && said >= p.after);
+    if (!due.length && this.ears.recordedSeconds <= maxSegmentS) return;
+    for (const p of due) p.used = true;
+    const rec = [...this.takeHeld(), this.ears.takeRecording()];
+    if (sum(rec) >= minSpeechS) this.send("segment", this.slide, rec, undefined, due.length ? { mid_slide: true } : {});
   }
 
   // 6.5 At the pitch end, quiet after speaking there, with the panel idle: count down, then the questions
@@ -289,14 +301,63 @@ export class TurnTaker {
     }
     this.wrap.countdownFrom ??= now;
     if (now - this.wrap.countdownFrom < wrapUpCountdown) return;
-    // The pitch is over: the last slide goes with the pitch end
+    this.endPitch(slideNow, false);
+  }
+
+  // The pitch is over (wrapped up, or stopped for time): the last slide goes with the pitch end, then the questions
+  private endPitch(slideNow: number, timeUp: boolean): void {
     this.wrap = { spoke: false, countdownFrom: null };
     const rec = [...this.takeHeld(), this.ears.takeRecording()];
-    this.send("pitch_end", slideNow, rec);
+    this.send("pitch_end", slideNow, rec, undefined, timeUp ? { time_up: true } : {});
     this.stage = "questions";
     this.mode = "answer";
     this.askedBy = null;
     this.slide = slideNow;
+  }
+
+  // 0.25 With a time limit, the chair keeps time as n8n planned it: says time is nearly up, and maybe stops the pitch for the questions.
+  // From lines voiced ahead of time, at the presenter's next pause (the queue waits for it), with nothing sent to n8n. Never over the
+  // panel, a raised hand, a turn on its way, an answer or the wrap-up countdown.
+  private keepTime(): void {
+    const time = this.bundle.time;
+    if (!time?.limit_s || this.stage !== "pitch" || this.mode !== "segment") return;
+    if (this.panelBusy() || this.wrap.countdownFrom != null) return;
+    const elapsed = this.deps.elapsed();
+    const chair = this.bundle.personas.find((p) => p.chair);
+    if (time.cut_at_s > 0 && elapsed >= time.cut_at_s && !this.timeKept.cut) {
+      this.timeKept = { nudged: true, cut: true };
+      const line = chair && this.line(chair.id, "time_up");
+      // Without the chair's line, the pitch still ends, and n8n opens the floor as usual
+      if (line) this.say(line, "time_up");
+      else this.endPitch(this.deps.slide(), false);
+      return;
+    }
+    if (time.nudge_at_s > 0 && elapsed >= time.nudge_at_s && !this.timeKept.nudged) {
+      this.timeKept.nudged = true;
+      const line = chair && this.line(chair.id, "time_nudge");
+      if (line) this.say(line, "time_nudge");
+    }
+  }
+
+  private line(personaId: PersonaId, kind: VoicedLine["kind"]): VoicedLine | undefined {
+    return this.bundle.lines.find((l) => l.persona_id === personaId && l.kind === kind);
+  }
+
+  // Queues a line voiced ahead of time, played by this client
+  private say(line: VoicedLine, local: "time_nudge" | "time_up"): void {
+    const run = this.run;
+    const reaction: Reaction = { persona_id: line.persona_id, kind: local, text: line.text, line_id: line.id, raise_hand: false, reason: "Keeping time" };
+    const item: Queued = { reaction, mode: "segment", slide: this.slide, speechAtSend: this.speechClock, clip: line.audio_url ? undefined : "text", hand: null, local };
+    this.queue.push(item);
+    if (line.audio_url)
+      this.deps.load(line.audio_url).then(
+        (clip) => {
+          if (run === this.run) item.clip = clip ?? "text";
+        },
+        () => {
+          if (run === this.run) item.clip = "text";
+        },
+      );
   }
 
   // 6.3 The queue: drop late reactions, raise hands, and let the next person speak when the presenter pauses
@@ -327,6 +388,7 @@ export class TurnTaker {
   }
 
   private isLate(q: Queued, slideNow: number): boolean {
+    if (q.local) return false;
     if (q.clip === null) return true;
     if (q.mode === "opening" && this.speechClock - q.speechAtSend > welcomeLateS) return true;
     if ((q.mode === "opening" || q.mode === "segment") && slideNow - q.slide >= 2) return true;
@@ -370,6 +432,8 @@ export class TurnTaker {
       this.askedBy = persona_id;
       this.ears.beginRecording();
     }
+    // The chair stopped the pitch for time: on to the questions, without n8n opening the floor again
+    if (c.item.local === "time_up" && this.stage === "pitch") this.endPitch(this.deps.slide(), true);
     this.publish();
     this.maybeEnd(this.ears.speaking, now);
   }
@@ -433,13 +497,21 @@ export class TurnTaker {
     return [...new Set(up)];
   }
 
+  // Whole seconds, so the view only changes once a second
+  private pitchClock(): TurnView["time"] {
+    const limit = this.bundle.time?.limit_s;
+    if (!this.active || !limit || (this.stage !== "opening" && this.stage !== "pitch")) return null;
+    const elapsed = Math.floor(this.deps.elapsed());
+    return { elapsed, limit, tone: elapsed >= limit ? "over" : elapsed >= nearShare * limit ? "near" : "ok" };
+  }
+
   private takeHeld(): Recording[] {
     const held = this.held;
     this.held = [];
     return held;
   }
 
-  private send(mode: TurnMode, slide: number, parts: Recording[], askedBy?: PersonaId): void {
+  private send(mode: TurnMode, slide: number, parts: Recording[], askedBy?: PersonaId, flags: Pick<TurnRequest, "mid_slide" | "time_up"> = {}): void {
     const run = this.run;
     const now = this.deps.now();
     const samples = trimSilence(concat(parts.map((p) => p.samples)), Math.max(minimumLevel * 0.5, Math.max(0, this.ears.background) * 2));
@@ -450,6 +522,7 @@ export class TurnTaker {
       t: round1(this.deps.elapsed()),
       audio_wav_base64: toBase64(encodeWav(samples)),
       ...(askedBy ? { asked_by: askedBy } : {}),
+      ...flags,
     };
     const speechAtSend = this.speechClock;
     this.inFlight++;
@@ -510,6 +583,7 @@ export class TurnTaker {
       prompt: name ? `${name} has a question.` : null,
       cue: this.active ? this.cue : null,
       wrapUp: this.wrap.countdownFrom != null ? Math.max(0, Math.ceil(wrapUpCountdown - (now - this.wrap.countdownFrom))) : null,
+      time: this.pitchClock(),
       inFlight: this.inFlight,
     };
     if (JSON.stringify(next) === JSON.stringify(this.view)) return;

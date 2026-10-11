@@ -109,6 +109,7 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     slide_index: body.slide_index,
     t: body.t,
     ...(body.asked_by ? { asked_by: body.asked_by } : {}),
+    ...(body.time_up ? { time_up: true } : {}),
     transcript: reply.transcript ?? "",
     note: reply.note ?? "",
     reactions: reactions.map(({ persona_id, kind, text, raise_hand, reason }) => ({ persona_id, kind, text, raise_hand, reason })),
@@ -156,7 +157,8 @@ function standInReply(body: TurnRequest, bundle: Bundle, feed: LoggedTurn[]): Tu
   }
 
   if (body.mode === "pitch_end") {
-    const reactions = chair ? [say("open_floor", chair.id, "Thank you. Let's open it up for questions.", line("open_floor", chair.id) ?? line("open_floor"))] : [];
+    // Stopped for time, the chair has already moved to the questions (0.25)
+    const reactions = chair && !body.time_up ? [say("open_floor", chair.id, "Thank you. Let's open it up for questions.", line("open_floor", chair.id) ?? line("open_floor"))] : [];
     const waiter = bundle.personas.find((p) => p.manner === "waits" && p.objections.some((o) => !asked.has(o.text)));
     const question = waiter?.objections.find((o) => !asked.has(o.text));
     if (waiter && question) return reply([...reactions, say("question", waiter.id, question.text, undefined, true)]);

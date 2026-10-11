@@ -29,7 +29,7 @@ export interface DebugInfo {
   rate: number;
 }
 
-const IDLE_VIEW: TurnView = { active: false, stage: "opening", speaking: null, hands: [], caption: null, prompt: null, cue: null, wrapUp: null, inFlight: 0 };
+const IDLE_VIEW: TurnView = { active: false, stage: "opening", speaking: null, hands: [], caption: null, prompt: null, cue: null, wrapUp: null, time: null, inFlight: 0 };
 
 async function postJson(url: string, body: unknown, timeoutS?: number): Promise<Response> {
   return fetch(url, {

@@ -72,7 +72,8 @@ export interface DraftMember extends Omit<PanelMember, "gender" | "why" | "sourc
 // POST /prep: the brief inputs, the confirmed panel and how long the presenter means to pitch
 export interface PrepRequest extends BriefInput {
   draft_id: string;
-  pitch_minutes: number;
+  // null: no time limit (0.25)
+  pitch_minutes: number | null;
   panel: DraftMember[];
   // false skips voicing the lines (testing without spending TTS credits); default true
   voices?: boolean;
@@ -125,7 +126,8 @@ export interface Persona extends Seating {
 export interface VoicedLine {
   id: string;
   persona_id: PersonaId;
-  kind: "welcome" | "open_floor" | "acknowledge";
+  // The chair's time_nudge and time_up (0.25) are played by the client itself when time runs out
+  kind: "welcome" | "open_floor" | "acknowledge" | "time_nudge" | "time_up";
   text: string;
   audio_base64?: string;
   audio_url?: string;
@@ -141,9 +143,12 @@ export interface Drill {
 export interface Bundle {
   session_id: string;
   prospect: { company: string };
+  // The pitch length; with no limit, n8n's estimate of a natural length for the deck
   pitch_seconds: number;
+  // How the chair keeps time (0.25); null with no time limit, missing before 0.25
+  time?: TimeKeeping | null;
   // How many questions n8n means to ask during and after the pitch, and why; /turn can change its mind
-  plan: { during_pitch: number; after_pitch: number; why: string };
+  plan: Plan;
   // Seconds of silence before the calm, keyword and bridge cues
   rescue_after_s: [number, number, number];
   slides: Slide[];
@@ -152,13 +157,39 @@ export interface Bundle {
   drill: Drill | null;
 }
 
+// Seconds since the session began: the chair says time is nearly up at nudge_at_s, and stops the pitch for the questions at
+// cut_at_s (0: lets the presenter finish)
+export interface TimeKeeping {
+  limit_s: number;
+  nudge_at_s: number;
+  cut_at_s: number;
+  why: string;
+}
+
+export interface Plan {
+  during_pitch: number;
+  after_pitch: number;
+  why: string;
+  // Where someone may interrupt mid-slide (0.25): after this many seconds of speech on that slide (from the pitch's start without a
+  // deck). Missing before 0.25.
+  interrupts?: InterruptPoint[];
+}
+
+export interface InterruptPoint {
+  persona_id: PersonaId;
+  slide_index: number;
+  after_s: number;
+  about: string;
+}
+
 export type Verdict = "resolved" | "partial" | "dodged";
 
 export type TurnMode = "opening" | "segment" | "answer" | "pitch_end";
 
 export interface Reaction {
   persona_id: PersonaId;
-  kind: "welcome" | "question" | "follow_up" | "acknowledge" | "open_floor" | "closing";
+  // time_nudge and time_up never come from n8n: the client plays them from the bundle's lines when time runs out (0.25)
+  kind: "welcome" | "question" | "follow_up" | "acknowledge" | "open_floor" | "closing" | "time_nudge" | "time_up";
   text: string;
   // One of the bundle's lines, played instead of new audio
   line_id?: string;
@@ -179,6 +210,10 @@ export interface TurnRequest {
   t: number;
   audio_wav_base64: string;
   asked_by?: PersonaId;
+  // A segment sent mid-slide, at one of the plan's interruption points (0.25)
+  mid_slide?: boolean;
+  // A pitch_end after the chair stopped the pitch for time (0.25): n8n doesn't open the floor again
+  time_up?: boolean;
 }
 
 // A turn as the laptop logs it and sends it back to n8n as context (no audio)
@@ -187,6 +222,8 @@ export interface LoggedTurn {
   slide_index: number;
   t: number;
   asked_by?: PersonaId;
+  // The chair stopped the pitch for time (0.25)
+  time_up?: boolean;
   transcript: string;
   note?: string;
   reactions: Pick<Reaction, "persona_id" | "kind" | "text" | "raise_hand" | "reason">[];
@@ -395,8 +432,8 @@ export interface Room {
   slide: number;
   // Metres to raise (or lower, if negative) the presenter's eyes in VR, from -0.5 to 0.5; 0 unless moved on the web
   height_offset: number;
-  // How long the presenter means to pitch, sent to /prep; starts at n8n's suggestion, or 5
-  pitch_minutes: number;
+  // How long the presenter means to pitch, sent to /prep; starts at n8n's suggestion, or 5. null: no time limit (0.25)
+  pitch_minutes: number | null;
   // Where the presenter rehearses this panel (0.23): the headset, or the browser's rehearsal page; "vr" for older rooms
   rehearse_in: RehearseIn;
   // The debrief of the run that just ended (0.20); null until a session ends, and again once one starts
