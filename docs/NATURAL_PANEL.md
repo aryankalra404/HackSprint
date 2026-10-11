@@ -1,5 +1,7 @@
 # A panel that feels real (working plan, delete when built)
 
+**Status, 12 Oct:** every step below is built and deployed (contract 0.26), except reading charts (paused) and finding the deck (dropped). Tested by replaying the 11 Oct runs through the deployed n8n logic, n8n test runs with stubbed models, simulations of the browser turn-taker, and the report and brief pages. **Not yet tested in a real spoken run** (see Testing below), and the Whisper model comparison isn't done. Delete this file once a real run has passed and its decisions are folded into PLAN.md, CONTRACT.md and ARCHITECTURE.md (mostly done).
+
 Temporary. When everything below is built, fold the decisions into `PLAN.md` (decisions log), `CONTRACT.md` (0.26) and `ARCHITECTURE.md`, then delete this file.
 
 ## Why
