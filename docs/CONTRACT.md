@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.25, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.26, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -265,15 +265,19 @@ Laptop to n8n: the same, except the audio is compressed (`audio_wav_base64` beco
         "slide_index": 1,
         "t": 80.1,
         "transcript": "string",
-        "reactions": [{ "persona_id": "p1", "kind": "question", "text": "string" }],
-        "answer_verdict": null
+        "reactions": [{ "persona_id": "p1", "kind": "question", "text": "string", "thread_id": "q1" }],
+        "answer_verdict": null,
+        "threads": []
       }
     ],
+    "threads": [{ "id": "q1", "persona_id": "p3", "text": "string", "slide_index": 2, "status": "open | followed_up | answered | parked | dodged", "follow_ups": 0, "planned": false }],
     "pending": [{ "persona_id": "p3", "text": "string", "slide_index": 2 }]
   }
 }
 ```
-- `bundle` is the `/prep` response without audio. `turns` are this run's earlier turns, oldest first (the room's `live.feed`). `pending` are questions nobody has answered yet: the laptop counts a question as pending until an `answer` with that person's `asked_by` arrives, so a hand that went down because the presenter talked on stays pending, and n8n can bring it back in the questions ("Earlier I wanted to ask…").
+- `bundle` is the `/prep` response without audio. `turns` are this run's earlier turns, oldest first (the room's `live.feed`).
+- `threads` *(0.26)*: every question asked so far, with its life: `open` (asked, or a hand that went down unasked), `followed_up` (one follow-up asked), then closed for good: `answered`, `parked` (the presenter said they don't know or will come back, and the asker accepted it) or `dodged` (no real answer after the follow-up). The laptop keeps them from n8n's replies (each turn in `live.feed` carries its `threads` changes) and sends them back, so n8n stays stateless. n8n never asks a closed thread again, nor anything close to it, and asks at most one follow-up per thread. An `answer` answers `asked_by`'s latest open thread.
+- `pending` are questions nobody has answered yet: the laptop counts a question as pending until an `answer` with that person's `asked_by` arrives, so a hand that went down because the presenter talked on stays pending, and n8n can bring it back in the questions ("Earlier I wanted to ask…"). Kept for one version after 0.26 for older workflows; `threads` replaces it.
 
 Response, n8n to laptop:
 ```json
@@ -283,15 +287,17 @@ Response, n8n to laptop:
   "reactions": [
     {
       "persona_id": "p1",
-      "kind": "welcome | question | follow_up | acknowledge | open_floor | closing",
+      "kind": "welcome | question | follow_up | acknowledge | park | move_on | hand_back | open_floor | closing",
       "text": "string",
       "line_id": "string",
       "audio_base64": "string",
       "raise_hand": true,
-      "reason": "string"
+      "reason": "string",
+      "thread_id": "q1"
     }
   ],
   "answer_verdict": "resolved | partial | dodged | null",
+  "threads": [{ "id": "q1", "persona_id": "p3", "text": "string", "slide_index": 2, "status": "parked", "follow_ups": 1, "planned": false }],
   "end_session": false
 }
 ```
@@ -303,6 +309,9 @@ Field notes:
 - `raise_hand`: the person raises a hand and waits for the presenter to pause before speaking (a question during the pitch). Otherwise they speak at the presenter's next pause.
 - `reason` explains why n8n chose this person and line. It's shown in the debrief and the live feed.
 - `answer_verdict` is only set when `mode` is `answer`.
+- `threads` *(0.26)*: the threads this turn opened or changed, whole; the laptop replaces each by `id`. `thread_id` on a reaction names the thread it belongs to (a question's own thread, or the one being answered for a follow-up, park, move-on or hand-back).
+- `park`, `move_on`, `hand_back` *(0.26)*: the asker accepts "I don't know" ("That's fine, send it to us after."), lets a dodged question go ("Okay, let's leave that there."), or hands back to the pitch after a question during it ("Thanks, please go on."). Played like any other reaction.
+- n8n holds its own reactions to the rules after the model *(0.26)*, in a Code node: `open_floor` only on `pitch_end`, `closing` only after the pitch; during the pitch a question only from someone whose `manner` is `interrupts`, and only when the presenter said enough on the slide (about 12 words, fewer at an interruption point); after a question during the pitch is closed, the asker hands back; after the pitch, if the model's next question was dropped, the next open thread or an unasked objection is asked instead, or the chair closes.
 - `end_session`: the reactions end with the chair's closing; the headset ends the session (`POST /api/room/session` `end`) once they finish playing.
 
 Laptop to headset: the same, with each `audio_base64` saved on the laptop as WAV and replaced by `audio_url`, and each `line_id` resolved to that line's `audio_url`. The laptop also adds the turn to the room's live feed.
@@ -579,3 +588,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.23 (11 Oct): rehearse in the browser. The room gains `rehearse_in` (`"vr"` or `"browser"`, set when briefed and with `PUT /api/room/settings`; the headset doesn't take turns when it's `"browser"`) and `live.now` (who is speaking and who has a hand up, set with the new `POST /api/room/now`). The browser sends `/api/debrief` with `client: "web"` and its silences.
 - 0.24 (11 Oct): `/prep` streams its answer: a progress chunk after each stage (gathered, planned, voiced, and Groq standing in for Gemini), with the n8n execution on the first, then the bundle. The practice page has one "Rehearse" button that asks where (this laptop or the headset) and shows those steps live.
 - 0.25 (11 Oct): time no longer decides when the panel hears the presenter. A slide is sent whole when they move on, and mid-slide only at the interruption points n8n plans (`plan.interrupts`; `/turn` gains `mid_slide`). The pitch length can be `null` (no time limit). With a limit, n8n decides how the chair keeps time (`time`: nudge, and maybe stop the pitch for questions) and voices the chair's `time_nudge` and `time_up` lines, which the client plays itself; `pitch_end` gains `time_up`.
+- 0.26 (12 Oct): a panel that feels real. `/turn` keeps every question's life in `threads` (in the context and in the response, with `thread_id` on reactions): at most one follow-up, then answered, parked or dodged, never asked again. Reactions gain `park`, `move_on` and `hand_back`. n8n enforces the rules after the model in a Code node.

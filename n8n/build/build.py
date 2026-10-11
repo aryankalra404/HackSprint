@@ -803,10 +803,155 @@ def groq_first_nodes(var, name, prompt, output, schema, source):
     return groq + gemini
 
 
+# What n8n decided, held to the rules in code (contract 0.26), since a prompt alone didn't stop the panel asking one question five times
+# or opening the floor mid-pitch. Every question is a thread: asked, at most one follow-up, then answered, parked or dodged, and never
+# asked again. Lines voiced ahead of time play as they are; new lines go to the voice.
+CHECK_JS = """
+const r = $('What the room knows').first().json;
+const d = JSON.parse(replyText($json) || '{}');
+const people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]));
+const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
+const name = id => ((people[id] || {}).display_name || id).split(' ')[0];
+const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'park', 'move_on', 'hand_back', 'open_floor', 'closing'];
+let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id])).map(x => ({ ...x }));
+if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
+// Stopped for time, the chair has already moved to the questions with a line the headset played (0.25)
+if (r.mode === 'pitch_end' && r.time_up) reactions = reactions.filter(x => x.kind !== 'open_floor');
+
+// Near-duplicates: about half the content words (cut to 5 letters, so "verify" matches "verification") of the shorter question are in the other
+const STOP = new Set(['what', 'that', 'this', 'with', 'your', 'have', 'will', 'would', 'could', 'should', 'about', 'there', 'their', 'them', 'they',
+  'into', 'from', 'does', 'when', 'where', 'which', 'were', 'been', 'than', 'then', 'also', 'just', 'some', 'more', 'much', 'very', 'like',
+  'make', 'sure', 'know', 'going', 'want', 'tell', 'give', 'okay', 'thanks', 'please', 'how', 'can', 'you', 'the', 'and', 'are', 'for']);
+const words = t => String(t || '').toLowerCase().split(/[^a-z0-9%]+/).filter(Boolean);
+const content = t => new Set(words(t).filter(w => w.length > 3 && !STOP.has(w)).map(w => w.slice(0, 5)));
+const near = (a, b) => {
+  const A = content(a), B = content(b);
+  let n = 0;
+  A.forEach(w => { if (B.has(w)) n++; });
+  return (n >= 4 && n / Math.min(A.size, B.size) >= 0.5) || (n > 0 && n / Math.max(A.size, B.size) >= 0.7);
+};
+const CLOSED = ['answered', 'parked', 'dodged'];
+const threads = (r.threads || []).map(t => ({ ...t, follow_ups: t.follow_ups || 0 }));
+const byId = Object.fromEntries(threads.map(t => [t.id, t]));
+// Everything a thread has asked so far (the question and its follow-up), from the turns
+const asks = t => [t.text].concat(r.turns.flatMap(x => (x.reactions || []).filter(y => y.thread_id === t.id).map(y => y.text)));
+const like = text => threads.find(t => asks(t).some(a => near(a, text)));
+const changed = new Set();
+const pitchOver = r.mode === 'pitch_end' || r.turns.some(t => t.mode === 'pitch_end');
+const said = words(r.transcript).length;
+// A line voiced ahead of time of this kind for this person, or new text
+const say = (pid, kind, text, reason, threadId) => {
+  const l = (r.bundle.lines || []).find(x => x.persona_id === pid && x.kind === kind);
+  return { persona_id: pid, kind, text: l ? l.text : text, line_id: l ? l.id : '', raise_hand: false, reason, thread_id: threadId || '' };
+};
+
+// An answer closes its thread, or earns its one follow-up
+const verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;
+const cur = r.answering_id ? byId[r.answering_id] : null;
+if (cur) {
+  const asker = cur.persona_id;
+  const unsure = d.presenter_unsure === true || /(not sure|not certain|don.t know|do not know|no idea|get back to|come back to|find out|have to check|need to check)/i.test(r.transcript);
+  const wantsFollow = reactions.some(x => x.kind === 'follow_up' && x.persona_id === asker);
+  const follow = verdict !== 'resolved' && !unsure && wantsFollow && cur.follow_ups < 1;
+  if (follow) {
+    cur.status = 'followed_up';
+    cur.follow_ups += 1;
+    // Just the follow-up: the presenter answers it next
+    reactions = reactions.filter(x => x.kind === 'follow_up' && x.persona_id === asker).slice(0, 1);
+  } else {
+    // A second follow-up becomes a close: parked if they said they don't know, otherwise dodged
+    cur.status = verdict === 'resolved' ? 'answered' : unsure ? 'parked' : verdict === 'dodged' || wantsFollow ? 'dodged' : 'answered';
+    reactions = reactions.filter(x => x.kind !== 'follow_up');
+    const own = reactions.filter(x => x.persona_id === asker && ['acknowledge', 'park', 'move_on'].includes(x.kind));
+    if (cur.status === 'parked' && !own.some(x => x.kind === 'park')) {
+      reactions = reactions.filter(x => !(x.persona_id === asker && x.kind === 'acknowledge'));
+      reactions.unshift(say(asker, 'park', "That's fine, send it to us after.", "You said you weren't sure, so " + name(asker) + ' parked it for later.', cur.id));
+    } else if (cur.status === 'dodged' && !own.length) {
+      reactions.unshift(say(asker, 'move_on', "Okay, let's leave that there.", name(asker) + ' had already followed up once, so they let it go, unconvinced.', cur.id));
+    }
+    // During the pitch, the asker hands back, and nobody asks anything new
+    if (!pitchOver) {
+      reactions = reactions.filter(x => !['question', 'open_floor', 'closing'].includes(x.kind));
+      if (!reactions.some(x => x.kind === 'hand_back')) reactions.push(say(asker, 'hand_back', 'Thanks. Please, go on.', 'Back to the pitch.', cur.id));
+    }
+  }
+  changed.add(cur.id);
+  reactions.forEach(x => { if (x.persona_id === asker && x.kind !== 'question') x.thread_id = cur.id; });
+}
+
+// Questions: one at a time, never a closed thread or anything close to one; during the pitch only from someone who interrupts, once
+// the presenter has said enough on the slide (about 10 seconds, or 5 at a planned interruption point), never on the title slide
+// unless planned, and never the floor opened or the meeting closed
+const out = [];
+let asked = 0;
+for (const x of reactions) {
+  if (x.kind === 'open_floor' && r.mode !== 'pitch_end') continue;
+  if (x.kind === 'closing' && !pitchOver) continue;
+  if (['park', 'move_on', 'hand_back', 'follow_up'].includes(x.kind) && r.mode !== 'answer') continue;
+  if (x.kind === 'question') {
+    if (asked >= 1) continue;
+    if (!pitchOver && r.mode !== 'segment') continue;
+    if (r.mode === 'segment' && (people[x.persona_id].manner === 'waits' || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide))) continue;
+    let t = x.thread_id ? byId[x.thread_id] : null;
+    if (!t) t = like(x.text) || null;
+    if (t && (CLOSED.includes(t.status) || t === cur || t.persona_id !== x.persona_id)) continue;
+    if (!t) {
+      t = { id: 'q' + (threads.length + 1), persona_id: x.persona_id, text: x.text, slide_index: r.slide_index, status: 'open', follow_ups: 0, planned: false };
+      threads.push(t);
+      byId[t.id] = t;
+    }
+    changed.add(t.id);
+    x.thread_id = t.id;
+    asked++;
+  }
+  out.push(x);
+}
+reactions = out;
+if (asked) reactions = reactions.filter(x => x.kind !== 'closing');
+
+// After the pitch someone always speaks next: if the model's question was dropped, the next open thread, then an objection nobody
+// has asked (they're written as questions), or, with none left or the plan's questions done, the chair closes
+const followedUp = reactions.some(x => x.kind === 'follow_up');
+if (pitchOver && (r.mode === 'answer' || r.mode === 'pitch_end') && !asked && !followedUp && !reactions.some(x => x.kind === 'closing')) {
+  const open = threads.find(t => t.status === 'open' && t !== cur && people[t.persona_id]);
+  const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
+  const more = r.asked_after < Math.max(1, (r.bundle.plan || {}).after_pitch || 0);
+  const unasked = more ? (r.bundle.personas || []).flatMap(p => (p.objections || []).map(o => ({ p, text: o.text })))
+    .filter(o => o.text.includes('?') && !like(o.text)).sort((a, b) => (b.p.difficulty || 0) - (a.p.difficulty || 0))[0] : null;
+  if (open) {
+    reactions.push({ persona_id: open.persona_id, kind: 'question', text: open.text, line_id: '', raise_hand: false, reason: name(open.persona_id) + ' still had this open from earlier.', thread_id: open.id });
+    changed.add(open.id);
+  } else if (unasked) {
+    const t = { id: 'q' + (threads.length + 1), persona_id: unasked.p.id, text: unasked.text, slide_index: r.slide_index, status: 'open', follow_ups: 0, planned: false };
+    threads.push(t);
+    byId[t.id] = t;
+    changed.add(t.id);
+    reactions.push({ persona_id: t.persona_id, kind: 'question', text: t.text, line_id: '', raise_hand: false, reason: name(t.persona_id) + ' had not raised this yet.', thread_id: t.id });
+  } else if (chair) {
+    reactions.push({ persona_id: chair.id, kind: 'closing', text: "Thank you, that's everything from us for today. We'll be in touch.", line_id: '', raise_hand: false, reason: 'No questions left, so the chair closed the meeting.', thread_id: '' });
+  }
+}
+
+// The model sometimes starts a line with who says it ("Rohan: ..."), which the voice would read out
+const unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];
+  return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };
+reactions = reactions.slice(0, 3).map(x => {
+  const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
+  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : unnamed(people[x.persona_id], x.text), raise_hand: r.mode === 'segment' && x.kind === 'question',
+                reason: x.reason || '', ...(x.thread_id ? { thread_id: x.thread_id } : {}) };
+  return line ? { ...out, line_id: line.id } : out;
+});
+// A bundle briefed before voices existed has none: fall back to a voice that fits the avatar
+const voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');
+const toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);
+return [{ json: { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, threads: [...changed].map(id => byId[id]),
+                           end_session: reactions.some(x => x.kind === 'closing') }, to_voice: toVoice } }];"""
+
+
 TURN_REQUEST = {"body": {"session_id": "s1", "mode": "segment", "slide_index": 1, "t": 42.0, "audio_base64": "UklGRg==", "audio_format": "m4a",
                          "context": {"bundle": {"personas": [], "slides": [], "lines": [], "plan": {"during_pitch": 1, "after_pitch": 1, "why": ""}, "pitch_seconds": 120,
                                                 "prospect": {"company": "Delhivery"}},
-                                     "elapsed_s": 42.0, "turns": [], "pending": []}}}
+                                     "elapsed_s": 42.0, "turns": [], "threads": [], "pending": []}}}
 
 
 def turn():
@@ -824,14 +969,18 @@ const turns = ctx.turns || [];
 const pitchEnd = turns.findIndex(t => t.mode === 'pitch_end');
 const askedDuring = turns.filter((t, i) => (pitchEnd < 0 || i < pitchEnd) && t.mode !== 'pitch_end').reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
 const askedAfter = pitchEnd < 0 ? 0 : turns.slice(pitchEnd).reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
+// Every question's life (0.26), kept by the laptop. An older laptop sends only the pending questions: they become open threads.
+const threads = (ctx.threads || (ctx.pending || []).map((q, i) => ({ id: 'q' + (i + 1), persona_id: q.persona_id, text: q.text, slide_index: q.slide_index, status: 'open', follow_ups: 0, planned: false })));
+// An answer answers the asker's latest thread that's still open
+const answering = b.mode === 'answer' && b.asked_by ? threads.filter(t => t.persona_id === b.asked_by && (t.status === 'open' || t.status === 'followed_up')).pop() : null;
 const json = { session_id: b.session_id, mode: b.mode, slide_index: b.slide_index, t: b.t, asked_by: b.asked_by || '', mid_slide: !!b.mid_slide, time_up: !!b.time_up,
                bundle, elapsed: Math.round(ctx.elapsed_s || b.t || 0),
-               turns, pending: ctx.pending || [], asked_during: askedDuring, asked_after: askedAfter };
+               turns, threads, answering_id: answering ? answering.id : '', asked_during: askedDuring, asked_after: askedAfter };
 // The laptop sends the speech as AAC (m4a), or WAV if it couldn't compress it
 const audio = b.audio_base64 || b.audio_wav_base64 || '';
 const m4a = b.audio_format === 'm4a';
 return [{ json: { ...json, has_audio: !!audio }, binary: audio ? { audio: { data: audio, mimeType: m4a ? 'audio/mp4' : 'audio/wav', fileName: m4a ? 'turn.m4a' : 'turn.wav' } } : {} }];""",
-                   [{"mode": "segment", "bundle": {}, "turns": [], "pending": [], "asked_during": 0, "asked_after": 0, "has_audio": True}])
+                   [{"mode": "segment", "bundle": {}, "turns": [], "threads": [], "answering_id": "", "asked_during": 0, "asked_after": 0, "has_audio": True}])
     c += make_node("transcribe", "node", "n8n-nodes-base.httpRequest", 4.5, "Transcribe (Groq Whisper)", {
         "method": "POST", "url": GROQ_WHISPER, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
         "sendBody": True, "contentType": "multipart-form-data",
@@ -868,40 +1017,17 @@ const parts = {
     : r.elapsed + ' seconds in, for a pitch of ' + (b.pitch_seconds || 0) + ' seconds.',
   personas: JSON.stringify(personas), lines: JSON.stringify((b.lines || []).map(l => ({ line_id: l.id, persona_id: l.persona_id, kind: l.kind, text: l.text }))),
   slide: slide ? JSON.stringify({ number: slide.index + 1, title: slide.title, key_points: slide.key_points }) : 'No slides.',
-  turns: history, pending: JSON.stringify(r.pending),
-  mode: r.mode + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : ''), asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + ')' : '', transcript,
+  turns: history,
+  threads: r.threads.length ? r.threads.map(t => t.id + ' (' + name(t.persona_id) + ', ' + t.status + ', follow-ups ' + (t.follow_ups || 0) + '): "' + t.text + '"').join('; ') : 'None yet.',
+  mode: r.mode + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : ''),
+  asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + (r.answering_id ? ', thread ' + r.answering_id : '') + ')' : '', transcript,
 };
 // Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
 return [{ json: { ...r, transcript, prompt } }];""",
                    [{"mode": "segment", "transcript": ""}])
     c += groq_first_nodes("decide", "Decide who reacts", prompt, [{"choices": [{"message": {"content": "{}"}}]}], TURN_SCHEMA, "$('What the room knows').first().json")
-    c += code_node("check", "Check the reactions", REPLY_JS + """
-// What n8n decided, held to the contract: real people and lines, only a welcome at the opening, the session ends only on a closing.
-// New lines go to the voice; lines voiced ahead of time play as they are.
-const r = $('What the room knows').first().json;
-const d = JSON.parse(replyText($json) || '{}');
-const people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]));
-const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
-const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'open_floor', 'closing'];
-let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id]));
-if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
-// Stopped for time, the chair has already moved to the questions with a line the headset played (0.25)
-if (r.mode === 'pitch_end' && r.time_up) reactions = reactions.filter(x => x.kind !== 'open_floor');
-// The model sometimes starts a line with who says it ("Rohan: ..."), which the voice would read out
-const unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];
-  return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };
-reactions = reactions.slice(0, 3).map(x => {
-  const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
-  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : unnamed(people[x.persona_id], x.text), raise_hand: r.mode === 'segment' && x.kind === 'question', reason: x.reason || '' };
-  return line ? { ...out, line_id: line.id } : out;
-});
-const verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;
-// A bundle briefed before voices existed has none: fall back to a voice that fits the avatar
-const voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');
-const toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);
-return [{ json: { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, end_session: reactions.some(x => x.kind === 'closing') },
-                  to_voice: toVoice } }];""", [{"reply": {"reactions": []}, "to_voice": []}])
+    c += code_node("check", "Check the reactions", REPLY_JS + CHECK_JS, [{"reply": {"reactions": [], "threads": []}, "to_voice": []}])
     c += make_node("anyToVoice", "ifElse", "n8n-nodes-base.if", 2.3, "New lines to voice?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},

@@ -134,6 +134,12 @@ function reacted(r: Pick<Reaction, "kind" | "text" | "raise_hand">, name: string
       return `${name} followed up: ${r.text}`;
     case "acknowledge":
       return `${name}: ${r.text}`;
+    case "park":
+      return `${name} parked it for later: ${r.text}`;
+    case "move_on":
+      return `${name} let it go: ${r.text}`;
+    case "hand_back":
+      return `${name} handed back to you: ${r.text}`;
     case "open_floor":
       return `${name} opened the floor`;
     case "closing":

@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.24).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.26).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -186,10 +186,24 @@ export type Verdict = "resolved" | "partial" | "dodged";
 
 export type TurnMode = "opening" | "segment" | "answer" | "pitch_end";
 
+// Every question n8n asks is a thread (0.26): asked, at most one follow-up, then closed for good (answered, parked or dodged).
+// The laptop keeps them from n8n's replies and sends them back with each turn, so n8n stays stateless.
+export interface Thread {
+  id: string;
+  persona_id: PersonaId;
+  text: string;
+  slide_index: number;
+  // open: asked, or a hand that went down unasked; parked: the presenter didn't know and the asker accepted it
+  status: "open" | "followed_up" | "answered" | "parked" | "dodged";
+  follow_ups: number;
+  planned: boolean;
+}
+
 export interface Reaction {
   persona_id: PersonaId;
-  // time_nudge and time_up never come from n8n: the client plays them from the bundle's lines when time runs out (0.25)
-  kind: "welcome" | "question" | "follow_up" | "acknowledge" | "open_floor" | "closing" | "time_nudge" | "time_up";
+  // time_nudge and time_up never come from n8n: the client plays them from the bundle's lines when time runs out (0.25).
+  // park, move_on and hand_back (0.26): the asker accepts "I don't know", lets a dodged question go, or hands back to the pitch
+  kind: "welcome" | "question" | "follow_up" | "acknowledge" | "park" | "move_on" | "hand_back" | "open_floor" | "closing" | "time_nudge" | "time_up";
   text: string;
   // One of the bundle's lines, played instead of new audio
   line_id?: string;
@@ -200,6 +214,8 @@ export interface Reaction {
   // Raise a hand and wait for the presenter to pause before speaking
   raise_hand: boolean;
   reason: string;
+  // The thread it belongs to (0.26)
+  thread_id?: string;
 }
 
 // POST /turn, headset to laptop
@@ -226,8 +242,10 @@ export interface LoggedTurn {
   time_up?: boolean;
   transcript: string;
   note?: string;
-  reactions: Pick<Reaction, "persona_id" | "kind" | "text" | "raise_hand" | "reason">[];
+  reactions: Pick<Reaction, "persona_id" | "kind" | "text" | "raise_hand" | "reason" | "thread_id">[];
   answer_verdict: Verdict | null;
+  // The threads this turn opened or changed, whole (0.26)
+  threads?: Thread[];
 }
 
 // What the laptop adds before forwarding a turn to n8n, which keeps no state between turns
@@ -235,7 +253,9 @@ export interface TurnContext {
   bundle: Bundle;
   elapsed_s: number;
   turns: LoggedTurn[];
-  // Questions whose hand went down unasked because the presenter talked on
+  // Every question so far with its life (0.26)
+  threads: Thread[];
+  // Questions whose hand went down unasked because the presenter talked on; replaced by threads, kept for one version
   pending: { persona_id: PersonaId; text: string; slide_index: number }[];
 }
 
@@ -245,6 +265,8 @@ export interface TurnResponse {
   note: string;
   reactions: Reaction[];
   answer_verdict: Verdict | null;
+  // The threads this turn opened or changed (0.26); missing from older workflows
+  threads?: Thread[];
   // The reactions end with the chair's closing: the headset ends the session once they've played
   end_session: boolean;
 }

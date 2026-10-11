@@ -207,7 +207,7 @@ The panel: {personas}
 Lines voiced ahead of time (use one by its line_id when it fits, instead of new text): {lines}
 The slide on screen: {slide}
 What has happened so far, oldest first: {turns}
-Questions raised but not answered yet: {pending}
+Every question asked so far (threads): {threads}
 
 This moment: {mode}{asked_by}
 What the presenter just said: "{transcript}"
@@ -218,14 +218,21 @@ What to do for each moment:
 - segment (what they said on one slide): decide whether anyone interrupts now. Only someone whose manner is "interrupts", only while
   questions during the pitch remain in the plan (a guide: break it only for something that really matters), and only about this slide
   or what was just said: a claim with nothing behind it, a number that does not add up, a gap against their objections or the research.
-  Never ask what the presenter already covered, and never repeat a pending question. A question: kind "question", raise_hand true,
+  Never ask what the presenter already covered, nor anything a thread already asks. A question: kind "question", raise_hand true,
   one or two sentences in that person's voice, referring to what was said. Otherwise no reaction. A segment sent mid-slide comes
   at one of the plan's interruption points (plan.interrupts): the hand there goes up only if that point still matters after what
   was said; if the presenter already answered it, nobody reacts.
-- answer (to the question in this moment): judge it in answer_verdict: "resolved" (direct and specific), "partial" or "dodged". The person
-  who asked reacts: an "acknowledge" line (by line_id) if resolved, or one "follow_up" (only if that question has had no follow-up yet)
-  if partial or dodged and it matters. After the pitch, add what comes next: the next "question" from whoever matters most (a pending
-  one first), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
+- answer (to the thread in this moment): judge it in answer_verdict: "resolved" (direct and specific), "partial" or "dodged", and set
+  presenter_unsure true if they said they don't know, aren't sure or will come back to it. The person who asked reacts, once:
+  resolved: an "acknowledge" line (by line_id). Unsure: they accept it and park it, kind "park" ("That's fine, send it to us after.").
+  Partial or dodged: one "follow_up" only if the thread has had none yet (follow_ups 0) and it matters; if it already had one, they let
+  it go, kind "move_on" ("Okay, let's leave that there."), visibly unconvinced if it was dodged. Never a second follow-up.
+  During the pitch, unless there is a follow-up, the asker then hands back to the pitch, kind "hand_back" ("Thanks, please go on."),
+  and nobody asks anything new. After the pitch, add what comes next: the next "question" from whoever matters most (an open thread
+  first, with its thread_id), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
+- Threads: every question has one life: asked, at most one follow-up, then closed (answered, parked or dodged). Never ask a closed
+  thread again or anything close to it. To ask an open thread again (a hand that went down), give its thread_id; a new question has
+  an empty thread_id; a follow-up, park, move_on or hand_back has the thread_id of the thread being answered.
 - pitch_end (the pitch is over): the chair opens the floor (kind "open_floor", its line_id), then the first "question" from whoever
   matters most, a pending one first. If the plan has no questions after the pitch, the chair closes instead. If the chair has just
   stopped the pitch for time, they have already moved to the questions: no open_floor, straight to the first question.
@@ -240,15 +247,17 @@ TURN_SCHEMA = {"type": "object", "properties": {
     "note": {"type": "string"},
     "reactions": {"type": "array", "items": {"type": "object", "properties": {
         "persona_id": {"type": "string"},
-        "kind": {"type": "string", "enum": ["welcome", "question", "follow_up", "acknowledge", "open_floor", "closing"]},
+        "kind": {"type": "string", "enum": ["welcome", "question", "follow_up", "acknowledge", "park", "move_on", "hand_back", "open_floor", "closing"]},
         "text": {"type": "string"},
         "line_id": {"type": "string", "description": "A line voiced ahead of time, or empty"},
         "raise_hand": {"type": "boolean"},
-        "reason": {"type": "string"}},
-        "required": ["persona_id", "kind", "text", "line_id", "raise_hand", "reason"]}},
+        "reason": {"type": "string"},
+        "thread_id": {"type": "string", "description": "The thread this belongs to, or empty for a new question"}},
+        "required": ["persona_id", "kind", "text", "line_id", "raise_hand", "reason", "thread_id"]}},
     "answer_verdict": {"type": "string", "enum": ["resolved", "partial", "dodged", "none"]},
+    "presenter_unsure": {"type": "boolean"},
     "end_session": {"type": "boolean"}},
-    "required": ["note", "reactions", "answer_verdict", "end_session"]}
+    "required": ["note", "reactions", "answer_verdict", "presenter_unsure", "end_session"]}
 
 # DryRun debrief (/debrief): the judgement on one rehearsal. Times, words per minute, filler words and pacing are counted in a Code
 # node (the same input always gives the same numbers); this is what needs judgement, always tied to the presenter's own words.

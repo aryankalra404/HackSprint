@@ -1,4 +1,4 @@
-import type { Bundle, LiveSession, LoggedTurn, Reaction, ThinkingTurn, TurnContext, TurnRequest, TurnResponse, VoicedLine } from "./contract";
+import type { Bundle, LiveSession, LoggedTurn, Reaction, Thread, ThinkingTurn, TurnContext, TurnRequest, TurnResponse, VoicedLine } from "./contract";
 import { postToN8n } from "./api";
 import { compressSpeech, saveAudio } from "./audio";
 import { getRoom, updateRoom } from "./room";
@@ -45,6 +45,13 @@ export function pendingQuestions(feed: LoggedTurn[]): TurnContext["pending"] {
   return open;
 }
 
+// Every question so far with its life (0.26): each turn carries the threads n8n opened or changed, replaced by id
+export function threadsFrom(feed: LoggedTurn[]): Thread[] {
+  const threads = new Map<string, Thread>();
+  for (const turn of feed) for (const t of turn.threads ?? []) threads.set(t.id, t);
+  return [...threads.values()];
+}
+
 // Where the session is, from its turns: opening until the first slide, pitch until the pitch ends, then questions, then closing
 function stageAfter(stage: LiveSession["stage"], turn: LoggedTurn): LiveSession["stage"] {
   if (turn.reactions.some((r) => r.kind === "closing")) return "closing";
@@ -87,7 +94,7 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
   } else {
     const { audio_wav_base64, ...rest } = body;
     const speech = await compressSpeech(audio_wav_base64 ?? "");
-    const context: TurnContext = { bundle: withoutAudio(room.bundle), elapsed_s: body.t, turns: feed, pending: pendingQuestions(feed) };
+    const context: TurnContext = { bundle: withoutAudio(room.bundle), elapsed_s: body.t, turns: feed, threads: threadsFrom(feed), pending: pendingQuestions(feed) };
     try {
       reply = await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
     } catch (err) {
@@ -112,8 +119,9 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     ...(body.time_up ? { time_up: true } : {}),
     transcript: reply.transcript ?? "",
     note: reply.note ?? "",
-    reactions: reactions.map(({ persona_id, kind, text, raise_hand, reason }) => ({ persona_id, kind, text, raise_hand, reason })),
+    reactions: reactions.map(({ persona_id, kind, text, raise_hand, reason, thread_id }) => ({ persona_id, kind, text, raise_hand, reason, ...(thread_id ? { thread_id } : {}) })),
     answer_verdict: reply.answer_verdict ?? null,
+    ...(reply.threads?.length ? { threads: reply.threads } : {}),
   };
   // The room may have moved on while n8n worked (ended, restarted): only a live session of the same run keeps the turn
   const now = getRoom();
