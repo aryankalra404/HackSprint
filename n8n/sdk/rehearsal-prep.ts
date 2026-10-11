@@ -243,7 +243,7 @@ const voice = node({
       "genericAuthType": "httpHeaderAuth",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: 'bulbul:v3', speaker: $json.speaker, speech_sample_rate: 22050 }) }}"),
+      "jsonBody": expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: 'bulbul:v3', speaker: $json.speaker, speech_sample_rate: 22050, output_audio_codec: 'mp3' }) }}"),
       "options": {
         "timeout": 30000
       }
@@ -272,7 +272,7 @@ const addVoices = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// Each line's audio (base64 WAV) into the bundle; the laptop saves them and serves them to the headset\nconst b = $('Build the bundle').first().json;\nconst lines = $('One item per line').all().map(i => i.json);\nconst out = $input.all().map(i => i.json);\nconst audio = {};\nlines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });\nreturn [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_wav_base64: audio[l.id] } : l)) } }];"
+      "jsCode": "// Each line's audio (base64 MP3) into the bundle; the laptop saves them as WAV and serves them to the headset\nconst b = $('Build the bundle').first().json;\nconst lines = $('One item per line').all().map(i => i.json);\nconst out = $input.all().map(i => i.json);\nconst audio = {};\nlines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });\nreturn [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_base64: audio[l.id] } : l)) } }];"
     },
     "output": [
   {

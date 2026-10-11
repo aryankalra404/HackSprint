@@ -160,3 +160,55 @@ REHEARSAL_SCHEMA = {"type": "object", "properties": {
         "persona_id": {"type": "string"}, "kind": {"type": "string", "enum": ["welcome", "open_floor", "acknowledge"]}, "text": {"type": "string"}},
         "required": ["persona_id", "kind", "text"]}}},
     "required": ["slides", "personas", "chair", "plan", "rescue_after_s", "lines"]}
+
+# DryRun turn (/turn): how the room reacts to what the presenter just said. n8n decides who speaks, what and why;
+# the headset only decides when (it waits for the presenter to pause).
+TURN_PROMPT = """You are the panel in a rehearsal of a real meeting, deciding how the room reacts to what the presenter just said.
+React as these people would in this meeting: realistic, specific, never theatrical. During the pitch, most of the time nobody speaks.
+
+The meeting: {meeting}
+The plan for questions: {plan}. Asked so far: {asked_during} during the pitch, {asked_after} after it.
+Time: {elapsed} seconds in, for a pitch of {pitch} seconds.
+The panel: {personas}
+Lines voiced ahead of time (use one by its line_id when it fits, instead of new text): {lines}
+The slide on screen: {slide}
+What has happened so far, oldest first: {turns}
+Questions raised but not answered yet: {pending}
+
+This moment: {mode}{asked_by}
+What the presenter just said: "{transcript}"
+
+What to do for each moment:
+- opening (their first words): if they introduced themselves or greeted the room, the chair welcomes them (kind "welcome", its line_id).
+  If they went straight into the pitch, or said nothing, no reaction.
+- segment (what they said on one slide): decide whether anyone interrupts now. Only someone whose manner is "interrupts", only while
+  questions during the pitch remain in the plan (a guide: break it only for something that really matters), and only about this slide
+  or what was just said: a claim with nothing behind it, a number that does not add up, a gap against their objections or the research.
+  Never ask what the presenter already covered, and never repeat a pending question. A question: kind "question", raise_hand true,
+  one or two sentences in that person's voice, referring to what was said. Otherwise no reaction.
+- answer (to the question in this moment): judge it in answer_verdict: "resolved" (direct and specific), "partial" or "dodged". The person
+  who asked reacts: an "acknowledge" line (by line_id) if resolved, or one "follow_up" (only if that question has had no follow-up yet)
+  if partial or dodged and it matters. After the pitch, add what comes next: the next "question" from whoever matters most (a pending
+  one first), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
+- pitch_end (the pitch is over): the chair opens the floor (kind "open_floor", its line_id), then the first "question" from whoever
+  matters most, a pending one first. If the plan has no questions after the pitch, the chair closes instead.
+- closing (by the chair): how this kind of meeting really ends, in one or two sentences, fitting how it went (a next step if it went
+  well, polite and noncommittal if not), and end_session true.
+After the pitch, questions are asked directly (raise_hand false). Every reaction has a reason: one sentence on why this person said this
+now, which the presenter reads afterwards. note: one short sentence to the presenter ("you") on how this moment landed, matching what
+actually happens in reactions, also when nobody reacts (e.g. "You put a number on the savings, so Rajiv held his cost question.").
+Spoken English, natural, short. Answer in JSON."""
+
+TURN_SCHEMA = {"type": "object", "properties": {
+    "note": {"type": "string"},
+    "reactions": {"type": "array", "items": {"type": "object", "properties": {
+        "persona_id": {"type": "string"},
+        "kind": {"type": "string", "enum": ["welcome", "question", "follow_up", "acknowledge", "open_floor", "closing"]},
+        "text": {"type": "string"},
+        "line_id": {"type": "string", "description": "A line voiced ahead of time, or empty"},
+        "raise_hand": {"type": "boolean"},
+        "reason": {"type": "string"}},
+        "required": ["persona_id", "kind", "text", "line_id", "raise_hand", "reason"]}},
+    "answer_verdict": {"type": "string", "enum": ["resolved", "partial", "dodged", "none"]},
+    "end_session": {"type": "boolean"}},
+    "required": ["note", "reactions", "answer_verdict", "end_session"]}

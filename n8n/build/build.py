@@ -9,7 +9,8 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import BRIEF_PROMPT, BRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, WEB_PROMPT
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+                     TURN_SCHEMA, WEB_PROMPT)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
 # One model for every Gemini step. Free-tier limits are per model (gemini-2.5-flash allows 20 requests a day).
@@ -19,6 +20,8 @@ GEMINI = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL
 # Groq has no web search, so "Search the web" stays Gemini-only (it already carries on without it).
 GROQ = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_WHISPER = "https://api.groq.com/openai/v1/audio/transcriptions"
+WHISPER_MODEL = "whisper-large-v3-turbo"
 APP_URL = "http://localhost:3000"
 # Fewer news stories than this and n8n also searches the web (Gemini with Google Search, which needs billing on the key)
 MIN_NEWS = 3
@@ -637,19 +640,19 @@ return b.lines.map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.pers
         "genericAuthType": "httpHeaderAuth",
         "sendBody": True,
         "specifyBody": "json",
-        "jsonBody": Expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: '" + SARVAM_MODEL + "', speaker: $json.speaker, speech_sample_rate: 22050 }) }}"),
+        "jsonBody": Expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: '" + SARVAM_MODEL + "', speaker: $json.speaker, speech_sample_rate: 22050, output_audio_codec: 'mp3' }) }}"),
         "options": {"timeout": 30000},
     }, [{"request_id": "r1", "audios": ["UklGRg=="]}], credentials={"httpHeaderAuth": "Sarvam"},
         # A line that fails to voice is left without audio; the rehearsal still goes ahead
         extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2, "waitBetweenTries": 1000})
     c += code_node("addVoices", "Add the voices", """
-// Each line's audio (base64 WAV) into the bundle; the laptop saves them and serves them to the headset
+// Each line's audio (base64 MP3) into the bundle; the laptop saves them as WAV and serves them to the headset
 const b = $('Build the bundle').first().json;
 const lines = $('One item per line').all().map(i => i.json);
 const out = $input.all().map(i => i.json);
 const audio = {};
 lines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });
-return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_wav_base64: audio[l.id] } : l)) } }];""", [{"session_id": "s1", "lines": []}])
+return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_base64: audio[l.id] } : l)) } }];""", [{"session_id": "s1", "lines": []}])
     c += make_node("reply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the bundle", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
     c += ("const about = sticky('## DryRun rehearsal prep\\nBriefs the practice panel for one rehearsal (POST /webhook/dryrun/prep, docs/CONTRACT.md): "
           "plans each slide and the rescue cues, what each person will push on, who interrupts and who chairs, how many questions to ask "
@@ -674,8 +677,162 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_wav
     return c
 
 
+# ---------------------------------------------------------------- DryRun turn (/turn)
+
+def groq_first_nodes(var, name, prompt, output, schema, source):
+    """For live turns, where every second shows: Groq first (fast), Gemini on its error output. `prompt` is a JS expression using j."""
+    ask = "(" + prompt + ") + " + json.dumps("\n\nReply with only a JSON object that follows this JSON schema:\n") + " + JSON.stringify(" + js_obj(schema) + ")"
+    body = ("{{ (() => { const j = " + source + "; return JSON.stringify({ model: '" + GROQ_MODEL + "', reasoning_effort: 'low', max_completion_tokens: 4096, "
+            "messages: [{ role: 'user', content: " + ask + " }], response_format: { type: 'json_object' } }); })() }}")
+    groq = make_node(var, "node", "n8n-nodes-base.httpRequest", 4.5, name, {
+        "method": "POST", "url": GROQ, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
+        "sendBody": True, "specifyBody": "json", "jsonBody": Expr(body), "options": {"timeout": 30000},
+    }, [{"choices": [{"message": {"content": "{}"}}]}], credentials={"groqApi": "Groq"}, extra={"onError": "continueErrorOutput"})
+    gemini = gemini_node(var + "Gemini", name + " (Gemini)", "{{ (() => { const j = " + source + "; return JSON.stringify({ contents: [{ parts: [{ text: " + prompt +
+                         " }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: " + js_obj(schema) + " } }); })() }}", GEMINI_REPLY,
+                         extra={"retryOnFail": False})
+    return groq + gemini
+
+
+TURN_REQUEST = {"body": {"session_id": "s1", "mode": "segment", "slide_index": 1, "t": 42.0, "audio_base64": "UklGRg==", "audio_format": "m4a",
+                         "context": {"bundle": {"personas": [], "slides": [], "lines": [], "plan": {"during_pitch": 1, "after_pitch": 1, "why": ""}, "pitch_seconds": 120,
+                                                "prospect": {"company": "Delhivery"}},
+                                     "elapsed_s": 42.0, "turns": [], "pending": []}}}
+
+
+def turn():
+    c = IMPORTS
+    c += make_node("turnTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "What the presenter said (headset)", {
+        "httpMethod": "POST", "path": "dryrun/turn", "responseMode": "responseNode", "options": {},
+    }, [TURN_REQUEST])
+    c += code_node("readTurn", "Read the turn", """
+// The moment, its audio as a file for transcription, and the context the laptop sent (docs/CONTRACT.md, POST /turn).
+// n8n keeps no state between turns: everything it decides from is here.
+const b = $input.first().json.body;
+const ctx = b.context || {};
+const bundle = ctx.bundle || {};
+const turns = ctx.turns || [];
+const pitchEnd = turns.findIndex(t => t.mode === 'pitch_end');
+const askedDuring = turns.filter((t, i) => (pitchEnd < 0 || i < pitchEnd) && t.mode !== 'pitch_end').reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
+const askedAfter = pitchEnd < 0 ? 0 : turns.slice(pitchEnd).reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
+const json = { session_id: b.session_id, mode: b.mode, slide_index: b.slide_index, t: b.t, asked_by: b.asked_by || '', bundle, elapsed: Math.round(ctx.elapsed_s || b.t || 0),
+               turns, pending: ctx.pending || [], asked_during: askedDuring, asked_after: askedAfter };
+// The laptop sends the speech as AAC (m4a), or WAV if it couldn't compress it
+const audio = b.audio_base64 || b.audio_wav_base64 || '';
+const m4a = b.audio_format === 'm4a';
+return [{ json: { ...json, has_audio: !!audio }, binary: audio ? { audio: { data: audio, mimeType: m4a ? 'audio/mp4' : 'audio/wav', fileName: m4a ? 'turn.m4a' : 'turn.wav' } } : {} }];""",
+                   [{"mode": "segment", "bundle": {}, "turns": [], "pending": [], "asked_during": 0, "asked_after": 0, "has_audio": True}])
+    c += make_node("transcribe", "node", "n8n-nodes-base.httpRequest", 4.5, "Transcribe (Groq Whisper)", {
+        "method": "POST", "url": GROQ_WHISPER, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
+        "sendBody": True, "contentType": "multipart-form-data",
+        "bodyParameters": {"parameters": [
+            {"parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "audio"},
+            {"name": "model", "value": WHISPER_MODEL}, {"name": "language", "value": "en"}, {"name": "response_format", "value": "json"},
+            # Names Whisper would otherwise mishear ("RouteIQ" came out as "Rautik"): the company, the slides and the people
+            {"name": "prompt", "value": Expr("{{ [($json.bundle.prospect || {}).company].concat(($json.bundle.slides || []).map(s => s.title), "
+                                             "($json.bundle.personas || []).map(p => p.display_name)).filter(Boolean).join(', ').slice(0, 600) }}")}]},
+        "options": {"timeout": 30000},
+    }, [{"text": "So at your scale, that is a meaningful saving in the first year."}], credentials={"groqApi": "Groq"},
+        # No audio, or a failed transcription, carries on with an empty transcript: the room just doesn't react
+        extra={"onError": "continueRegularOutput"})
+    # The prompt is put together in "What the room knows", so changing it means changing one node
+    prompt = "j.prompt"
+    c += code_node("context", "What the room knows", """
+// The prompt, kept short: a live turn should take a few seconds, and Groq's free tier allows 8,000 tokens a minute
+const PROMPT = """ + json.dumps(TURN_PROMPT) + """;
+const r = $('Read the turn').first().json;
+const b = r.bundle;
+const transcript = String(($json && $json.text) || '').trim();
+const personas = (b.personas || []).map(p => ({ id: p.id, name: p.display_name, role: p.role, manner: p.manner, chair: p.chair, difficulty: p.difficulty,
+  priorities: p.priorities, objections: (p.objections || []).map(o => (o.slide_index >= 0 ? 'slide ' + (o.slide_index + 1) + ': ' : '') + o.text) }));
+const slide = (b.slides || []).find(s => s.index === r.slide_index);
+const name = id => ((b.personas || []).find(p => p.id === id) || {}).display_name || id;
+const history = r.turns.slice(-12).map(t => '[' + t.mode + (t.slide_index >= 0 ? ', slide ' + (t.slide_index + 1) : '') + '] presenter: "' + String(t.transcript || '').slice(0, 400) + '"'
+  + (t.reactions || []).map(x => ' | ' + name(x.persona_id) + ' (' + x.kind + '): "' + x.text + '"').join('') + (t.answer_verdict ? ' | answer ' + t.answer_verdict : '')).join('\\n') || 'Nothing yet.';
+const parts = {
+  meeting: b.prospect && b.prospect.company ? 'with ' + b.prospect.company : 'a meeting', plan: JSON.stringify(b.plan || {}),
+  asked_during: String(r.asked_during), asked_after: String(r.asked_after), elapsed: String(r.elapsed), pitch: String(b.pitch_seconds || 0),
+  personas: JSON.stringify(personas), lines: JSON.stringify((b.lines || []).map(l => ({ line_id: l.id, persona_id: l.persona_id, kind: l.kind, text: l.text }))),
+  slide: slide ? JSON.stringify({ number: slide.index + 1, title: slide.title, key_points: slide.key_points }) : 'No slides.',
+  turns: history, pending: JSON.stringify(r.pending), mode: r.mode, asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + ')' : '', transcript,
+};
+// Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
+const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
+return [{ json: { ...r, transcript, prompt } }];""",
+                   [{"mode": "segment", "transcript": ""}])
+    c += groq_first_nodes("decide", "Decide who reacts", prompt, [{"choices": [{"message": {"content": "{}"}}]}], TURN_SCHEMA, "$('What the room knows').first().json")
+    c += code_node("check", "Check the reactions", REPLY_JS + """
+// What n8n decided, held to the contract: real people and lines, only a welcome at the opening, the session ends only on a closing.
+// New lines go to the voice; lines voiced ahead of time play as they are.
+const r = $('What the room knows').first().json;
+const d = JSON.parse(replyText($json) || '{}');
+const people = Object.fromEntries((r.bundle.personas || []).map(p => [p.id, p]));
+const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
+const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'open_floor', 'closing'];
+let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id]));
+if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
+reactions = reactions.slice(0, 3).map(x => {
+  const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
+  const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : String(x.text), raise_hand: r.mode === 'segment' && x.kind === 'question', reason: x.reason || '' };
+  return line ? { ...out, line_id: line.id } : out;
+});
+const verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;
+// A bundle briefed before voices existed has none: fall back to a voice that fits the avatar
+const voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');
+const toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);
+return [{ json: { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, end_session: reactions.some(x => x.kind === 'closing') },
+                  to_voice: toVoice } }];""", [{"reply": {"reactions": []}, "to_voice": []}])
+    c += make_node("anyToVoice", "ifElse", "n8n-nodes-base.if", 2.3, "New lines to voice?", {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"leftValue": Expr("{{ $json.to_voice.length }}"), "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}],
+            "combinator": "and",
+        }, "options": {},
+    }, [{"to_voice": []}])
+    c += code_node("eachReaction", "One item per new line", """
+return $input.first().json.to_voice.map(v => ({ json: v }));""", [{"i": 0, "text": "Meaningful isn't a number.", "speaker": "rahul"}])
+    c += make_node("voiceTurn", "node", "n8n-nodes-base.httpRequest", 4.5, "Voice the line (Sarvam)", {
+        "method": "POST", "url": SARVAM_TTS, "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
+        "sendBody": True, "specifyBody": "json",
+        "jsonBody": Expr("{{ JSON.stringify({ text: $json.text, language_code: 'en-IN', model: '" + SARVAM_MODEL + "', speaker: $json.speaker, speech_sample_rate: 22050, output_audio_codec: 'mp3' }) }}"),
+        "options": {"timeout": 20000},
+    }, [{"request_id": "r1", "audios": ["UklGRg=="]}], credentials={"httpHeaderAuth": "Sarvam"}, extra={"onError": "continueRegularOutput"})
+    c += code_node("withVoices", "Add the voices", """
+// The reply with each new line's audio (base64 MP3); the laptop saves them as WAV and gives the headset their paths
+const c = $('Check the reactions').first().json;
+const voiced = (() => { try { return $('Voice the line (Sarvam)').isExecuted; } catch (e) { return false; } })();
+const items = voiced ? $('One item per new line').all().map(i => i.json) : [];
+const out = voiced ? $('Voice the line (Sarvam)').all().map(i => i.json) : [];
+const reactions = c.reply.reactions.map(x => ({ ...x }));
+items.forEach((v, k) => { const a = out[k] && out[k].audios && out[k].audios[0]; if (a) reactions[v.i].audio_base64 = a; });
+return [{ json: { ...c.reply, reactions } }];""", [{"transcript": "", "reactions": []}])
+    c += make_node("replyTurn", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the reactions", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
+    c += ("const about = sticky('## DryRun turn\\nHow the room reacts to what the presenter just said (POST /webhook/dryrun/turn, docs/CONTRACT.md): "
+          "transcribes it, decides whether anyone speaks, who, what and why (or why nobody does), and voices it. The laptop sends the context, "
+          "so this keeps no state.', [turnTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-turn', 'DryRun turn')
+  .add(about)
+  .add(turnTrigger)
+  .to(readTurn)
+  .to(transcribe)
+  .to(context)
+  .to(decide)
+  .to(check)
+  .to(anyToVoice
+    .onTrue(eachReaction.to(voiceTurn.to(withVoices.to(replyTurn))))
+    .onFalse(withVoices))
+  .add(decide.onError(decideGemini))
+  .add(decideGemini)
+  .to(check)
+  .group('Listen', [readTurn, transcribe], { description: 'Reads the moment and transcribes what the presenter said' })
+  .group('Decide', [context, decide, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why' })
+  .group('Voice', [anyToVoice, eachReaction, voiceTurn, withVoices], { description: 'Voices new lines with Sarvam; lines voiced in prep play as they are' });
+"""
+    return c
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")
