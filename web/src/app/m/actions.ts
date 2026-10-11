@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import type { BriefInput, DraftMember } from "@/lib/contract";
+import type { BriefInput, DraftMember, RehearseIn } from "@/lib/contract";
 import { deckText } from "@/lib/deck";
 import { addMeeting, getMeeting, prepSession } from "@/lib/api";
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
@@ -53,29 +53,57 @@ export async function retryMeetingAction(meetingId: string): Promise<Result<null
   return { ok: true, value: null };
 }
 
-// Briefs the practice panel, puts the bundle in the room, then goes to the dashboard. Only returns if something is wrong.
-export async function briefPanelAction(input: BriefInput, draftId: string, panel: DraftMember[]): Promise<Result<never>> {
+// Where a briefed panel is rehearsed: the browser's rehearsal page, or the dashboard while the headset rehearses
+function rehearsalPath(sessionId: string, rehearseIn: RehearseIn): string {
+  return rehearseIn === "browser" ? `/s/${sessionId}/rehearse` : `/s/${sessionId}`;
+}
+
+// Runs n8n's /prep for the panel and puts the bundle in the room, briefed. Returns the session id, or throws.
+async function prepare(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn): Promise<string> {
+  // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
+  const room = getRoom();
+  const deck = room.deck ? await deckText(room.deck) : null;
+  const bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel }, room.deck);
+  updateRoom({
+    phase: "briefed",
+    bundle,
+    session_id: bundle.session_id,
+    live: null,
+    debrief: null,
+    rehearse_in: rehearseIn,
+    panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
+  });
+  return bundle.session_id;
+}
+
+// Briefs the practice panel, puts the bundle in the room, then goes to the browser's rehearsal page or the dashboard (for VR).
+// Only returns if something is wrong.
+export async function briefPanelAction(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn = "vr"): Promise<Result<never>> {
   const problem = panel.length === 0 ? "The panel needs at least one person." : panelProblem(panel);
   if (problem) return { ok: false, error: problem };
   if (panel.some((m) => !m.role.trim())) return { ok: false, error: "Everyone needs a role." };
 
   let sessionId: string;
   try {
-    // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
-    const room = getRoom();
-    const deck = room.deck ? await deckText(room.deck) : null;
-    const bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel }, room.deck);
-    sessionId = bundle.session_id;
-    updateRoom({
-      phase: "briefed",
-      bundle,
-      session_id: sessionId,
-      live: null,
-      debrief: null,
-      panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
-    });
+    sessionId = await prepare(input, draftId, panel, rehearseIn);
   } catch {
     return { ok: false, error: "Couldn't brief the panel. Try again in a moment." };
   }
-  redirect(`/s/${sessionId}`);
+  redirect(rehearsalPath(sessionId, rehearseIn));
+}
+
+// "Run it again, harder": briefs the same panel again through n8n's /prep, which reads the last debrief and presses on the weak spots.
+// Then back to where the presenter rehearses. Only returns if something is wrong.
+export async function rebriefAction(): Promise<Result<never>> {
+  const room = getRoom();
+  const brief = getBrief();
+  if (!brief || room.panel.length === 0) return { ok: false, error: "There's no panel in the room to brief again." };
+  if (room.phase === "live") return { ok: false, error: "End the run before briefing the panel again." };
+  let sessionId: string;
+  try {
+    sessionId = await prepare(brief.input, brief.draft_id, room.panel, room.rehearse_in);
+  } catch {
+    return { ok: false, error: "Couldn't brief the panel again. Try again in a moment." };
+  }
+  redirect(rehearsalPath(sessionId, room.rehearse_in));
 }

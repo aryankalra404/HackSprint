@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { BriefInput, DraftMember, PanelProposal, PitchSuggestion, Room, Seat } from "@/lib/contract";
+import type { BriefInput, DraftMember, PanelProposal, PitchSuggestion, RehearseIn, Room, Seat } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
@@ -39,6 +39,8 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
   const [saved, setSaved] = useState<"saved" | "saving" | "failed">("saved");
   const [headset, setHeadset] = useState<{ connected: boolean; via: "wifi" | "usb" }>({ connected: false, via: "usb" });
   const [briefing, startBriefing] = useTransition();
+  // Which of the two buttons was pressed, for its label while n8n plans
+  const [chosen, setChosen] = useState<RehearseIn | null>(null);
 
   // Is the headset following the room? Checked every few seconds while editing.
   useEffect(() => {
@@ -78,10 +80,11 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
     return () => clearTimeout(timer);
   }, [members, proposal]);
 
-  function brief() {
+  function brief(where: RehearseIn) {
     setError(null);
+    setChosen(where);
     startBriefing(async () => {
-      const res = await briefPanelAction(input, proposal.draft_id, members);
+      const res = await briefPanelAction(input, proposal.draft_id, members, where);
       if (!res.ok) setError(res.error);
     });
   }
@@ -168,15 +171,27 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
             {error && <p role="alert" className="text-sm text-bad-ink">{error}</p>}
             <button
               type="button"
-              onClick={brief}
+              onClick={() => brief("browser")}
               disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
               className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-50"
             >
-              {briefing ? "n8n is planning the rehearsal…" : `Start the rehearsal (${members.length})`}
+              {briefing && chosen === "browser" ? "n8n is planning the rehearsal…" : "Rehearse in the browser"}
             </button>
-            <p className="text-xs text-muted">
-              {briefing ? "It plans each slide, what everyone will push on and when they ask. About 20 seconds." : "Then put on the headset: the panel is already seated."}
-            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => brief("vr")}
+                disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
+                className="flex-1 rounded-full border border-ink px-5 py-3 text-sm font-medium disabled:opacity-50"
+              >
+                {briefing && chosen === "vr" ? "n8n is planning the rehearsal…" : "Rehearse in VR"}
+              </button>
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-ink-2">
+                <span aria-hidden="true" className={`size-2 rounded-full ${headset.connected ? "bg-good" : "bg-axis"}`} />
+                {headset.connected ? "Headset ready" : "Headset not connected"}
+              </span>
+            </div>
+            <p className="text-xs text-muted">n8n plans each slide, the panel&apos;s questions and voices. About 20 seconds.</p>
           </footer>
         </aside>
       </main>
