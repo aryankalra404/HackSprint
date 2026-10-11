@@ -7,14 +7,18 @@ import { PrepareAnyway } from "./PrepareAnyway";
 export function SkippedList({ meetings }: { meetings: Meeting[] }) {
   if (meetings.length === 0) return null;
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="skipped">
-      <div className="flex flex-col gap-1">
-        <h2 id="skipped" className="font-display text-xl">
-          Skipped by n8n ({meetings.length})
+    <details className="group flex flex-col gap-3" aria-labelledby="skipped">
+      <summary className="flex cursor-pointer list-none flex-wrap items-baseline justify-between gap-x-4 gap-y-1 [&::-webkit-details-marker]:hidden">
+        <h2 id="skipped" className="flex items-center gap-2 text-sm font-semibold">
+          <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 3.5L10.5 8 6 12.5" />
+          </svg>
+          Skipped by n8n
+          <span className="font-normal text-muted">{meetings.length}</span>
         </h2>
-        <p className="text-sm text-ink-2">n8n decided these aren&apos;t worth preparing, and why. If one matters, prepare it anyway.</p>
-      </div>
-      <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-surface">
+        <p className="text-sm text-muted">Not worth preparing, with n8n&apos;s reason. Prepare one anyway if it matters.</p>
+      </summary>
+      <ul className="mt-3 flex flex-col divide-y divide-line rounded-2xl border border-line bg-surface">
         {meetings.map((m) => (
           <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:flex-nowrap">
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -28,6 +32,6 @@ export function SkippedList({ meetings }: { meetings: Meeting[] }) {
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }
