@@ -4,7 +4,7 @@ import { getBrief, getRoom, slideLog, updateRoom } from "./room";
 import { cacheSession } from "./sessions";
 
 // The laptop's side of a debrief (contract: POST /debrief). When a run ends, whoever ended it, the laptop sends n8n what happened
-// (every turn with its transcript, the slide changes it saw, and the headset's telemetry if it came first), and shows n8n's
+// (every turn with its transcript, the slide changes it saw, and the rehearsing client's telemetry if it came first), and shows n8n's
 // progress in the room as it goes: n8n saves each step to its sessions table, and the laptop reads it every few seconds while it
 // waits for the result. The finished session is kept on the laptop for the report.
 
@@ -12,18 +12,18 @@ const POLL_MS = 4_000;
 const MAX_POLLS = 30;
 const TIMEOUT_MS = 180_000;
 
-type HeadsetTelemetry = Pick<Telemetry, "client" | "duration_s" | "events" | "gaze_dwell_s" | "facing_slides_s">;
+type ClientTelemetry = Pick<Telemetry, "client" | "duration_s" | "events" | "gaze_dwell_s" | "facing_slides_s">;
 
-const g = globalThis as { __dryrunHeadsetTelemetry?: { at: number; telemetry: HeadsetTelemetry } };
+const g = globalThis as { __dryrunClientTelemetry?: { at: number; telemetry: ClientTelemetry } };
 
 // A run's own session id: the bundle's, plus when the run started, so each run of the same panel gets its own report
 export function runId(sessionId: string, startedAt: string): string {
   return `${sessionId}-${Date.parse(startedAt).toString(36)}`;
 }
 
-// What the headset knows (gaze, silences), posted before it ends the session (contract: POST /api/debrief)
-export function keepHeadsetTelemetry(telemetry: HeadsetTelemetry): void {
-  g.__dryrunHeadsetTelemetry = { at: Date.now(), telemetry };
+// What the rehearsing client knows (the headset's gaze, silences), posted before it ends the session (contract: POST /api/debrief)
+export function keepClientTelemetry(telemetry: ClientTelemetry): void {
+  g.__dryrunClientTelemetry = { at: Date.now(), telemetry };
 }
 
 // The bundle without audio, as n8n gets it
@@ -54,19 +54,19 @@ export function startDebrief(again = false): void {
 
   const started = Date.parse(room.live.started_at);
   const ended = room.live.ended_at ? Date.parse(room.live.ended_at) : Date.now();
-  const headset = g.__dryrunHeadsetTelemetry && g.__dryrunHeadsetTelemetry.at >= started ? g.__dryrunHeadsetTelemetry.telemetry : null;
+  const telemetry = g.__dryrunClientTelemetry && g.__dryrunClientTelemetry.at >= started ? g.__dryrunClientTelemetry.telemetry : null;
   const turns: TelemetryEvent[] = feed.map((t) => ({ type: "turn", ...t }));
-  const events = [...slideLog(room.live.started_at), ...turns, ...(headset?.events.filter((e) => e.type !== "turn" && e.type !== "slide") ?? [])].sort((a, b) => a.t - b.t);
+  const events = [...slideLog(room.live.started_at), ...turns, ...(telemetry?.events.filter((e) => e.type !== "turn" && e.type !== "slide") ?? [])].sort((a, b) => a.t - b.t);
   const body = {
     session_id: id,
     meeting_id: getBrief()?.draft_id ?? "",
-    client: headset ? "vr" : "web",
+    client: telemetry?.client ?? (room.rehearse_in === "browser" ? "web" : "vr"),
     duration_s: Math.round((ended - started) / 100) / 10,
     owner_email: process.env.DRYRUN_OWNER_EMAIL ?? "",
     presenter: { name: process.env.DRYRUN_PRESENTER_NAME ?? "", email: process.env.DRYRUN_OWNER_EMAIL ?? "" },
     events,
-    ...(headset?.gaze_dwell_s ? { gaze_dwell_s: headset.gaze_dwell_s } : {}),
-    ...(headset?.facing_slides_s != null ? { facing_slides_s: headset.facing_slides_s } : {}),
+    ...(telemetry?.gaze_dwell_s ? { gaze_dwell_s: telemetry.gaze_dwell_s } : {}),
+    ...(telemetry?.facing_slides_s != null ? { facing_slides_s: telemetry.facing_slides_s } : {}),
     bundle: withoutAudio(room.bundle),
   };
   void run(id, body);

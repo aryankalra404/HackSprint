@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.18).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.21).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -386,6 +386,8 @@ export interface Room {
   height_offset: number;
   // How long the presenter means to pitch, sent to /prep; starts at n8n's suggestion, or 5
   pitch_minutes: number;
+  // Where the presenter rehearses this panel (0.21): the headset, or the browser's rehearsal page; "vr" for older rooms
+  rehearse_in: RehearseIn;
   // The debrief of the run that just ended (0.20); null until a session ends, and again once one starts
   debrief: RoomDebrief | null;
 }
@@ -419,6 +421,14 @@ export interface Deck {
 
 export type SessionActor = "headset" | "web";
 
+export type RehearseIn = "vr" | "browser";
+
+// Who on the panel is speaking and who has a hand up right now (0.21), set by the rehearsing client with POST /api/room/now
+export interface LiveNow {
+  speaking: PersonaId | null;
+  hands: PersonaId[];
+}
+
 // POST /api/room/session: start (briefed → live), end (live → done), restart (done → briefed, same panel)
 export type SessionAction = "start" | "end" | "restart";
 
@@ -431,6 +441,8 @@ export interface LiveSession {
   stage: "opening" | "pitch" | "questions" | "closing";
   // Turns sent to n8n and not answered yet (0.19), so the dashboard shows n8n at work
   thinking?: ThinkingTurn[];
+  // Missing until the rehearsing client first sends it; cleared when the session ends (0.21)
+  now?: LiveNow;
   feed: LoggedTurn[];
 }
 

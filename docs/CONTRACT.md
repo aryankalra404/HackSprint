@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.20, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.21, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -299,7 +299,7 @@ How turns are taken (the headset's rules; what is said is always n8n's):
 ## POST `/debrief`
 Sent when the session ends. The headset posts what only it knows to the laptop's `/api/debrief` (before it ends the session); the laptop adds the turns it logged and the slide changes it saw, and forwards everything to n8n.
 
-Headset to laptop:
+Headset (or browser) to laptop:
 ```json
 {
   "session_id": "string",
@@ -320,6 +320,7 @@ Laptop to n8n: the same, plus `bundle` (without audio), `meeting_id` (the meetin
 The laptop sends it as soon as the session ends, whoever ended it, with the headset's telemetry if it arrived first (so the headset posts `/api/debrief` before it ends the session; it sends none yet). `session_id` is the run's id (the room's `debrief.run_id`). Without a briefed panel or any turns there's nothing to debrief and nothing is sent.
 Field notes:
 - `rescue_level` is 1 for calm, 2 for keyword and 3 for bridge.
+- *(0.21)* The browser rehearsal page sends this too, with `client: "web"` and its silences (`{ t, type: "silence", duration_s, rescue_level }`), before it ends the session. It has no `gaze_dwell_s` or `facing_slides_s`.
 - `gaze_dwell_s` *(VR)*: seconds the presenter's head faced each person. The Quest 3S has no eye tracking, so this is head direction, shown as "Who you faced", never as eye contact. `facing_slides_s` *(VR)*: seconds they spent turned to the TV behind them.
 
 n8n works through the debrief, saving its progress and the result to the **DryRun sessions** data table after each step (read with `GET /session`), and answers when it's done (about 20–40 s) with the whole session record, the same as `GET /session` *(0.20: before, it answered at once with `{ "accepted": true }`)*. The laptop shows the progress meanwhile by reading `GET /session` every few seconds, and keeps the finished record, so a report opened later costs no n8n call. n8n also emails the report, marks the meeting `practised`, and keeps the weak spots and each slide's `notes` for that meeting's next `/prep`. The headset's `/api/debrief` is answered at once by the laptop with `{ "accepted": true }`. The result (`debrief`):
@@ -439,6 +440,7 @@ Long poll: answers as soon as the room's `version` is greater than `since`, or a
     "ended_at": null,
     "ended_by": null,
     "stage": "opening | pitch | questions | closing",
+    "now": { "speaking": "p2", "hands": ["p3"] },
     "thinking": [{ "id": "string", "mode": "opening | segment | answer | pitch_end", "slide_index": 2, "t": 143.2, "asked_by": "p1" }],
     "feed": [{ "t": 80.1, "mode": "segment", "slide_index": 1, "transcript": "string", "note": "string", "reactions": [{ "persona_id": "p1", "kind": "question", "text": "string", "raise_hand": true, "reason": "string" }] }]
   },
@@ -450,6 +452,7 @@ Long poll: answers as soon as the room's `version` is greater than `since`, or a
   "slide": 0,
   "height_offset": 0,
   "pitch_minutes": 5,
+  "rehearse_in": "vr | browser",
   "debrief": { "run_id": "string", "state": "running | done | failed | skipped", "steps": [], "error": null, "overall": 63, "headline": "string" }
 }
 ```
@@ -460,12 +463,14 @@ Field notes:
 - `phase`: `briefed` means the panel is seated and waiting for the presenter; `live` from the moment the session starts; `done` once it ends.
 - `live` is `null` until a session starts. It is cleared when a new panel is briefed or the session is restarted.
 - `live.thinking` *(0.19)* is each turn the laptop has sent to n8n and is still waiting on (usually none or one), so the dashboard can show n8n at work during the few seconds a turn takes. The laptop adds one when a turn arrives and removes it when n8n answers or fails; `asked_by` only with an answer.
+- `live.now` *(0.21)*: who on the panel is speaking and who has a hand up right now, for the dashboard's live room plan. Set by the rehearsing client with `POST /api/room/now`; missing until it first does, and cleared when the session ends.
 - `live.stage` and `live.feed` *(0.18)* are kept by the laptop from the turns it forwards: `opening` until the first `segment`, `pitch` until a `pitch_end`, then `questions`, and `closing` once a reaction is the chair's closing. `feed` is every turn so far with n8n's `note` and reasons, for the dashboard; it has no audio.
 - `bundle.lines[].audio_url` and every `audio_url` the headset gets are paths on the laptop (`GET /api/audio/<id>.wav`).
 - `name_cards`: whether the headset shows a tent card (name, role, colour) on the table in front of each person. Off unless switched on from the web.
 - `deck` is the presenter's slides, `null` until one is uploaded. The laptop turns the upload into one JPEG per slide (at most 1920 px on the long side) and serves them itself: `image_url` is a path on the laptop, so the headset prefixes the laptop address it already uses. A new deck gets a new `id`, so a headset can keep images it already has for an `id`. Seating a different meeting's panel clears it.
 - `slide` is the slide on screen, from 0. It goes back to 0 when a session starts or restarts, and when a deck is uploaded.
 - `debrief` *(0.20)*: the debrief of the run that just ended, `null` until a session ends (and again once one starts or restarts). `run_id` is that run's session id for `/debrief`, `GET /session` and the report (`/s/<run_id>/report`): the bundle's `session_id` plus the run's start time, so each run of the same panel gets its own report. `steps` are n8n's `debrief_status.steps` as the laptop last read them. `skipped` when there was nothing to debrief (no turns), `failed` with `error` when n8n failed. `overall` and `headline` are the debrief's, once `done`. `POST /api/room/debrief` (web) tries a failed debrief again.
+- `rehearse_in` *(0.21)*: where the presenter rehearses this panel, `"vr"` (the headset, the default, and for rooms saved before 0.21) or `"browser"` (the web app's rehearsal page, `/s/<session_id>/rehearse`). Set when the panel is briefed. **When it's `"browser"`, the headset** keeps seating the panel and showing slides, but doesn't start the session on speech or A, doesn't record or take turns, and its monitor says "Rehearsing in the browser". The browser page, when it's `"vr"`, offers "Rehearse here instead", which sets it to `"browser"`.
 - `pitch_minutes` *(0.18)*: how long the presenter means to pitch, sent to `/prep`. Set on the practice page; it starts at n8n's suggestion (`proposal.pitch.minutes`), or 5 without one.
 - `height_offset` raises (or, if negative, lowers) the presenter's eyes in VR, in metres from -0.5 to 0.5, to the centimetre; 0 unless moved on the web. It's for when the headset's floor is off. The headset eases to it and keeps it after teleporting.
 - When the deck is converted, the laptop also extracts each slide's text, which it sends to `/prep` (not in the room).
@@ -474,7 +479,7 @@ Field notes:
 Web only: saves the presenter's edits while drafting. Body: `{ "panel": [...] }` (the same items as `/prep`'s `panel`). Bumps `version`.
 
 ### PUT `/api/room/settings`
-Web only. Body: `{ "name_cards": true, "height_offset": 0.12, "pitch_minutes": 5 }`, any of them. `pitch_minutes` is a whole number from 1 to 60, allowed only before the panel is briefed. `height_offset` is clamped to -0.5 to 0.5 and rounded to the centimetre; the web sends it several times a second while its height bar is dragged. Answers with the room, or `400` with `{ "error": "string" }`. Bumps `version`.
+Web only. Body: `{ "name_cards": true, "height_offset": 0.12, "pitch_minutes": 5, "rehearse_in": "browser" }`, any of them. `pitch_minutes` is a whole number from 1 to 60, allowed only before the panel is briefed. `rehearse_in` *(0.21)* is `"vr"` or `"browser"`, allowed while `briefed` or `done` (`409` otherwise). `height_offset` is clamped to -0.5 to 0.5 and rounded to the centimetre; the web sends it several times a second while its height bar is dragged. Answers with the room, or `400` with `{ "error": "string" }`. Bumps `version`.
 
 ### POST `/api/room/deck`
 Web only: uploads the presenter's deck. Body: `multipart/form-data` with one `file`: a PDF, PowerPoint (`.pptx`, `.ppt`) or Keynote (`.key`) file, up to 100 MB. The laptop converts it (PowerPoint and Keynote through LibreOffice, then every format through Ghostscript), which takes a few seconds, and answers with the room. Errors answer `400` (wrong type, empty, unreadable) or `500` (conversion failed) with `{ "error": "string" }`. Bumps `version`.
@@ -500,6 +505,15 @@ Starts, ends or restarts the rehearsal. Sent by the headset (when the presenter 
 ```
 - `start` is allowed in `briefed` and moves to `live` (back to the first slide); `end` is allowed in `live` and moves to `done`; `restart` is allowed in `done` and moves back to `briefed` with the same panel, clearing `live`. Anything else answers `409` with `{ "error": "string", "room": {} }`, so a second "start" (e.g. the headset and the web at once) changes nothing.
 - The answer is the room. Bumps `version`.
+
+### POST `/api/room/now` *(0.21)*
+Who on the panel is speaking and who has a hand up, from the client that's rehearsing (the browser; optional for the headset). Sent only when it changes (a few times a minute, not per frame).
+```json
+{ "speaking": "p2", "hands": ["p3"], "by": "web | headset" }
+```
+- `speaking` is a persona id or `null`; `hands` lists persona ids (empty when no hand is up). Ids not on the panel answer `400`.
+- Allowed only while `live`; otherwise `409` with `{ "error": "string" }`.
+- Answers `{ "ok": true }` and sets `live.now`. Bumps `version`.
 
 ### Headset view (`ws://<laptop>:3001/view`)
 What the presenter sees, live on the dashboard. The web app runs a WebSocket relay on its own port, **3001** (`web/src/lib/headset/relay.ts`), so a megabyte or two of video a second never queues ahead of the room's long poll. The headset connects to the laptop address it already uses (above), with port 3001; over USB, `npm run quest` also runs `adb reverse tcp:3001 tcp:3001`.
@@ -541,3 +555,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.18 (11 Oct): the rehearsal becomes a meeting. Nothing about the conversation is fixed in code: `/prep` takes `pitch_minutes` and the deck's slide text, and returns n8n's `plan` (how many questions, when), each person's `manner`, the `chair`, rescue timings, the last run's `notes` per slide and `lines` voiced ahead of time. `/turn` gains the modes `opening` and `pitch_end` (`slide_end` becomes `segment`), the laptop adds `context` (bundle, turns, pending questions), and the response has `reactions` (several, with `raise_hand` and `line_id`), `note` and `end_session`. Voices come back as WAV and the laptop serves them (`GET /api/audio/<id>.wav`). `/debrief` is answered at once and followed through `GET /session` (`debrief_status`); its result gains `slides` (the transcript per slide with marks and a talk track) and `facing`; `gaze_dwell_s` is head direction ("Who you faced"), and `facing_slides_s` is new. The room gains `pitch_minutes`, `live.stage` and `live.feed`; `/meeting`'s proposal gains `pitch`.
 - 0.19 (11 Oct): the room's `live.thinking`, the turns waiting on n8n, for the dashboard's live feed.
 - 0.20 (11 Oct): debriefs. `/debrief` from the laptop gains `meeting_id`, `owner_email`, `presenter`, the turns' `note` and the slide changes the laptop saw; n8n answers when done with the session record (it saves progress on the way, read through `GET /session`), and the result gains `weak_spots` and fixed metric names. `/meetings` gains `practice`, `/meeting` gains `sessions`, the room gains `debrief` (each run of a panel is its own session), and `/prep` uses the meeting's last debrief (talk track, weak spots, drill). `GET /session` answers `404` for an unknown session.
+- 0.21 (11 Oct): rehearse in the browser. The room gains `rehearse_in` (`"vr"` or `"browser"`, set when briefed and with `PUT /api/room/settings`; the headset doesn't take turns when it's `"browser"`) and `live.now` (who is speaking and who has a hand up, set with the new `POST /api/room/now`). The browser sends `/api/debrief` with `client: "web"` and its silences.
