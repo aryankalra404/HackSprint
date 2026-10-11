@@ -52,7 +52,7 @@ export function exchanges(telemetry: Telemetry): Exchange[] {
     for (const r of e.reactions) {
       if (r.kind !== "question" && r.kind !== "follow_up") continue;
       out.push({
-        id: `q-${e.t}`,
+        id: `q-${e.t}-${r.persona_id}`,
         t: e.t,
         slide_index: e.slide_index,
         persona_id: r.persona_id,

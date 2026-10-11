@@ -114,6 +114,10 @@ export function verdictTone(verdict: Verdict): Tone {
   return VERDICT[verdict][0];
 }
 
+export function verdictLabel(verdict: Verdict): string {
+  return VERDICT[verdict][1];
+}
+
 const STANCE: Record<StakeholderVerdict["stance"], [Tone, string]> = {
   backs: ["good", "Backs it"],
   undecided: ["warn", "Undecided"],

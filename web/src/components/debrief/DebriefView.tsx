@@ -17,7 +17,8 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
 
   const data = useMemo(() => {
     const segments = slideSegments(telemetry, bundle.slides);
-    return { segments, exchanges: exchanges(telemetry), freezes: freezes(telemetry, segments) };
+    const qaStart = telemetry.events.find((e) => e.type === "turn" && e.mode === "pitch_end")?.t;
+    return { segments, exchanges: exchanges(telemetry), freezes: freezes(telemetry, segments), qaStart };
   }, [telemetry, bundle.slides]);
 
   const [selection, setSelection] = useState<Selection | null>(() => {
@@ -71,6 +72,7 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
         segments={data.segments}
         exchanges={data.exchanges}
         freezes={data.freezes}
+        qaStart={data.qaStart}
         selection={selection}
         onSelect={setSelection}
       />
