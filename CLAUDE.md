@@ -13,6 +13,11 @@ DryRun prepares you for high-stakes meetings and lets you rehearse them. n8n wat
 - **Tested only in the Unity editor:** live seating, slides, voice start, look-at, Wi-Fi discovery, eye height, the headset view (it only streams from an Android build) and turns with the panel (record each moment, `/api/turn`, raised hand, voices with lip sync, the questions and the closing; tested against a stand-in laptop, not n8n). Tested on the Quest: changing slides with a pinch (11 Oct; the one-pinch-one-slide fix still needs a run). The dressed hands' tracking can't run in the editor (`Snapshot Hands` shows the look).
 - **n8n access:** n8n Cloud account `aryankalra47` (since 11 Oct; the first account ran out of executions). The n8n MCP server is set up for this project in Claude Code (local scope; the token isn't in the repo). Workflow IDs, how to change and redeploy them, and credentials: `n8n/README.md`. The Gemini key is on the free tier, with a Groq fallback on every Gemini step; watch the quotas (PLAN.md, Risks).
 
+## Planned, not built (ask first)
+- The ideas for the rest of the week are in `docs/PLAN.md` ("Mon 12 – Fri 16: the plan to win") and, in detail, `docs/NATURAL_PANEL.md`. They are **proposals the user hasn't approved yet**.
+- Before building any of them, explain the idea in a few lines (what it does, why it helps, what it costs) and ask. Don't implement on the strength of the plan alone.
+- When the user asks what's left, what the plan is, or what to do next, remind them of these items, grouped and in the proposed order, and say which are approved or built.
+
 ## Where things live
 | Part | Location | Notes |
 |---|---|---|
