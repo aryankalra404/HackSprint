@@ -1,4 +1,4 @@
-import type { Bundle, LiveSession, LoggedTurn, Reaction, ThinkingTurn, TurnContext, TurnRequest, TurnResponse } from "./contract";
+import type { Bundle, LiveSession, LoggedTurn, Reaction, ThinkingTurn, TurnContext, TurnRequest, TurnResponse, VoicedLine } from "./contract";
 import { postToN8n } from "./api";
 import { compressSpeech, saveAudio } from "./audio";
 import { getRoom, updateRoom } from "./room";
@@ -6,6 +6,10 @@ import { getRoom, updateRoom } from "./room";
 // The laptop's side of a turn (contract: POST /turn). The headset sends what the presenter said; the laptop adds what n8n needs to
 // decide (the bundle, the turns so far, the questions still open), so n8n keeps no state. n8n's voices are saved here and handed to
 // the headset as paths on the laptop, and the turn goes into the room's live feed for the dashboard.
+
+// DRYRUN_FAKE_TURNS=1 answers turns from the bundle instead of n8n (stand-in turns), so clients can be built without spending executions
+export const FAKE_TURNS = process.env.DRYRUN_FAKE_TURNS === "1";
+const FAKE_DELAY_MS = 2_000;
 
 export class TurnError extends Error {
   constructor(
@@ -71,15 +75,20 @@ function setThinking(startedAt: string, change: (list: ThinkingTurn[]) => Thinki
 }
 
 async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { live: LiveSession; bundle: Bundle }): Promise<TurnResponse> {
-  const { audio_wav_base64, ...rest } = body;
-  const speech = await compressSpeech(audio_wav_base64 ?? "");
   const feed = room.live.feed ?? [];
-  const context: TurnContext = { bundle: withoutAudio(room.bundle), elapsed_s: body.t, turns: feed, pending: pendingQuestions(feed) };
   let reply: TurnResponse;
-  try {
-    reply = await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
-  } catch (err) {
-    throw new TurnError(err instanceof Error ? err.message : "n8n failed", 502);
+  if (FAKE_TURNS) {
+    await new Promise((r) => setTimeout(r, FAKE_DELAY_MS));
+    reply = standInReply(body, room.bundle, feed);
+  } else {
+    const { audio_wav_base64, ...rest } = body;
+    const speech = await compressSpeech(audio_wav_base64 ?? "");
+    const context: TurnContext = { bundle: withoutAudio(room.bundle), elapsed_s: body.t, turns: feed, pending: pendingQuestions(feed) };
+    try {
+      reply = await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
+    } catch (err) {
+      throw new TurnError(err instanceof Error ? err.message : "n8n failed", 502);
+    }
   }
 
   // Each voice becomes a path on the laptop: new lines are saved, lines voiced in /prep already have one
@@ -108,4 +117,52 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     updateRoom({ live: { ...now.live, feed: next, stage: stageAfter(now.live.stage ?? "opening", turn) } });
   }
   return { ...reply, reactions };
+}
+
+// A stand-in for n8n's /turn, from the bundle alone (DRYRUN_FAKE_TURNS=1). It follows the shape of a real meeting: the chair welcomes,
+// someone with an objection on a slide asks it the first time that slide is pitched, answers are acknowledged, the pitch end opens the
+// floor for one question from someone who waits, and the answer to that gets the chair's closing.
+function standInReply(body: TurnRequest, bundle: Bundle, feed: LoggedTurn[]): TurnResponse {
+  const chair = bundle.personas.find((p) => p.chair) ?? bundle.personas[0];
+  const line = (kind: VoicedLine["kind"], personaId?: string) => bundle.lines.find((l) => l.kind === kind && (!personaId || l.persona_id === personaId));
+  const say = (kind: Reaction["kind"], personaId: string, fallback: string, from?: VoicedLine, raise = false): Reaction => ({
+    persona_id: from?.persona_id ?? personaId,
+    kind,
+    text: from?.text ?? fallback,
+    ...(from ? { line_id: from.id } : {}),
+    raise_hand: raise,
+    reason: "Stand-in turn: answered from the bundle, not n8n.",
+  });
+  const asked = new Set(feed.flatMap((t) => t.reactions.filter((r) => r.kind === "question" || r.kind === "follow_up").map((r) => r.text)));
+  const reply = (reactions: Reaction[], end = false): TurnResponse => ({
+    transcript: "(stand-in)",
+    note: "Stand-in turn (DRYRUN_FAKE_TURNS): n8n wasn't called.",
+    reactions,
+    answer_verdict: body.mode === "answer" && body.asked_by ? "partial" : null,
+    end_session: end,
+  });
+
+  if (body.mode === "opening") return reply(chair ? [say("welcome", chair.id, "Welcome, thanks for coming in. Go ahead whenever you're ready.", line("welcome", chair.id) ?? line("welcome"))] : []);
+
+  if (body.mode === "segment") {
+    const pitchedBefore = feed.some((t) => t.mode === "segment" && t.slide_index === body.slide_index);
+    const asker = pitchedBefore ? null : bundle.personas.find((p) => p.objections.some((o) => o.slide_index === body.slide_index && !asked.has(o.text)));
+    const objection = asker?.objections.find((o) => o.slide_index === body.slide_index && !asked.has(o.text));
+    return reply(asker && objection ? [say("question", asker.id, objection.text, undefined, true)] : []);
+  }
+
+  if (body.mode === "pitch_end") {
+    const reactions = chair ? [say("open_floor", chair.id, "Thank you. Let's open it up for questions.", line("open_floor", chair.id) ?? line("open_floor"))] : [];
+    const waiter = bundle.personas.find((p) => p.manner === "waits" && p.objections.some((o) => !asked.has(o.text)));
+    const question = waiter?.objections.find((o) => !asked.has(o.text));
+    if (waiter && question) return reply([...reactions, say("question", waiter.id, question.text, undefined, true)]);
+    // Nobody left to ask: the chair closes straight away
+    return reply(chair ? [...reactions, say("closing", chair.id, "Thank you, we'll come back to you.")] : reactions, true);
+  }
+
+  // An answer: after the pitch end, the chair closes the meeting; during the pitch, it's acknowledged
+  if (feed.some((t) => t.mode === "pitch_end") && chair) return reply([say("closing", chair.id, "Thank you, we'll come back to you.")], true);
+  const by = body.asked_by ?? chair?.id;
+  if (!by) return reply([]);
+  return reply([say("acknowledge", by, "Thanks, that helps.", line("acknowledge", by))]);
 }
