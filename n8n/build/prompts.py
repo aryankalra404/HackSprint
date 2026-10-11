@@ -55,9 +55,10 @@ Rules:
 - attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.
   role: only if the invite or emails state it (e.g. "Rajiv from finance" -> "Finance"); otherwise an empty string. Never guess a title.
   likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.
-- practice_panel: 1 to 4 extra people for a rehearsal only, playing the roles that usually influence a decision like this at a company
-  like this (e.g. CTO, procurement). Give them invented, realistic Indian names. Never use the names of real people found in the research.
-  These are clearly hypothetical and are never presented as attendees.
+- practice_panel: 3 to 5 people the presenter could add to a rehearsal, playing the roles that usually influence a decision like this at a
+  company like this (e.g. CTO, procurement) and who are not already among the attendees, most influential first. Give them invented,
+  realistic Indian names. Never use the names of real people found in the research. These are clearly hypothetical and are never presented
+  as attendees: the presenter rehearses against the real attendees and adds these if they want.
 - questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or "" if it is not
   clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.
 - risks: what could lose this meeting, in short phrases, grounded in the emails and research.
@@ -88,11 +89,10 @@ BRIEF_SCHEMA = {"type": "object", "properties": {
     "recent_news": {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string"}, "date": {"type": "string"}}, "required": ["text", "date"]}},
     "attendees": {"type": "array", "items": ATTENDEE},
     "practice_panel": {"type": "array", "items": PRACTICE},
-    "suggestions": {"type": "array", "items": {"type": "object", "properties": {"role": {"type": "string"}, "role_short": {"type": "string"}, "why": {"type": "string"}}, "required": ["role", "role_short", "why"]}},
     "questions": {"type": "array", "items": {"type": "object", "properties": {"question": {"type": "string"}, "asked_by": {"type": "string"}, "why": {"type": "string"}, "suggested_answer": {"type": "string"}}, "required": ["question", "asked_by", "why", "suggested_answer"]}},
     "risks": {"type": "array", "items": {"type": "string"}},
     "pitch": {"type": "object", "properties": {"minutes": {"type": "integer"}, "why": {"type": "string"}}, "required": ["minutes", "why"]}},
-    "required": ["summary", "what_they_do", "recent_news", "attendees", "practice_panel", "suggestions", "questions", "risks", "pitch"]}
+    "required": ["summary", "what_they_do", "recent_news", "attendees", "practice_panel", "questions", "risks", "pitch"]}
 
 # DryRun rehearsal prep (/prep): brief the confirmed practice panel for one rehearsal. Nothing about the meeting is fixed in
 # code: how many questions, who interrupts, who chairs and what they say all come from here (and later from /turn).

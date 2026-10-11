@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.21, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.22, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -63,7 +63,8 @@ Field notes:
 - `meeting` is as in `/meetings`; `proposal` is a `/panel` response, so the web app can seat and edit it.
 - `sessions` *(0.20)*: this meeting's rehearsals, newest first, from the DryRun sessions table; each links to its report (`/s/<session_id>/report`).
 - **The brief states only facts** (it's emailed to the presenter): `attendees` are only people named in the invite or emails, `role` only if stated there (else empty), `recent_news` only from the cited `sources`, and a question's `asked_by` is a real attendee or empty.
-- **The practice panel is hypothetical:** `proposal.members` starts with the real attendees (`source: "email"`) and adds roles to rehearse against (`source: "typical"`, invented names). Only the web app shows these, labelled as practice.
+- **The practice panel starts with the real people** *(0.22)*: `proposal.members` are the attendees from outside the presenter's organisation (`source: "email"`; colleagues on the same email domain are left out, unless it's a public mail domain), with `role` only if the invite or emails state it, else `""` for the presenter to fill in. Only when no real attendee is known are the top two practice roles seated instead (`source: "typical"`).
+- **Practice roles are suggestions** *(0.22)*: `proposal.suggestions` are hypothetical people to rehearse against, most influential first, each a whole person (`display_name` invented, `role`, `role_short`, `gender`, `avatar`, `why`, `will_push_on`), so adding one seats a ready person. Meetings prepared before 0.22 have suggestions with only `role`, `role_short` and `why`. Only the web app shows these, labelled as practice.
 - `brief` is `null` while `status` is `researching`.
 - `proposal.pitch` *(0.18)* is n8n's suggested pitch length, `{ "minutes": 10, "why": "30-minute call: about 10 minutes of pitch, the rest discussion" }`, from the invite's length and the kind of meeting. The presenter can change it on the practice page. May be missing on meetings prepared before 0.18 (the web app then asks).
 
@@ -544,3 +545,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.19 (11 Oct): the room's `live.thinking`, the turns waiting on n8n, for the dashboard's live feed.
 - 0.20 (11 Oct): debriefs. `/debrief` from the laptop gains `meeting_id`, `owner_email`, `presenter`, the turns' `note` and the slide changes the laptop saw; n8n answers when done with the session record (it saves progress on the way, read through `GET /session`), and the result gains `weak_spots` and fixed metric names. `/meetings` gains `practice`, `/meeting` gains `sessions`, the room gains `debrief` (each run of a panel is its own session), and `/prep` uses the meeting's last debrief (talk track, weak spots, drill). `GET /session` answers `404` for an unknown session.
 - 0.21 (11 Oct): the room's `scripted`, for the sample meeting: a whole rehearsal without speaking and without n8n, the headset standing in for the presenter and the laptop answering turns from a script.
+- 0.22 (11 Oct): the proposed panel seats only the real attendees from outside the presenter's organisation (roles left empty when unknown); practice roles become ranked suggestions, each a whole person with a name and a face. Only a meeting with no known attendee gets two practice roles seated.

@@ -156,6 +156,7 @@ const host = u => { const h = String(u || '').split('//').pop().split('/')[0]; r
 const sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];
 const attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;
 const practising = seated ? seated.proposal.members.length - attending : 0;
+const suggested = seated ? (seated.proposal.suggestions || []).length : 0;
 const step = (id, label, done, running, doneText, runningText, extra) =>
   ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });
 const progress = [
@@ -172,7 +173,8 @@ const progress = [
   step('brief', 'Brief', !!seated, !!research,
     seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),
   step('panel', 'Panel', !!seated, !!research,
-    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),
+    'Seated ' + attending + ' from the invite' + (practising ? ' and ' + practising + ' practice role' + (practising === 1 ? '' : 's') : '') + '; suggested '
+      + suggested + ' more to practise against', 'Seating the practice panel'),
   step('email', 'Email', !!sent && !sent.error, !!seated,
     'Emailed you the brief', 'Emailing you the brief'),
 ];
@@ -382,12 +384,19 @@ return [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources,
                    ".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails)"
                    ".replace('{research}', $('Read the research').first().json.research)", GEMINI_REPLY, schema=BRIEF_SCHEMA)
     c += code_node("seatPanel", "Seat the panel", REPLY_JS + """
-// The brief keeps only real attendees; the practice panel (attendees plus hypothetical roles) is for rehearsal in the web app.
+// The brief keeps only real attendees. The practice panel seats the real people from outside the presenter's organisation (contract 0.22);
+// the hypothetical practice roles are suggestions the presenter can add with one tap, each a whole person with a name and a face.
+// Only when no real attendee is known are the top two practice roles seated, so there is someone to pitch to.
 // Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).
 const prev = $('Read the research').first().json;
 const b = JSON.parse(replyText($json) || '{}');
 const attendees = (b.attendees || []).filter(a => a.name);
-const practice = (b.practice_panel || []).slice(0, Math.max(0, 6 - attendees.length));
+// Colleagues from the presenter's own company are on their side of the table (a public mail domain says nothing)
+const PUBLIC = ['gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com', 'rediffmail.com'];
+const domain = e => String(e || '').toLowerCase().split('@')[1] || '';
+const own = domain(prev.meeting.owner_email);
+const external = attendees.filter(a => !own || PUBLIC.includes(own) || domain(a.email) !== own);
+const practice = (b.practice_panel || []).filter(p => p.name && p.role);
 const SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];
 const FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],
                 male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };
@@ -395,15 +404,19 @@ const used = { female: 0, male: 0 };
 const face = gender => {
   let g = gender === 'female' ? 'female' : 'male';
   if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';
-  const f = FACES[g][used[g]];
+  const f = FACES[g][used[g] % FACES[g].length];
   used[g] += 1;
   return f;
 };
-const short = role => (role || 'Guest').length <= 12 ? (role || 'Guest') : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);
-const people = attendees.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || 'Attendee', role_short: short(a.role), gender: a.gender,
+// A real person's role only if the invite or emails state it: empty means the presenter fills it in
+const short = role => !role ? '' : role.length <= 12 ? role : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);
+const people = external.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || '', role_short: short(a.role), gender: a.gender,
   why: 'In the meeting invite', source: 'email', will_push_on: a.likely_focus }));
-const extra = practice.map(p => ({ display_name: p.name, role: p.role, role_short: p.role_short, gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on }));
-const members = people.concat(extra).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));
+const asPerson = p => ({ display_name: p.name, role: p.role, role_short: p.role_short || short(p.role), gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on });
+const seatedPractice = people.length ? [] : practice.slice(0, 2);
+const members = people.concat(seatedPractice.map(asPerson)).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));
+// The rest of the practice roles, ranked, each with a face of its own so adding one seats a ready person
+const suggestions = practice.slice(seatedPractice.length).map(p => ({ ...asPerson(p), avatar: face(p.gender) }));
 const brief = {
   summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },
   attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),
@@ -411,7 +424,7 @@ const brief = {
 };
 // n8n's suggested pitch length (contract 0.18: proposal.pitch), kept to whole minutes from 1 to 60
 const pitch = b.pitch && b.pitch.minutes ? { minutes: Math.max(1, Math.min(60, Math.round(b.pitch.minutes))), why: b.pitch.why || '' } : undefined;
-const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [], ...(pitch ? { pitch } : {}) };
+const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions, ...(pitch ? { pitch } : {}) };
 return [{ json: { meeting: prev.meeting, brief, proposal } }];""", [{"meeting": MEETING, "brief": {}, "proposal": {}}])
     c += code_node("rowReady", "Row: ready", PROGRESS_JS + """
 const s = $('Seat the panel').first().json;

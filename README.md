@@ -11,7 +11,7 @@ Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built
   1. Gemini decides whether the meeting is worth preparing for, and says why.
   2. It reads your recent emails with the attendees, the company's news (Google News) and its website. If the news is thin, it also searches the web (this needs a paid Gemini key).
   3. It writes the brief: real attendees only, likely questions, risks, and dated news with sources.
-  4. It proposes a practice panel.
+  4. It seats the real people from the invite as your practice panel, and suggests practice roles (a CFO, procurement) you can add with one tap.
   5. It saves everything to an n8n data table and emails you the brief.
 
   The web app shows each step live as n8n works, with a link to the run.

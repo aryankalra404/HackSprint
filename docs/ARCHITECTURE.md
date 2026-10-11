@@ -38,7 +38,7 @@ Built from `n8n/build/build.py`; IDs and how to change them in `n8n/README.md`.
    - Google News RSS for the company (up to 15 dated stories with publisher and link) and the company's homepage text;
    - if there are fewer than 3 stories, Gemini with Google Search (needs billing on the key; skipped on the free tier);
    - Gemini summarises only those sources.
-4. **Brief and panel:** Gemini writes the brief (real attendees only, role only if stated, likely questions with who's likely to ask, risks, dated news) and a practice panel (the attendees plus invented, labelled practice roles). A Code node seats everyone, with a colour and a face.
+4. **Brief and panel:** Gemini writes the brief (real attendees only, role only if stated, likely questions with who's likely to ask, risks, dated news) and ranked practice roles (invented, labelled people who usually sway a decision like this). A Code node seats the real attendees from outside your organisation (roles left blank when unknown) and offers the practice roles as one-tap suggestions, each with a name and a face; only a meeting with no known attendee gets two practice roles seated (contract 0.22).
 5. **Save and email:** the row in the **DryRun meetings** data table becomes `ready`, and Gmail sends the factual brief.
 Each Gemini step (decide, research, brief) has a Groq fallback on its error output: the same prompt to `gpt-oss-120b`, read by the same next step. Web search is Gemini-only.
 6. **If anything fails:** an Error Trigger finds the meeting by run id and marks the step it was on as failed, with a plain reason.

@@ -174,6 +174,7 @@ Nothing in the meeting is scripted: n8n decides who speaks, what they say and wh
 ## Decisions
 | Date | Decision | Status |
 |---|---|---|
+| 11 Oct | The proposed panel seats only the real attendees from outside your organisation (role blank when the invite doesn't say, so the presenter fills it in); n8n's practice roles become ranked one-tap suggestions with a name and face. Only a meeting with no known attendee gets two practice roles seated. Tested with a real run (Swiggy: 1 seated, 3 suggested) | Accepted |
 | 10 Oct | Reposition from generic presentation rehearsal to high-stakes pitches in front of an AI buying committee | Proposed: confirm with team |
 | 10 Oct | Drop Cloud Run and Gemini Live; webhook-only with rescue on the device | Proposed |
 | 10 Oct | Drop the venue twin from a stage photo; use the built boardroom | Proposed |
