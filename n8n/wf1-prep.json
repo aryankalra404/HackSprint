@@ -2,7 +2,6 @@
   "name": "DryRun prep",
   "nodes": [
     {
-      "id": "b4fbf77b-9cf8-4336-a4ef-712174bc7989",
       "name": "Sticky Note e9523388",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -16,7 +15,6 @@
       }
     },
     {
-      "id": "7c428cd2-114d-4498-8db6-6b42ce91d6a6",
       "name": "New calendar event",
       "type": "n8n-nodes-base.googleCalendarTrigger",
       "typeVersion": 1,
@@ -43,7 +41,6 @@
       }
     },
     {
-      "id": "16ac8b8d-ed66-441e-8189-b427dfc8b006",
       "name": "Shape the event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -52,13 +49,10 @@
         0
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "// One meeting per calendar event, in the shape the rest of the workflow (and docs/CONTRACT.md) uses\nreturn $input.all().map(({ json: e }) => {\n  const attendees = (e.attendees || []).map(a => ({ name: a.displayName || a.email.split('@')[0], email: a.email, self: !!a.self }));\n  const self = attendees.find(a => a.self) || { email: (e.creator && e.creator.email) || (e.organizer && e.organizer.email) || '' };\n  const start = (e.start && (e.start.dateTime || e.start.date)) || '';\n  const end = (e.end && (e.end.dateTime || e.end.date)) || '';\n  // The slot's length, so the brief can suggest how long to pitch (null for all-day events)\n  const minutes = start && end && e.start.dateTime ? Math.round((Date.parse(end) - Date.parse(start)) / 60000) : null;\n  return { json: {\n    meeting_id: e.id,\n    title: e.summary || 'Untitled meeting',\n    start,\n    minutes,\n    description: (e.description || '').replace(/<[^>]+>/g, ' ').slice(0, 2000),\n    attendees: attendees.filter(a => !a.self).map(a => ({ name: a.name, email: a.email })),\n    owner_email: self.email,\n    from_web: false,\n  } };\n});"
       }
     },
     {
-      "id": "48bf7f54-4eeb-42ad-abef-58e3c21b9f5a",
       "name": "Worth preparing?",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -78,13 +72,12 @@
           "timeout": 120000
         }
       },
+      "onError": "continueErrorOutput",
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 2000,
-      "onError": "continueErrorOutput"
+      "waitBetweenTries": 2000
     },
     {
-      "id": "3154d30e-2c78-494f-b3c4-b816a56b4c6a",
       "name": "Add a meeting (web app)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.2,
@@ -95,13 +88,10 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "dryrun/add-meeting",
-        "responseMode": "onReceived",
         "options": {}
-      },
-      "webhookId": "b8628452-ff21-44ec-ba9c-71b79d7620c4"
+      }
     },
     {
-      "id": "076ca225-1d5e-44c0-9efd-4a020bfb25df",
       "name": "Shape the request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -110,13 +100,10 @@
         192
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "// The web app sends { id, title, start, company, website, context, attendees: [{ name, email }], owner_email }\nreturn $input.all().map(({ json }) => {\n  const b = json.body || json;\n  return { json: {\n    meeting_id: b.id || ('web-' + Date.now()),\n    title: b.title || ('Meeting with ' + (b.company || 'a prospect')),\n    start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),\n    minutes: b.minutes || null,\n    description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.context].filter(Boolean).join('\\n').slice(0, 4000),\n    attendees: b.attendees || [],\n    owner_email: b.owner_email || '',\n    from_web: true,\n  } };\n});"
+        "jsCode": "// The web app sends { id, title, start, company, website, context, attendees: [{ name, email }], owner_email, offer }\nreturn $input.all().map(({ json }) => {\n  const b = json.body || json;\n  return { json: {\n    meeting_id: b.id || ('web-' + Date.now()),\n    title: b.title || ('Meeting with ' + (b.company || 'a prospect')),\n    start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),\n    minutes: b.minutes || null,\n    description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.offer && ('What the presenter offers: ' + b.offer), b.context].filter(Boolean).join('\\n').slice(0, 4000),\n    attendees: b.attendees || [],\n    owner_email: b.owner_email || '',\n    from_web: true,\n  } };\n});"
       }
     },
     {
-      "id": "b19ac2ee-6367-457b-a573-8ce55e6ccb0d",
       "name": "Read the decision",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -125,13 +112,10 @@
         224
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The model's answer, merged back into the meeting it was about. Meetings added from the web app are always prepared.\nconst shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $('Shape the request').all();\nreturn $input.all().map((item, i) => {\n  const d = JSON.parse(replyText(item.json) || '{}');\n  const m = shaped[i].json;\n  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';\n  // Added by hand (or \"Prepare anyway\"): always prepared, and the reason says so when n8n would have skipped it\n  const why = m.from_web && !d.prepare ? \"Prepared because you asked. n8n's view: \" + (d.why || 'not a high-stakes meeting') : (d.why || '');\n  return { json: { ...m, prepare: m.from_web || !!d.prepare, why, company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };\n});"
       }
     },
     {
-      "id": "20736f94-4fa3-4162-b1b5-5d1877383d41",
       "name": "Prepare it?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -144,7 +128,8 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 1
           },
           "conditions": [
             {
@@ -163,7 +148,6 @@
       }
     },
     {
-      "id": "9d49928d-fcc1-4088-b3d3-0596bf01385a",
       "name": "Row: researching",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -172,13 +156,10 @@
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "// The meeting as a row in the DryRun meetings table, while n8n works on it\n\nconst ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'researching',\n  brief: '', proposal: '', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...progressFields,\n} }));"
+        "jsCode": "// The meeting as a row in the DryRun meetings table, while n8n works on it\n\nconst ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst suggested = seated ? (seated.proposal.suggestions || []).length : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite' + (practising ? ' and ' + practising + ' practice role' + (practising === 1 ? '' : 's') : '') + '; suggested '\n      + suggested + ' more to practise against', 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'researching',\n  brief: '', proposal: '', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...progressFields,\n} }));"
       }
     },
     {
-      "id": "03611328-7fef-434c-a2f9-bc620b41c429",
       "name": "Save: researching",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -187,7 +168,6 @@
         320
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -200,7 +180,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -208,11 +187,11 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     },
     {
-      "id": "c7dcb5a8-b3f9-4fe2-8c25-c5da688296f5",
       "name": "Emails with them",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
@@ -221,22 +200,17 @@
         320
       ],
       "parameters": {
-        "resource": "message",
         "operation": "getAll",
-        "returnAll": false,
         "limit": 10,
-        "simple": true,
         "filters": {
-          "readStatus": "both",
-          "q": "={{ (() => { const m = $('Read the decision').item.json; const who = m.attendees.map(a => a.email).filter(Boolean); return who.length ? '(' + who.map(e => 'from:' + e + ' OR to:' + e).join(' OR ') + ') newer_than:120d' : 'from:nobody@invalid'; })() }}"
+          "q": "={{ (() => { const m = $('Read the decision').item.json; const who = m.attendees.map(a => a.email).filter(Boolean); return who.length ? '(' + who.map(e => 'from:' + e + ' OR to:' + e).join(' OR ') + ') newer_than:120d' : 'from:nobody@invalid'; })() }}",
+          "readStatus": "both"
         }
       },
       "executeOnce": true,
-      "alwaysOutputData": true,
-      "webhookId": "b1ea1450-88a0-4b89-a939-e9ec67be568a"
+      "alwaysOutputData": true
     },
     {
-      "id": "226f240d-1f8e-4ce1-9fb9-f8dbb9e3cb92",
       "name": "Summarise the emails",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -245,13 +219,10 @@
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "// The recent thread with the attendees, as short text for the brief\nconst msgs = $input.all().map(i => i.json).filter(m => m.snippet);\nconst meeting = $('Read the decision').first().json;\nconst emails = msgs.slice(0, 10).map(m => 'From ' + (m.From || '') + ' (' + (m.Subject || '') + '): ' + (m.snippet || '').slice(0, 400)).join('\\n') || 'No recent emails.';\nreturn [{ json: { meeting, emails, count: msgs.length } }];"
       }
     },
     {
-      "id": "b66669cf-876d-4e7f-93a3-9438fab2e5a8",
       "name": "Progress: emails read",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -260,13 +231,10 @@
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
+        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst suggested = seated ? (seated.proposal.suggestions || []).length : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite' + (practising ? ' and ' + practising + ' practice role' + (practising === 1 ? '' : 's') : '') + '; suggested '\n      + suggested + ' more to practise against', 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
       }
     },
     {
-      "id": "41b56840-a8cd-447c-b490-ecbf58be12cd",
       "name": "Save progress: emails",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -275,7 +243,6 @@
         320
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -288,7 +255,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -296,11 +262,11 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     },
     {
-      "id": "5b7875e2-eb34-4a65-a1d6-bd6a053f63af",
       "name": "Find the news",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -309,23 +275,21 @@
         320
       ],
       "parameters": {
-        "method": "GET",
         "url": "=https://news.google.com/rss/search?q={{ encodeURIComponent('\"' + $('Summarise the emails').first().json.meeting.company + '\"') }}&hl=en-IN&gl=IN&ceid=IN:en",
         "options": {
-          "timeout": 20000,
           "response": {
             "response": {
               "responseFormat": "text"
             }
-          }
+          },
+          "timeout": 20000
         }
       },
+      "onError": "continueRegularOutput",
       "retryOnFail": true,
-      "maxTries": 2,
-      "onError": "continueRegularOutput"
+      "maxTries": 2
     },
     {
-      "id": "cfd91a68-0c7e-4d17-a0ea-e33e4ee4c324",
       "name": "Read their website",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -334,10 +298,8 @@
         320
       ],
       "parameters": {
-        "method": "GET",
         "url": "=https://{{ $('Summarise the emails').first().json.meeting.company_domain || 'invalid.invalid' }}",
         "options": {
-          "timeout": 15000,
           "redirect": {
             "redirect": {}
           },
@@ -345,13 +307,13 @@
             "response": {
               "responseFormat": "text"
             }
-          }
+          },
+          "timeout": 15000
         }
       },
       "onError": "continueRegularOutput"
     },
     {
-      "id": "aead1774-fa67-4372-8838-dd168af91da9",
       "name": "Gather the sources",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -360,13 +322,10 @@
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "// Up to 15 recent headlines (with date, publisher and link) and the readable text of their homepage\nconst prev = $('Summarise the emails').first().json;\nconst rss = ($('Find the news').first().json.data || '').toString();\nconst unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\");\nconst tag = (xml, t) => { const m = xml.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };\nconst news = (rss.match(/<item>[^]*?<\\/item>/g) || []).slice(0, 15).map(it => {\n  const src = it.match(/<source url=\"([^\"]*)\">([^]*?)<\\/source>/);\n  const date = new Date(tag(it, 'pubDate'));\n  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', site: src ? src[1] : '',\n           date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };\n});\nconst html = ($('Read their website').first().json.data || '').toString();\nconst meta = name => { const m = html.match(new RegExp('<meta[^>]+(?:name|property)=\"' + name + '\"[^>]+content=\"([^\"]*)\"', 'i')); return m ? unescape(m[1]) : ''; };\nconst body = html.replace(/<script[^]*?<\\/script>/gi, ' ').replace(/<style[^]*?<\\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n// App-style sites render in the browser; their meta description still says what the company does\nconst website = [tag(html, 'title'), meta('description'), meta('og:description'), body].filter(Boolean).join(' ').slice(0, 3000);\nreturn [{ json: { ...prev, news, website } }];"
       }
     },
     {
-      "id": "5e667796-0040-434d-bfe5-1c30aeada04f",
       "name": "Research the company",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
@@ -386,13 +345,12 @@
           "timeout": 120000
         }
       },
+      "onError": "continueErrorOutput",
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 2000,
-      "onError": "continueErrorOutput"
+      "waitBetweenTries": 2000
     },
     {
-      "id": "ca8b40be-2237-4616-b154-318632a68690",
       "name": "Read the research",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -401,13 +359,10 @@
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The research summary, with the news it was written from as sources\nconst research = replyText($json);\n// Came straight from the news, or through the web search when the news had little\nconst searched = (() => { try { return $('Add the web results').isExecuted; } catch (e) { return false; } })();\nconst prev = searched ? $('Add the web results').first().json : $('Gather the sources').first().json;\nconst web = prev.web || [];\nconst sources = prev.news.slice(0, 8).map(n => ({ title: (n.publisher ? n.publisher + ': ' : '') + n.title, url: n.url, date: n.date, site: n.site }))\n  .concat(web.map(w => ({ title: w.title, url: w.url, site: w.site })));\nreturn [{ json: { meeting: prev.meeting, emails: prev.emails, research, sources, news_count: prev.news.length, has_website: !!prev.website,\n                  web_searched: searched, web_count: web.length, web_error: prev.web_error || '' } }];"
       }
     },
     {
-      "id": "9ec5c21e-be66-41a8-8f25-9780a709a956",
       "name": "Progress: researched",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -416,13 +371,10 @@
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
+        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst suggested = seated ? (seated.proposal.suggestions || []).length : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite' + (practising ? ' and ' + practising + ' practice role' + (practising === 1 ? '' : 's') : '') + '; suggested '\n      + suggested + ' more to practise against', 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
       }
     },
     {
-      "id": "cdca8a50-ab5e-42a1-ad5d-10c25816c5fb",
       "name": "Save progress: research",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -431,7 +383,6 @@
         320
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -444,7 +395,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -452,16 +402,16 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     },
     {
-      "id": "93017244-f6fb-477e-9d1e-927542fcb2c8",
       "name": "Write the brief and panel",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        2672,
+        5856,
         320
       ],
       "parameters": {
@@ -471,57 +421,49 @@
         "nodeCredentialType": "googlePalmApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from the news, their website and a web search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 1 to 4 extra people for a rehearsal only, playing the roles that usually influence a decision like this at a company\\n  like this (e.g. CTO, procurement). Give them invented, realistic Indian names. Never use the names of real people found in the research.\\n  These are clearly hypothetical and are never presented as attendees.\\n- questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting, in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\n- pitch: how many minutes the presenter should plan to pitch in this meeting (whole minutes, 1 to 60), leaving the rest of the slot for\\n  discussion, from the meeting's length in minutes (if known) and the kind of meeting; why: one sentence, e.g. \\\"30-minute call: about\\n  10 minutes of pitch, the rest for their questions\\\".\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails).replace('{research}', $('Read the research').first().json.research) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"suggestions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"role\", \"role_short\", \"why\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} }, \"pitch\": {\"type\": \"object\", \"properties\": {\"minutes\": {\"type\": \"integer\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"minutes\", \"why\"]} }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"suggestions\", \"questions\", \"risks\", \"pitch\"]} } }) }}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: \"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from the news, their website and a web search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 3 to 5 people the presenter could add to a rehearsal, playing the roles that usually influence a decision like this at a\\n  company like this (e.g. CTO, procurement) and who are not already among the attendees, most influential first. Give them invented,\\n  realistic Indian names. Never use the names of real people found in the research. These are clearly hypothetical and are never presented\\n  as attendees: the presenter rehearses against the real attendees and adds these if they want.\\n- goal: what the presenter most likely wants from this meeting, in one short line (e.g. \\\"a paid 3-month pilot of RouteIQ approved\\\"),\\n  inferred only from the invite, the emails and what they offer if the meeting says so; why: one sentence on what it is based on\\n  (e.g. \\\"Rajiv's last email asks for a pilot proposal\\\"). If nothing shows it, your best reading of the invite, and say so in why.\\n- questions: the 5 hardest questions likely to come up about that goal (what would stop them saying yes to it). asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting (stop the goal), in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\n- pitch: how many minutes the presenter should plan to pitch in this meeting (whole minutes, 1 to 60), leaving the rest of the slot for\\n  discussion, from the meeting's length in minutes (if known) and the kind of meeting; why: one sentence, e.g. \\\"30-minute call: about\\n  10 minutes of pitch, the rest for their questions\\\".\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails).replace('{research}', $('Read the research').first().json.research) }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} }, \"pitch\": {\"type\": \"object\", \"properties\": {\"minutes\": {\"type\": \"integer\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"minutes\", \"why\"]}, \"goal\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"text\", \"why\"]} }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"questions\", \"risks\", \"pitch\", \"goal\"]} } }) }}",
         "options": {
           "timeout": 120000
         }
       },
+      "onError": "continueErrorOutput",
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 2000,
-      "onError": "continueErrorOutput"
+      "waitBetweenTries": 2000
     },
     {
-      "id": "a446e19b-c271-426c-ae8f-7799edf15233",
       "name": "Seat the panel",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2896,
+        6080,
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The brief keeps only real attendees; the practice panel (attendees plus hypothetical roles) is for rehearsal in the web app.\n// Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).\nconst prev = $('Read the research').first().json;\nconst b = JSON.parse(replyText($json) || '{}');\nconst attendees = (b.attendees || []).filter(a => a.name);\nconst practice = (b.practice_panel || []).slice(0, Math.max(0, 6 - attendees.length));\nconst SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];\nconst FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],\n                male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };\nconst used = { female: 0, male: 0 };\nconst face = gender => {\n  let g = gender === 'female' ? 'female' : 'male';\n  if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';\n  const f = FACES[g][used[g]];\n  used[g] += 1;\n  return f;\n};\nconst short = role => (role || 'Guest').length <= 12 ? (role || 'Guest') : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);\nconst people = attendees.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || 'Attendee', role_short: short(a.role), gender: a.gender,\n  why: 'In the meeting invite', source: 'email', will_push_on: a.likely_focus }));\nconst extra = practice.map(p => ({ display_name: p.name, role: p.role, role_short: p.role_short, gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on }));\nconst members = people.concat(extra).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));\nconst brief = {\n  summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },\n  attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),\n  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 12),\n};\n// n8n's suggested pitch length (contract 0.18: proposal.pitch), kept to whole minutes from 1 to 60\nconst pitch = b.pitch && b.pitch.minutes ? { minutes: Math.max(1, Math.min(60, Math.round(b.pitch.minutes))), why: b.pitch.why || '' } : undefined;\nconst proposal = { draft_id: prev.meeting.meeting_id, members, suggestions: b.suggestions || [], ...(pitch ? { pitch } : {}) };\nreturn [{ json: { meeting: prev.meeting, brief, proposal } }];"
+        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The brief keeps only real attendees. The practice panel seats the real people from outside the presenter's organisation (contract 0.22);\n// the hypothetical practice roles are suggestions the presenter can add with one tap, each a whole person with a name and a face.\n// Only when no real attendee is known are the top two practice roles seated, so there is someone to pitch to.\n// Everyone gets a chair, a colour and a face, as the contract's /panel response (docs/CONTRACT.md).\nconst prev = $('Read the research').first().json;\nconst b = JSON.parse(replyText($json) || '{}');\nconst attendees = (b.attendees || []).filter(a => a.name);\n// Colleagues from the presenter's own company are on their side of the table (a public mail domain says nothing)\nconst PUBLIC = ['gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com', 'rediffmail.com'];\nconst domain = e => String(e || '').toLowerCase().split('@')[1] || '';\nconst own = domain(prev.meeting.owner_email);\nconst external = attendees.filter(a => !own || PUBLIC.includes(own) || domain(a.email) !== own);\nconst practice = (b.practice_panel || []).filter(p => p.name && p.role);\nconst SEATS = [0, 1, 5, 2, 6, 3, 7, 4, 8];\nconst FACES = { female: ['business_female_01', 'business_female_02', 'business_female_03', 'business_female_04'],\n                male: ['business_male_01', 'business_male_02', 'business_male_03', 'business_male_04', 'business_male_05', 'business_male_06', 'business_male_07'] };\nconst used = { female: 0, male: 0 };\nconst face = gender => {\n  let g = gender === 'female' ? 'female' : 'male';\n  if (used[g] >= FACES[g].length) g = g === 'female' ? 'male' : 'female';\n  const f = FACES[g][used[g] % FACES[g].length];\n  used[g] += 1;\n  return f;\n};\n// A real person's role only if the invite or emails state it: empty means the presenter fills it in\nconst short = role => !role ? '' : role.length <= 12 ? role : role.split(/\\s+/).filter(w => !['of', 'and', 'the', '&'].includes(w.toLowerCase())).map(w => w[0].toUpperCase()).join('').slice(0, 5);\nconst people = external.slice(0, 6).map(a => ({ display_name: a.name, role: a.role || '', role_short: short(a.role), gender: a.gender,\n  why: 'In the meeting invite', source: 'email', will_push_on: a.likely_focus }));\nconst asPerson = p => ({ display_name: p.name, role: p.role, role_short: p.role_short || short(p.role), gender: p.gender, why: p.why, source: 'typical', will_push_on: p.will_push_on });\nconst seatedPractice = people.length ? [] : practice.slice(0, 2);\nconst members = people.concat(seatedPractice.map(asPerson)).map((m, i) => ({ id: 'p' + (i + 1), seat: SEATS[i], color: i, avatar: face(m.gender), ...m }));\n// The rest of the practice roles, ranked, each with a face of its own so adding one seats a ready person\nconst suggestions = practice.slice(seatedPractice.length).map(p => ({ ...asPerson(p), avatar: face(p.gender) }));\nconst brief = {\n  summary: b.summary || '', company: { what_they_do: b.what_they_do || '', recent_news: b.recent_news || [] },\n  attendees: attendees.map(a => ({ name: a.name, email: a.email || '', role: a.role || '', likely_focus: a.likely_focus || '' })),\n  questions: b.questions || [], risks: b.risks || [], sources: prev.sources.slice(0, 12),\n};\n// n8n's suggested pitch length (contract 0.18: proposal.pitch), kept to whole minutes from 1 to 60\nconst pitch = b.pitch && b.pitch.minutes ? { minutes: Math.max(1, Math.min(60, Math.round(b.pitch.minutes))), why: b.pitch.why || '' } : undefined;\n// n8n's guess at what the presenter wants from the meeting (0.26: proposal.goal), for them to confirm or edit on the brief\nconst goal = b.goal && b.goal.text ? { text: b.goal.text, why: b.goal.why || '' } : undefined;\nconst proposal = { draft_id: prev.meeting.meeting_id, members, suggestions, ...(pitch ? { pitch } : {}), ...(goal ? { goal } : {}) };\nreturn [{ json: { meeting: prev.meeting, brief, proposal } }];"
       }
     },
     {
-      "id": "4f81e1d1-d90b-445b-8feb-c9480cc085a6",
       "name": "Row: ready",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3120,
+        6304,
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\nconst s = $('Seat the panel').first().json;\nreturn [{ json: { meeting_id: s.meeting.meeting_id, status: 'ready', brief: JSON.stringify(s.brief), proposal: JSON.stringify(s.proposal), updated_at: new Date().toISOString(), ...progressFields } }];"
+        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst suggested = seated ? (seated.proposal.suggestions || []).length : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite' + (practising ? ' and ' + practising + ' practice role' + (practising === 1 ? '' : 's') : '') + '; suggested '\n      + suggested + ' more to practise against', 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\nconst s = $('Seat the panel').first().json;\nreturn [{ json: { meeting_id: s.meeting.meeting_id, status: 'ready', brief: JSON.stringify(s.brief), proposal: JSON.stringify(s.proposal), updated_at: new Date().toISOString(), ...progressFields } }];"
       }
     },
     {
-      "id": "8e5c2f49-b4ff-49a2-9b08-b4da6722fe33",
       "name": "Save: brief ready",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3344,
+        6528,
         320
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -534,7 +476,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -542,58 +483,49 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     },
     {
-      "id": "2d67e8e9-d371-44ad-bc76-0ae4efa439cd",
       "name": "Email the brief",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        3568,
+        6752,
         320
       ],
       "parameters": {
-        "resource": "message",
-        "operation": "send",
         "sendTo": "={{ $('Seat the panel').first().json.meeting.owner_email }}",
         "subject": "=Your brief for {{ $('Seat the panel').first().json.meeting.title }} is ready",
-        "emailType": "html",
         "message": "={{ (() => { const s = $('Seat the panel').first().json; const m = s.meeting; const b = s.brief; const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); const li = xs => xs.length ? '<ul>' + xs.join('') + '</ul>' : '<p>None found.</p>'; const names = b.attendees.map(a => a.name); return '<h2>' + esc(m.title) + ' with ' + esc(m.company) + '</h2><p>' + esc(b.summary) + '</p>' + '<h3>Who is coming</h3>' + li(b.attendees.map(a => '<li><b>' + esc(a.name) + '</b>' + (a.role ? ' (' + esc(a.role) + ')' : '') + '. Likely focus: ' + esc(a.likely_focus) + '</li>')) + '<h3>Questions likely to come up</h3>' + li(b.questions.map(q => '<li>' + esc(q.question) + (names.includes(q.asked_by) ? ' <i>(likely from ' + esc(q.asked_by) + ')</i>' : '') + '<br><small>Suggested answer: ' + esc(q.suggested_answer) + '</small></li>')) + '<h3>What could lose it</h3>' + li(b.risks.map(r => '<li>' + esc(r) + '</li>')) + '<h3>Recent news about ' + esc(m.company) + '</h3>' + li(b.company.recent_news.map(n => '<li>' + esc(n.date) + ': ' + esc(n.text) + '</li>')) + '<p><small>Sources: ' + b.sources.map(x => '<a href=\"' + x.url + '\">' + esc(x.title || 'link') + '</a>').join(', ') + '</small></p>' + '<p><a href=\"http://localhost:3000/m/' + encodeURIComponent(m.meeting_id) + '\">Open the brief and practise in DryRun</a>. The practice panel there adds hypothetical roles to rehearse against.</p>'; })() }}",
         "options": {
           "appendAttribution": false
         }
       },
-      "onError": "continueRegularOutput",
-      "webhookId": "9a1247af-fefc-4e3c-bfd2-44dc4d437bbb"
+      "onError": "continueRegularOutput"
     },
     {
-      "id": "c6f24515-3e50-461d-b529-29348956b96a",
       "name": "Progress: emailed",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3792,
+        6976,
         320
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite and ' + practising + ' practice role' + (practising === 1 ? '' : 's'), 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
+        "jsCode": "const ran = name => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = name => (ran(name) ? $(name).first().json : null);\nconst decision = out('Read the decision') || {};\nconst mail = out('Summarise the emails');\nconst research = out('Read the research');\nconst seated = out('Seat the panel');\nconst sent = out('Email the brief');\nconst names = (decision.attendees || []).map(a => a.name).join(' and ') || 'the attendees';\nconst company = decision.company || 'the company';\n// n8n's code sandbox has no URL class, so read the host by hand: https://www.zeebiz.com/x -> zeebiz.com\nconst host = u => { const h = String(u || '').split('//').pop().split('/')[0]; return h.startsWith('www.') ? h.slice(4) : h; };\nconst sites = research ? [...new Set(research.sources.map(x => host(x.site || x.url)).filter(Boolean))] : [];\nconst attending = seated ? seated.proposal.members.filter(m => m.source === 'email').length : 0;\nconst practising = seated ? seated.proposal.members.length - attending : 0;\nconst suggested = seated ? (seated.proposal.suggestions || []).length : 0;\nconst step = (id, label, done, running, doneText, runningText, extra) =>\n  ({ id, label, state: done ? 'done' : running ? 'running' : 'pending', detail: done ? doneText : running ? runningText : '', ...(extra || {}) });\nconst progress = [\n  step('decide', 'Decide', true, false, decision.why || 'Worth preparing', ''),\n  step('emails', 'Emails', !!mail, true,\n    mail && mail.count ? 'Read ' + mail.count + ' recent email' + (mail.count === 1 ? '' : 's') + ' with ' + names : 'No recent emails with ' + names,\n    'Reading your recent emails with ' + names),\n  step('research', 'Research', !!research, !!mail,\n    research ? 'Read ' + research.news_count + ' recent news stor' + (research.news_count === 1 ? 'y' : 'ies') + ' about ' + company + (research.has_website ? ' and their website' : '')\n      + (!research.web_searched ? '' : research.web_count ? ', then searched the web (' + research.web_count + ' page' + (research.web_count === 1 ? '' : 's') + ')'\n         : \". Little news, and web search isn't available on this Gemini key\") : '',\n    'Reading the news about ' + company + ' and their website',\n    { sources: sites.slice(0, 8).map(h => ({ title: h, url: 'https://' + h })) }),\n  step('brief', 'Brief', !!seated, !!research,\n    seated ? 'Wrote ' + seated.brief.questions.length + ' likely questions and ' + seated.brief.risks.length + ' risks' : '', 'Writing your brief and the hardest questions'),\n  step('panel', 'Panel', !!seated, !!research,\n    'Seated ' + attending + ' from the invite' + (practising ? ' and ' + practising + ' practice role' + (practising === 1 ? '' : 's') : '') + '; suggested '\n      + suggested + ' more to practise against', 'Seating the practice panel'),\n  step('email', 'Email', !!sent && !sent.error, !!seated,\n    'Emailed you the brief', 'Emailing you the brief'),\n];\nif (sent && sent.error) Object.assign(progress[5], { state: 'error', detail: \"Couldn't email the brief\" });\nconst progressFields = { progress: JSON.stringify(progress), execution_id: String($execution.id), workflow_id: String($workflow.id) };\n\n// Save how far n8n has got, for the live progress on the brief page\nreturn [{ json: { meeting_id: $('Read the decision').first().json.meeting_id, ...progressFields } }];"
       }
     },
     {
-      "id": "f16398a7-a526-4e98-a748-9d8e0e4dd26d",
       "name": "Save progress: emailed",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        4016,
+        7200,
         320
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -606,7 +538,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -614,11 +545,11 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     },
     {
-      "id": "2a8eda13-039d-4ffe-9a34-d61d5bd849b5",
       "name": "If a run fails",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
@@ -629,7 +560,6 @@
       "parameters": {}
     },
     {
-      "id": "b71db361-688c-4f28-8370-7ea3e4e51154",
       "name": "Find its meeting",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -638,7 +568,6 @@
         544
       ],
       "parameters": {
-        "resource": "row",
         "operation": "get",
         "dataTableId": {
           "__rl": true,
@@ -646,12 +575,10 @@
           "value": "wURCb4PjdZLpttns",
           "cachedResultName": "DryRun meetings"
         },
-        "matchType": "anyCondition",
         "filters": {
           "conditions": [
             {
               "keyName": "execution_id",
-              "condition": "eq",
               "keyValue": "={{ String($json.execution.id) }}"
             }
           ]
@@ -659,7 +586,6 @@
       }
     },
     {
-      "id": "5e7f9358-474e-4bf1-8851-4ed23ad1b289",
       "name": "Mark it failed",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -668,13 +594,10 @@
         544
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "// Show where it stopped and why, instead of leaving the page on \"researching\" forever\nconst failure = $('If a run fails').first().json.execution || {};\nconst message = (failure.error && (failure.error.description || failure.error.message)) || 'Something went wrong';\nconst reason = /quota|too many requests|rate limit/i.test(message)\n  ? \"Gemini and the Groq fallback are both out of quota. Try again in a minute, or turn on billing for Gemini.\"\n  : message.split('\\n')[0].slice(0, 160);\nreturn $input.all().map(({ json: row }) => {\n  let progress = [];\n  try { progress = JSON.parse(row.progress || '[]'); } catch (e) { progress = []; }\n  const stuck = progress.find(s => s.state === 'running') || progress.find(s => s.state === 'pending');\n  if (stuck) Object.assign(stuck, { state: 'error', detail: reason });\n  return { json: { meeting_id: row.meeting_id, status: 'failed', progress: JSON.stringify(progress), updated_at: new Date().toISOString() } };\n});"
       }
     },
     {
-      "id": "42e77505-84ba-4202-9169-adb7fe390c6f",
       "name": "Save: failed",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -683,7 +606,6 @@
         544
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -696,7 +618,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -704,11 +625,11 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     },
     {
-      "id": "660a7038-dff9-4325-8b68-3f8387e5533b",
       "name": "Enough news?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -721,7 +642,8 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 1
           },
           "conditions": [
             {
@@ -739,13 +661,12 @@
       }
     },
     {
-      "id": "689f05e0-bee1-49dd-af0c-7c81720c445d",
       "name": "Search the web",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
         3712,
-        520
+        528
       ],
       "parameters": {
         "method": "POST",
@@ -762,28 +683,24 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "6b964514-e238-4c88-9c0e-451723f235de",
       "name": "Add the web results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         3936,
-        520
+        528
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "// Keep the search answer only if Google Search actually backed it, with the pages it used as sources\nconst prev = $('Gather the sources').first().json;\nconst c = ($json.candidates && $json.candidates[0]) || {};\nconst text = ((c.content && c.content.parts) || []).map(p => p.text || '').join('').trim();\nconst pages = ((c.groundingMetadata && c.groundingMetadata.groundingChunks) || []).map(x => x.web).filter(w => w && w.uri);\nconst found = text && pages.length > 0;\n// Each page's title is its site (e.g. inc42.com); its link goes through Google's redirect to the article\nconst web = found ? pages.slice(0, 6).map(w => ({ title: w.title || 'Web page', url: w.uri, site: 'https://' + (w.domain || w.title || '') })) : [];\nconst error = $json.error ? ($json.error.message || String($json.error)).split('\\n')[0].slice(0, 160) : '';\nreturn [{ json: { ...prev, web_searched: true, web_found: found ? text : '', web, web_error: error } }];"
       }
     },
     {
-      "id": "b75b6168-0dd2-4449-8229-b3e1f40880d8",
       "name": "Worth preparing? (Groq)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
         448,
-        296
+        304
       ],
       "parameters": {
         "method": "POST",
@@ -802,13 +719,12 @@
       "waitBetweenTries": 5000
     },
     {
-      "id": "8afdbe5a-d4fe-4df2-8a74-ab998c854702",
       "name": "Research the company (Groq)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
         4160,
-        520
+        528
       ],
       "parameters": {
         "method": "POST",
@@ -827,13 +743,12 @@
       "waitBetweenTries": 5000
     },
     {
-      "id": "6afb5bb7-7e3f-4822-89f9-c0e99bcd236d",
       "name": "Write the brief and panel (Groq)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        2672,
-        520
+        5856,
+        528
       ],
       "parameters": {
         "method": "POST",
@@ -842,7 +757,7 @@
         "nodeCredentialType": "groqApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const j = $json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (\"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from the news, their website and a web search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 1 to 4 extra people for a rehearsal only, playing the roles that usually influence a decision like this at a company\\n  like this (e.g. CTO, procurement). Give them invented, realistic Indian names. Never use the names of real people found in the research.\\n  These are clearly hypothetical and are never presented as attendees.\\n- questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting, in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\n- pitch: how many minutes the presenter should plan to pitch in this meeting (whole minutes, 1 to 60), leaving the rest of the slot for\\n  discussion, from the meeting's length in minutes (if known) and the kind of meeting; why: one sentence, e.g. \\\"30-minute call: about\\n  10 minutes of pitch, the rest for their questions\\\".\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails).replace('{research}', $('Read the research').first().json.research)) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"suggestions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"role\", \"role_short\", \"why\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} }, \"pitch\": {\"type\": \"object\", \"properties\": {\"minutes\": {\"type\": \"integer\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"minutes\", \"why\"]} }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"suggestions\", \"questions\", \"risks\", \"pitch\"]}) }], response_format: { type: 'json_object' } }); })() }}",
+        "jsonBody": "={{ (() => { const j = $json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (\"You prepare a presenter for a high-stakes meeting. Write their brief, which they will rely on, so it must be accurate.\\n\\nMeeting:\\n{meeting}\\n\\nRecent emails with them:\\n{emails}\\n\\nResearch on the company (from the news, their website and a web search):\\n{research}\\n\\nRules:\\n- attendees: ONLY people named in the meeting invite or the emails above, with their real names. Never add anyone else.\\n  role: only if the invite or emails state it (e.g. \\\"Rajiv from finance\\\" -> \\\"Finance\\\"); otherwise an empty string. Never guess a title.\\n  likely_focus: what they will most likely care about or push on in this meeting, based only on the emails and research.\\n- practice_panel: 3 to 5 people the presenter could add to a rehearsal, playing the roles that usually influence a decision like this at a\\n  company like this (e.g. CTO, procurement) and who are not already among the attendees, most influential first. Give them invented,\\n  realistic Indian names. Never use the names of real people found in the research. These are clearly hypothetical and are never presented\\n  as attendees: the presenter rehearses against the real attendees and adds these if they want.\\n- goal: what the presenter most likely wants from this meeting, in one short line (e.g. \\\"a paid 3-month pilot of RouteIQ approved\\\"),\\n  inferred only from the invite, the emails and what they offer if the meeting says so; why: one sentence on what it is based on\\n  (e.g. \\\"Rajiv's last email asks for a pilot proposal\\\"). If nothing shows it, your best reading of the invite, and say so in why.\\n- questions: the 5 hardest questions likely to come up about that goal (what would stop them saying yes to it). asked_by: the name of the attendee most likely to ask it, or \\\"\\\" if it is not\\n  clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.\\n- risks: what could lose this meeting (stop the goal), in short phrases, grounded in the emails and research.\\n- recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.\\n- pitch: how many minutes the presenter should plan to pitch in this meeting (whole minutes, 1 to 60), leaving the rest of the slot for\\n  discussion, from the meeting's length in minutes (if known) and the kind of meeting; why: one sentence, e.g. \\\"30-minute call: about\\n  10 minutes of pitch, the rest for their questions\\\".\\nAnswer in JSON.\".replace('{meeting}', JSON.stringify($('Read the research').first().json.meeting)).replace('{emails}', $('Read the research').first().json.emails).replace('{research}', $('Read the research').first().json.research)) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"summary\": {\"type\": \"string\", \"description\": \"2 sentences: what this meeting is and what will decide it\"}, \"what_they_do\": {\"type\": \"string\"}, \"recent_news\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"date\": {\"type\": \"string\"} }, \"required\": [\"text\", \"date\"]} }, \"attendees\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"email\": {\"type\": \"string\"}, \"role\": {\"type\": \"string\", \"description\": \"Only if stated in the invite or emails, else empty\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"], \"description\": \"Best guess from the name, only used to pick a rehearsal avatar\"}, \"likely_focus\": {\"type\": \"string\"} }, \"required\": [\"name\", \"email\", \"role\", \"gender\", \"likely_focus\"]} }, \"practice_panel\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\", \"description\": \"Invented\"}, \"role\": {\"type\": \"string\"}, \"role_short\": {\"type\": \"string\", \"description\": \"2 to 12 characters, e.g. CFO\"}, \"gender\": {\"type\": \"string\", \"enum\": [\"male\", \"female\"]}, \"why\": {\"type\": \"string\", \"description\": \"Why this role usually influences a decision like this\"}, \"will_push_on\": {\"type\": \"string\"} }, \"required\": [\"name\", \"role\", \"role_short\", \"gender\", \"why\", \"will_push_on\"]} }, \"questions\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"question\": {\"type\": \"string\"}, \"asked_by\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"}, \"suggested_answer\": {\"type\": \"string\"} }, \"required\": [\"question\", \"asked_by\", \"why\", \"suggested_answer\"]} }, \"risks\": {\"type\": \"array\", \"items\": {\"type\": \"string\"} }, \"pitch\": {\"type\": \"object\", \"properties\": {\"minutes\": {\"type\": \"integer\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"minutes\", \"why\"]}, \"goal\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"why\": {\"type\": \"string\"} }, \"required\": [\"text\", \"why\"]} }, \"required\": [\"summary\", \"what_they_do\", \"recent_news\", \"attendees\", \"practice_panel\", \"questions\", \"risks\", \"pitch\", \"goal\"]}) }], response_format: { type: 'json_object' } }); })() }}",
         "options": {
           "timeout": 120000
         }
@@ -852,7 +767,6 @@
       "waitBetweenTries": 5000
     },
     {
-      "id": "b0721328-4dde-4fb7-b7d6-ada2f08ba4e2",
       "name": "Row: skipped",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -861,13 +775,10 @@
         0
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
         "jsCode": "// Not worth preparing: keep it in the table with n8n's reason, so the web app can list it and offer \"Prepare anyway\"\nreturn $input.all().map(({ json: m }) => ({ json: {\n  meeting_id: m.meeting_id, title: m.title, start: m.start, company: m.company, kind: m.kind, why: m.why,\n  attendees: JSON.stringify(m.attendees), owner_email: m.owner_email, status: 'skipped',\n  brief: '', proposal: '', progress: '[]', started_at: '', updated_at: new Date().toISOString(),\n  execution_id: String($execution.id), workflow_id: String($workflow.id),\n} }));"
       }
     },
     {
-      "id": "10f61135-8913-4c01-b2b7-eec27f2bdafe",
       "name": "Save: skipped",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -876,7 +787,6 @@
         0
       ],
       "parameters": {
-        "resource": "row",
         "operation": "upsert",
         "dataTableId": {
           "__rl": true,
@@ -889,7 +799,6 @@
           "conditions": [
             {
               "keyName": "meeting_id",
-              "condition": "eq",
               "keyValue": "={{ $json.meeting_id }}"
             }
           ]
@@ -897,7 +806,8 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": null
-        }
+        },
+        "options": {}
       }
     }
   ],
@@ -1336,7 +1246,8 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Asia/Kolkata",
-    "timeSavedPerExecution": 45
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
   }
 }
