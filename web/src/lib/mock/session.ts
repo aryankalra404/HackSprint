@@ -311,9 +311,9 @@ export const demoSession: SessionRecord = {
         evidence: [{ t: 148, slide_index: 3, quote: "Pricing and ROI: 114 s against a 70 s target" }],
       },
       {
-        name: "Eye contact",
+        name: "Who you faced",
         score: 61,
-        explanation: "Procurement got 5% of your eye contact, mostly while pricing was on screen.",
+        explanation: "You faced Procurement only 5% of the time, mostly while pricing was on screen.",
         evidence: [{ t: 206, slide_index: 3, quote: "Looking at the CFO while answering Procurement" }],
       },
       {
@@ -327,6 +327,7 @@ export const demoSession: SessionRecord = {
     slides: [],
     facing: { slides_s: 31, longest_gap: { persona_id: "p2", seconds: 140, from_slide: 4, to_slide: 6 } },
     drill: { title: "Defend the price", focus_persona: "p2", slides: [3], minutes: 3 },
+    weak_spots: ["the payback period", "the price against their current spend", "who trains 1,200 drivers"],
     actions_taken: ["report_emailed", "drill_scheduled", "weak_spots_saved"],
   },
   debrief_status: { done: true, steps: [] },

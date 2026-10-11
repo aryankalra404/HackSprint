@@ -26,7 +26,7 @@ export function RoomBoard({ session, phase, onOpen }: Props) {
   const backing = debrief?.stakeholders.filter((s) => s.stance === "backs").length ?? 0;
   const [headline, detail] = (phase && TABLE_TEXT[phase]) ?? ["The panel is seated", "Put on the headset to start"];
 
-  // Where the presenter looked: line weight is share of eye contact
+  // Who the presenter faced (head direction; the Quest 3S has no eye tracking): line weight is their share
   const lines = bundle.personas.map((p) => {
     const s = share(p.id);
     if (s == null) return null;
@@ -53,7 +53,7 @@ export function RoomBoard({ session, phase, onOpen }: Props) {
           <p className="font-display text-[2.6cqw] leading-none">
             {backing} of {debrief.stakeholders.length} would back this
           </p>
-          {dwell && <p className="text-[1.1cqw] text-ink-2">Lines and percentages show where your eye contact went.</p>}
+          {dwell && <p className="text-[1.1cqw] text-ink-2">Lines and percentages show who you faced.</p>}
         </div>
       ) : (
         <p
@@ -95,7 +95,7 @@ export function RoomBoard({ session, phase, onOpen }: Props) {
                 <span className="mt-[0.2cqw] flex items-center justify-between gap-[0.4cqw] text-[1cqw] leading-tight whitespace-nowrap">
                   <StanceText stance={verdict.stance} />
                   {s != null && (
-                    <span className={`inline-flex items-center gap-[0.2em] ${s < LOW_SHARE ? "text-warn-ink" : "text-ink-2"}`} title="Share of your eye contact">
+                    <span className={`inline-flex items-center gap-[0.2em] ${s < LOW_SHARE ? "text-warn-ink" : "text-ink-2"}`} title="Share of the time you faced them">
                       {s < LOW_SHARE && <StatusIcon tone="warn" className="size-[1em]" />}
                       {Math.round(s * 100)}%
                     </span>

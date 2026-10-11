@@ -11,7 +11,7 @@ export function Verdict({ debrief, history, sessionNumber }: { debrief: Debrief;
       <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-b from-ink via-ink/40 to-ink" />
       <div className="flex flex-col gap-4">
         <p className="text-sm text-axis">Session {sessionNumber} debrief</p>
-        <h1 className="font-display text-3xl leading-tight sm:text-4xl">{debrief.headline}</h1>
+        <h1 className={`font-display leading-tight ${debrief.headline.length > 110 ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"}`}>{debrief.headline}</h1>
       </div>
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <p className="flex items-baseline gap-1">

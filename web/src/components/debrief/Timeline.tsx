@@ -35,7 +35,9 @@ function lanes(items: Exchange[], duration: number): number[] {
 
 export function Timeline({ bundle, duration, segments, exchanges, freezes, selection, onSelect }: Props) {
   const exchangeLanes = lanes(exchanges, duration);
-  const ticks = Array.from({ length: Math.floor(duration / 60) + 1 }, (_, i) => i * 60);
+  // A tick every minute, closer together on a short session so the axis still reads
+  const step = duration <= 90 ? 15 : duration <= 240 ? 30 : 60;
+  const ticks = Array.from({ length: Math.floor(duration / step) + 1 }, (_, i) => i * step).filter((t) => duration - t > step / 3 || t === 0);
   const personasPresent = [...new Set(exchanges.map((x) => x.persona_id))];
 
   return (

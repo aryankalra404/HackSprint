@@ -63,6 +63,8 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
         <Stakeholders bundle={bundle} stakeholders={debrief.stakeholders} onSelect={selectAt} />
       </div>
 
+      <Metrics metrics={debrief.metrics} onSelect={selectAt} />
+
       <Timeline
         bundle={bundle}
         duration={telemetry.duration_s}
@@ -75,12 +77,9 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
 
       {debrief.slides?.length > 0 && <Transcript slides={debrief.slides} bundle={bundle} />}
 
-      <div className="grid items-start gap-6 lg:grid-cols-[2fr_1fr]">
-        <Metrics metrics={debrief.metrics} onSelect={selectAt} />
-        <div className="flex flex-col gap-6">
-          {telemetry.gaze_dwell_s && <GazeMap dwell={telemetry.gaze_dwell_s} personas={bundle.personas} />}
-          <Actions debrief={debrief} bundle={bundle} />
-        </div>
+      <div className={`grid items-stretch gap-6 ${telemetry.gaze_dwell_s ? "lg:grid-cols-2" : ""}`}>
+        {telemetry.gaze_dwell_s && <GazeMap dwell={telemetry.gaze_dwell_s} personas={bundle.personas} />}
+        <Actions debrief={debrief} bundle={bundle} wide={!telemetry.gaze_dwell_s} />
       </div>
     </div>
   );

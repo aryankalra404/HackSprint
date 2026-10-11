@@ -18,8 +18,8 @@ export function GazeMap({ dwell, personas }: { dwell: Record<PersonaId, number>;
   const presenter = px(PRESENTER_SEAT);
 
   return (
-    <Card title="Eye contact" aside={<span className="text-xs text-muted">VR only</span>}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Top-down map of the boardroom showing how your eye contact was shared. Values are listed below.">
+    <Card title="Who you faced" aside={<span className="text-xs text-muted">VR only, from where your head pointed</span>}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto w-full max-w-md" role="img" aria-label="Top-down map of the boardroom showing how long you faced each person. Values are listed below.">
         <rect
           x={(TABLE.zMin - Z0) * S}
           y={(TABLE.xMin - X0) * S}
@@ -73,7 +73,7 @@ export function GazeMap({ dwell, personas }: { dwell: Record<PersonaId, number>;
             <span className="flex-1">{r.display_name} <span className="text-muted">{r.role_short}</span></span>
             {r.share < LOW_SHARE && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-warn-ink">
-                <StatusIcon tone="warn" className="size-3" /> Barely looked
+                <StatusIcon tone="warn" className="size-3" /> Barely faced
               </span>
             )}
             <span className="w-10 text-right tabular-nums">{Math.round(r.share * 100)}%</span>
