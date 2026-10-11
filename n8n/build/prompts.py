@@ -96,8 +96,8 @@ BRIEF_SCHEMA = {"type": "object", "properties": {
 
 # DryRun rehearsal prep (/prep): brief the confirmed practice panel for one rehearsal. Nothing about the meeting is fixed in
 # code: how many questions, who interrupts, who chairs and what they say all come from here (and later from /turn).
-REHEARSAL_PROMPT = """You set up a rehearsal of a real meeting. The presenter, {presenter}, will pitch for about {minutes} minutes to the practice
-panel below, in a virtual boardroom, and the panel will react as these people would in this meeting. Plan it.
+REHEARSAL_PROMPT = """You set up a rehearsal of a real meeting. The presenter, {presenter}, will pitch to the practice panel below, in a virtual
+boardroom, and the panel will react as these people would in this meeting. {length} Plan it.
 
 Meeting (from the calendar, with n8n's notes):
 {meeting}
@@ -116,7 +116,7 @@ The last rehearsal of this meeting (empty if this is the first):
 
 Decide, for this meeting and this panel (never a generic template):
 - slides: for each slide in the deck, a short title, its 1 to 3 key points (what the presenter must get across), target_seconds
-  (all slides together about {minutes} minutes, more time where the slide carries more), and rescue cues for when the presenter
+  (all slides together {pace}, more time where the slide carries more), and rescue cues for when the presenter
   freezes: calm (a few calming words), keyword (the one word or number that unlocks the slide), bridge (a phrase to carry on from).
   A slide with no text: title "Slide <n>" (n from 1), no key points and a calm cue only; never guess what it shows. No deck: an empty list.
 - personas: for each panel member, by id: display_name (keep the given name; invent a realistic Indian name only if it is empty),
@@ -130,15 +130,20 @@ Decide, for this meeting and this panel (never a generic template):
   presenter, open the floor and close the meeting.
 - plan: during_pitch and after_pitch, how many questions a real meeting of this kind and length would have during and after the
   pitch, and why (one sentence the presenter will read). Interruptions come from people whose manner is "interrupts". A question with
-  its answer takes about a minute, and interruptions eat into the pitch, so keep the numbers realistic for {minutes} minutes: a short
-  pitch gets few interruptions, if any. Pick the questions that matter most, not one per person.
+  its answer takes about a minute, and interruptions eat into the pitch, so keep the numbers realistic for {pace}: a short
+  pitch gets few interruptions, if any. Pick the questions that matter most, not one per person. interrupts: where each question
+  during the pitch would come, one entry per question (as many as during_pitch): persona_id (someone whose manner is "interrupts"),
+  slide_index (the slide it is about; 0 if there is no deck), after_s (how many seconds the presenter would have talked on that slide
+  before this person's hand goes up, e.g. once the claim it is about has been made, 8 to 90; with no deck, seconds into the pitch) and
+  about (a few words). The presenter is only heard mid-slide at these points, so put them where a real interruption would come.
+- time: {time_rule}
 - rescue_after_s: seconds of silence before the calm, keyword and bridge cues, rising (about 3, 6 and 10 for most presenters).
 - lines: short lines voiced ahead of time so common reactions play at once, in the voice of each person, for this meeting:
   the chair's "welcome" (one, greeting the presenter by name if known, warm and brief, inviting them to begin),
   the chair's "open_floor" (one, thanking them and opening the questions, without naming who asks first: that is decided live),
   and 2 "acknowledge" lines per person: 2 to 6 words that fit after ANY reasonable answer to ANY question, so never mention a topic
-  (e.g. "Okay, that helps.", "Fair enough.", "Understood, thanks."), in that person's manner. Spoken English, natural; the welcome and
-  open_floor under 20 words each.
+  (e.g. "Okay, that helps.", "Fair enough.", "Understood, thanks."), in that person's manner. {time_lines} Spoken English, natural;
+  the welcome and open_floor under 20 words each.
 Answer in JSON."""
 
 REHEARSAL_SCHEMA = {"type": "object", "properties": {
@@ -158,13 +163,37 @@ REHEARSAL_SCHEMA = {"type": "object", "properties": {
         "manner": {"type": "string", "enum": ["interrupts", "waits"]}},
         "required": ["id", "display_name", "priorities", "objections", "manner"]}},
     "chair": {"type": "string"},
-    "plan": {"type": "object", "properties": {"during_pitch": {"type": "integer"}, "after_pitch": {"type": "integer"}, "why": {"type": "string"}},
-             "required": ["during_pitch", "after_pitch", "why"]},
+    "plan": {"type": "object", "properties": {"during_pitch": {"type": "integer"}, "after_pitch": {"type": "integer"}, "why": {"type": "string"},
+        "interrupts": {"type": "array", "items": {"type": "object", "properties": {
+            "persona_id": {"type": "string"}, "slide_index": {"type": "integer"}, "after_s": {"type": "integer"}, "about": {"type": "string"}},
+            "required": ["persona_id", "slide_index", "after_s", "about"]}}},
+             "required": ["during_pitch", "after_pitch", "why", "interrupts"]},
+    "time": {"type": "object", "properties": {"nudge_at_s": {"type": "integer"}, "cut_at_s": {"type": "integer"}, "why": {"type": "string"}},
+             "required": ["nudge_at_s", "cut_at_s", "why"]},
     "rescue_after_s": {"type": "array", "items": {"type": "integer"}},
     "lines": {"type": "array", "items": {"type": "object", "properties": {
-        "persona_id": {"type": "string"}, "kind": {"type": "string", "enum": ["welcome", "open_floor", "acknowledge"]}, "text": {"type": "string"}},
+        "persona_id": {"type": "string"}, "kind": {"type": "string", "enum": ["welcome", "open_floor", "acknowledge", "time_nudge", "time_up"]}, "text": {"type": "string"}},
         "required": ["persona_id", "kind", "text"]}}},
-    "required": ["slides", "personas", "chair", "plan", "rescue_after_s", "lines"]}
+    "required": ["slides", "personas", "chair", "plan", "time", "rescue_after_s", "lines"]}
+
+# The parts of REHEARSAL_PROMPT that depend on whether the presenter set a time limit (contract 0.25)
+REHEARSAL_TIMED = {
+    "length": "They mean to pitch for about {minutes} minutes; the questions come on top of that.",
+    "pace": "about {minutes} minutes",
+    "time_rule": """how the chair keeps time in a meeting like this, in seconds since the presenter began: nudge_at_s, when the chair says
+  time is nearly up (usually right at the limit, {seconds}); cut_at_s, when the chair stops the pitch and moves to the questions, in a
+  meeting that keeps strictly to time (investors, a tight slot, a busy senior panel: about a quarter to a half past the limit), or 0 if
+  this chair would let the presenter finish; why: one sentence the presenter will read.""",
+    "time_lines": """The chair's "time_nudge" (one, polite, under 12 words, e.g. "We're nearly at time, could you bring it to a
+  close?") and, only if cut_at_s is not 0, the chair's "time_up" (one, under 15 words, stopping the pitch and going to questions, e.g.
+  "Let's stop there and take some questions.").""",
+}
+REHEARSAL_UNTIMED = {
+    "length": "They set no time limit and will take as long as they need.",
+    "pace": "the time a clear pitch of this deck would naturally take; only a guide, nobody keeps time",
+    "time_rule": "nudge_at_s 0, cut_at_s 0 and why \"\": there is no time limit, so nobody keeps time.",
+    "time_lines": "No time_nudge or time_up lines: there is no time limit.",
+}
 
 # DryRun turn (/turn): how the room reacts to what the presenter just said. n8n decides who speaks, what and why;
 # the headset only decides when (it waits for the presenter to pause).
@@ -173,7 +202,7 @@ React as these people would in this meeting: realistic, specific, never theatric
 
 The meeting: {meeting}
 The plan for questions: {plan}. Asked so far: {asked_during} during the pitch, {asked_after} after it.
-Time: {elapsed} seconds in, for a pitch of {pitch} seconds.
+Time: {time}
 The panel: {personas}
 Lines voiced ahead of time (use one by its line_id when it fits, instead of new text): {lines}
 The slide on screen: {slide}
@@ -190,13 +219,16 @@ What to do for each moment:
   questions during the pitch remain in the plan (a guide: break it only for something that really matters), and only about this slide
   or what was just said: a claim with nothing behind it, a number that does not add up, a gap against their objections or the research.
   Never ask what the presenter already covered, and never repeat a pending question. A question: kind "question", raise_hand true,
-  one or two sentences in that person's voice, referring to what was said. Otherwise no reaction.
+  one or two sentences in that person's voice, referring to what was said. Otherwise no reaction. A segment sent mid-slide comes
+  at one of the plan's interruption points (plan.interrupts): the hand there goes up only if that point still matters after what
+  was said; if the presenter already answered it, nobody reacts.
 - answer (to the question in this moment): judge it in answer_verdict: "resolved" (direct and specific), "partial" or "dodged". The person
   who asked reacts: an "acknowledge" line (by line_id) if resolved, or one "follow_up" (only if that question has had no follow-up yet)
   if partial or dodged and it matters. After the pitch, add what comes next: the next "question" from whoever matters most (a pending
   one first), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
 - pitch_end (the pitch is over): the chair opens the floor (kind "open_floor", its line_id), then the first "question" from whoever
-  matters most, a pending one first. If the plan has no questions after the pitch, the chair closes instead.
+  matters most, a pending one first. If the plan has no questions after the pitch, the chair closes instead. If the chair has just
+  stopped the pitch for time, they have already moved to the questions: no open_floor, straight to the first question.
 - closing (by the chair): how this kind of meeting really ends, in one or two sentences, fitting how it went (a next step if it went
   well, polite and noncommittal if not), and end_session true.
 After the pitch, questions are asked directly (raise_hand false). Every reaction has a reason: one sentence on why this person said this

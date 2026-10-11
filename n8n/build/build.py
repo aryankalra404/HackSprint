@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
                      TURN_SCHEMA, WEB_PROMPT)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
@@ -635,24 +635,29 @@ const lastDebrief = done.length ? parse(done[0].debrief) : null;
 const last = lastDebrief ? { overall: lastDebrief.overall, headline: lastDebrief.headline || '', weak_spots: lastDebrief.weak_spots || [], drill: lastDebrief.drill || null,
                              notes: Object.fromEntries((lastDebrief.slides || []).filter(s => s.notes).map(s => [s.index, s.notes])) } : null;
 const brief = parse(row.brief) || {};
-const minutes = Math.max(1, Math.min(60, Math.round(Number(req.pitch_minutes) || 5)));
+// No pitch length (null, contract 0.25) means no time limit: n8n paces the slides naturally and nobody keeps time
+const limited = req.pitch_minutes !== null;
+const minutes = limited ? Math.max(1, Math.min(60, Math.round(Number(req.pitch_minutes) || 5))) : null;
+const fill = t => t.split('{minutes} minutes').join(minutes === 1 ? '1 minute' : minutes + ' minutes').split('{minutes}').join(String(minutes)).split('{seconds}').join(String(minutes * 60));
+const timing = Object.fromEntries(Object.entries(limited ? """ + json.dumps(REHEARSAL_TIMED) + """ : """ + json.dumps(REHEARSAL_UNTIMED) + """).map(([k, v]) => [k, fill(v)]));
 const meeting = { title: row.title || (req.prospect && req.prospect.context) || 'Meeting', company: row.company || (req.prospect && req.prospect.company) || '',
                   kind: row.kind || 'other', start: row.start || '', notes: row.why || '' };
 const panel = (req.panel || []).map(p => ({ id: p.id, name: p.display_name || '', role: p.role, difficulty: p.difficulty || 2,
                                             source: p.source || 'typical', will_push_on: p.will_push_on || '', why: p.why || '' }));
 const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1500) }));
-return [{ json: { req, minutes, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last,
+return [{ json: { req, minutes, timing, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last,
                   history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
                            company: brief.company || {} } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
     c += progress_chunk("saidGather", "Report: gathered", "gather",
                         "[$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', "
                         "$json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', "
-                        "$json.slides.length ? $json.slides.length + ' slides' : 'no deck', $json.minutes + ' min pitch', "
+                        "$json.slides.length ? $json.slides.length + ' slides' : 'no deck', $json.minutes ? $json.minutes + ' min pitch' : 'no time limit', "
                         "$json.last ? 'last rehearsal ' + $json.last.overall + '/100 with ' + $json.last.weak_spots.length + ' weak spots to press on' : 'the first rehearsal'].join(', ')",
                         with_run=True)
     c += llm_nodes("plan", "Plan the rehearsal", json.dumps(REHEARSAL_PROMPT) +
-                   ".replace('{presenter}', $json.presenter || 'the presenter').split('{minutes}').join(String($json.minutes))"
+                   ".split('{length}').join($json.timing.length).split('{pace}').join($json.timing.pace).split('{time_rule}').join($json.timing.time_rule)"
+                   ".split('{time_lines}').join($json.timing.time_lines).replace('{presenter}', $json.presenter || 'the presenter')"
                    ".replace('{meeting}', JSON.stringify($json.meeting, null, 1)).replace('{brief}', JSON.stringify($json.brief, null, 1))"
                    ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{deck}', JSON.stringify($json.slides, null, 1))"
                    ".replace('{history}', $json.history || 'First rehearsal.')",
@@ -678,26 +683,49 @@ const personas = g.req.panel.map(m => {
            difficulty: Math.min(3, (m.difficulty || 2) + ((x.objections || []).some(o => o.source === 'history') ? 1 : 0)), manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,
            voice: voiceFor(m.avatar) };
 });
-// Slide times scaled so they add up to the pitch length
-const pitchSeconds = g.minutes * 60;
+// Slide times scaled so they add up to the pitch length. With no time limit (0.25) they stay n8n's natural estimate, which is then
+// the pitch length (300 s for a pitch with no deck).
 const raw = g.slides.map(s => (p.slides || []).find(x => x.index === s.index) || { index: s.index, title: 'Slide ' + (s.index + 1), key_points: [], target_seconds: 60, rescue: {} });
-const total = raw.reduce((a, s) => a + Math.max(5, s.target_seconds || 0), 0) || 1;
+const total = raw.reduce((a, s) => a + Math.max(5, Math.min(900, s.target_seconds || 0)), 0) || 1;
+const pitchSeconds = g.minutes ? g.minutes * 60 : raw.length ? total : 300;
 const slides = raw.map(s => ({ index: s.index, title: s.title || '', image_url: '', key_points: s.key_points || [],
-  target_seconds: Math.max(5, Math.round(Math.max(5, s.target_seconds || 0) * pitchSeconds / total)),
+  target_seconds: Math.max(5, Math.round(Math.max(5, Math.min(900, s.target_seconds || 0)) * pitchSeconds / total)),
   rescue: { calm: (s.rescue && s.rescue.calm) || 'Take a breath.', keyword: (s.rescue && s.rescue.keyword) || '', bridge: (s.rescue && s.rescue.bridge) || '' },
   // The talk track from the last debrief of this meeting, on the speaker view (null on a first rehearsal)
   notes: (g.last && g.last.notes[s.index]) || null }));
 const r = (p.rescue_after_s || []).map(Number).filter(n => n > 0).slice(0, 3);
 const rescue = r.length === 3 && r[0] < r[1] && r[1] < r[2] ? r : [3, 6, 10];
-const plan = { during_pitch: Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0)), after_pitch: Math.max(0, Math.round((p.plan && p.plan.after_pitch) || 0)),
-               why: (p.plan && p.plan.why) || '' };
-const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text).map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
-return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, plan,
+const during = Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0));
+// Where someone may interrupt mid-slide (0.25): the only times the presenter is heard before they change slide. Real slides (0 with no
+// deck), people who interrupt, one point per person and slide.
+const interrupters = personas.filter(x => x.manner === 'interrupts').map(x => x.id);
+const maxSlide = Math.max(0, slides.length - 1);
+const seen = new Set();
+const interrupts = ((p.plan && p.plan.interrupts) || [])
+  .filter(x => interrupters.includes(x.persona_id) && Number.isInteger(x.slide_index) && x.slide_index >= 0 && x.slide_index <= maxSlide)
+  .filter(x => { const k = x.persona_id + ':' + x.slide_index; if (seen.has(k)) return false; seen.add(k); return true; })
+  .slice(0, during)
+  .map(x => ({ persona_id: x.persona_id, slide_index: x.slide_index, after_s: Math.max(5, Math.min(slides.length ? 120 : pitchSeconds, Math.round(Number(x.after_s) || 15))), about: x.about || '' }));
+const plan = { during_pitch: during, after_pitch: Math.max(0, Math.round((p.plan && p.plan.after_pitch) || 0)), why: (p.plan && p.plan.why) || '', interrupts };
+// How the chair keeps time (0.25), with a limit only: a nudge near the limit, and, in a strict meeting, the questions a while after it
+const t = p.time || {};
+const nudge = Math.round(Math.max(0.8 * pitchSeconds, Math.min(1.3 * pitchSeconds, Number(t.nudge_at_s) || pitchSeconds)));
+const cut = Number(t.cut_at_s) > 0 ? Math.round(Math.max(nudge + 15, Math.min(2 * pitchSeconds, Number(t.cut_at_s)))) : 0;
+const time = g.minutes ? { limit_s: pitchSeconds, nudge_at_s: nudge, cut_at_s: cut, why: t.why || '' } : null;
+// The chair's time lines only with a limit (time_up only if the chair stops the pitch)
+const chairId = (personas.find(x => x.chair) || {}).id;
+const KINDS = ['welcome', 'open_floor', 'acknowledge', 'time_nudge', 'time_up'];
+const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text && KINDS.includes(l.kind))
+  .filter(l => !l.kind.startsWith('time_') || (time && l.persona_id === chairId && (l.kind === 'time_nudge' || cut > 0)))
+  .map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
+return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, time, plan,
                   rescue_after_s: rescue, slides, personas, lines, drill: (g.last && g.last.drill) || null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
     c += progress_chunk("saidPlan", "Report: planned", "plan",
-                        "(() => { const b = $json; const chair = b.personas.find(p => p.chair); const n = b.personas.reduce((a, p) => a + p.objections.length, 0); "
+                        "(() => { const b = $json; const clock = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); const chair = b.personas.find(p => p.chair); const n = b.personas.reduce((a, p) => a + p.objections.length, 0); "
                         "return [b.slides.length ? b.slides.length + ' slides timed to the pitch' : '', n + ' objections', chair ? chair.display_name.split(' ')[0] + ' chairs' : '', "
-                        "b.plan.during_pitch + ' questions during the pitch and ' + b.plan.after_pitch + ' after'].filter(Boolean).join(', '); })()")
+                        "b.plan.during_pitch + ' questions during the pitch and ' + b.plan.after_pitch + ' after', "
+                        "!b.time ? 'no time limit' : 'the chair nudges at ' + clock(b.time.nudge_at_s) + (b.time.cut_at_s ? ' and stops the pitch at ' + clock(b.time.cut_at_s) : '')"
+                        "].filter(Boolean).join(', '); })()")
     c += progress_chunk("saidFallback", "Report: Groq instead", "fallback", "'Gemini did not answer, so Groq plans it instead'")
     c += code_node("eachLine", "One item per line", """
 // Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).
@@ -796,7 +824,8 @@ const turns = ctx.turns || [];
 const pitchEnd = turns.findIndex(t => t.mode === 'pitch_end');
 const askedDuring = turns.filter((t, i) => (pitchEnd < 0 || i < pitchEnd) && t.mode !== 'pitch_end').reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
 const askedAfter = pitchEnd < 0 ? 0 : turns.slice(pitchEnd).reduce((a, t) => a + (t.reactions || []).filter(r => r.kind === 'question').length, 0);
-const json = { session_id: b.session_id, mode: b.mode, slide_index: b.slide_index, t: b.t, asked_by: b.asked_by || '', bundle, elapsed: Math.round(ctx.elapsed_s || b.t || 0),
+const json = { session_id: b.session_id, mode: b.mode, slide_index: b.slide_index, t: b.t, asked_by: b.asked_by || '', mid_slide: !!b.mid_slide, time_up: !!b.time_up,
+               bundle, elapsed: Math.round(ctx.elapsed_s || b.t || 0),
                turns, pending: ctx.pending || [], asked_during: askedDuring, asked_after: askedAfter };
 // The laptop sends the speech as AAC (m4a), or WAV if it couldn't compress it
 const audio = b.audio_base64 || b.audio_wav_base64 || '';
@@ -832,10 +861,15 @@ const history = r.turns.slice(-12).map(t => '[' + t.mode + (t.slide_index >= 0 ?
   + (t.reactions || []).map(x => ' | ' + name(x.persona_id) + ' (' + x.kind + '): "' + x.text + '"').join('') + (t.answer_verdict ? ' | answer ' + t.answer_verdict : '')).join('\\n') || 'Nothing yet.';
 const parts = {
   meeting: b.prospect && b.prospect.company ? 'with ' + b.prospect.company : 'a meeting', plan: JSON.stringify(b.plan || {}),
-  asked_during: String(r.asked_during), asked_after: String(r.asked_after), elapsed: String(r.elapsed), pitch: String(b.pitch_seconds || 0),
+  asked_during: String(r.asked_during), asked_after: String(r.asked_after),
+  // With a limit, how the chair keeps time; with none (time null, 0.25), the pitch length is only an estimate
+  time: b.time && b.time.limit_s ? r.elapsed + ' seconds in, for a pitch of ' + b.time.limit_s + ' seconds' + (b.time.cut_at_s ? '; the chair stops the pitch at ' + b.time.cut_at_s + ' seconds' : '') + '.'
+    : b.time === null ? r.elapsed + ' seconds in. No time limit (about ' + (b.pitch_seconds || 0) + ' seconds is only an estimate).'
+    : r.elapsed + ' seconds in, for a pitch of ' + (b.pitch_seconds || 0) + ' seconds.',
   personas: JSON.stringify(personas), lines: JSON.stringify((b.lines || []).map(l => ({ line_id: l.id, persona_id: l.persona_id, kind: l.kind, text: l.text }))),
   slide: slide ? JSON.stringify({ number: slide.index + 1, title: slide.title, key_points: slide.key_points }) : 'No slides.',
-  turns: history, pending: JSON.stringify(r.pending), mode: r.mode, asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + ')' : '', transcript,
+  turns: history, pending: JSON.stringify(r.pending),
+  mode: r.mode + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : ''), asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + ')' : '', transcript,
 };
 // Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
@@ -852,6 +886,8 @@ const lines = Object.fromEntries((r.bundle.lines || []).map(l => [l.id, l]));
 const KINDS = ['welcome', 'question', 'follow_up', 'acknowledge', 'open_floor', 'closing'];
 let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id]));
 if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
+// Stopped for time, the chair has already moved to the questions with a line the headset played (0.25)
+if (r.mode === 'pitch_end' && r.time_up) reactions = reactions.filter(x => x.kind !== 'open_floor');
 // The model sometimes starts a line with who says it ("Rohan: ..."), which the voice would read out
 const unnamed = (p, text) => { const t = String(text || '').trim(); const first = String(p.display_name || '').split(' ')[0];
   return [p.display_name, first, p.role_short].filter(Boolean).reduce((a, n) => (a.toLowerCase().startsWith(n.toLowerCase() + ':') ? a.slice(n.length + 1).trim() : a), t); };
@@ -1020,7 +1056,8 @@ const pitchSec = Math.round(Math.min(pitchEnd, duration));
 const clock = s => Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0');
 const worst = timed.slice().sort((x, y) => Math.abs(y.seconds / y.target_seconds - 1) - Math.abs(x.seconds / x.target_seconds - 1))[0];
 const pacing = { name: 'Pacing', score: timed.length ? Math.max(20, Math.round(100 - 70 * off)) : 60,
-  explanation: 'You pitched for ' + clock(pitchSec) + (bundle.pitch_seconds ? ' against a plan of ' + clock(bundle.pitch_seconds) : '')
+  explanation: 'You pitched for ' + clock(pitchSec) + (bundle.time === null ? ' with no time limit' : bundle.pitch_seconds ? ' against a plan of ' + clock(bundle.pitch_seconds) : '')
+    + (end && end.time_up ? ', and the chair stopped you for time' : '')
     + (worst ? '; slide ' + (worst.index + 1) + ' took ' + clock(worst.seconds) + ' against ' + clock(worst.target_seconds) : '') + '.', evidence: [] };
 // Earlier debriefed rehearsals of this meeting, oldest first, and the weak spots the last one left
 const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
@@ -1037,7 +1074,8 @@ const summary = totalWords + ' words over ' + slides.filter(s => s.transcript).l
 const PROMPT = """ + json.dumps(DEBRIEF_PROMPT) + """;
 const parts = {
   presenter: (b.presenter && b.presenter.name) || 'The presenter',
-  meeting: (bundle.prospect && bundle.prospect.company ? 'with ' + bundle.prospect.company : 'a meeting') + ', a ' + clock(bundle.pitch_seconds || pitchSec) + ' pitch',
+  meeting: (bundle.prospect && bundle.prospect.company ? 'with ' + bundle.prospect.company : 'a meeting') + (bundle.time === null ? ', a pitch with no time limit' : ', a ' + clock(bundle.pitch_seconds || pitchSec) + ' pitch')
+    + (end && end.time_up ? ' (the chair stopped it for time)' : ''),
   personas: JSON.stringify(personas.map(p => ({ id: p.id, name: p.display_name, role: p.role, priorities: p.priorities, objections: (p.objections || []).map(o => o.text) }))),
   slides: JSON.stringify(planned.map(s => ({ index: s.index, title: s.title, key_points: s.key_points, target_seconds: s.target_seconds }))),
   weak_spots: weakBefore.length ? weakBefore.join('; ') : 'None (first rehearsal).',
