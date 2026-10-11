@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import type { Bundle, Deck, Meeting, MeetingDetail, NewMeeting, PrepRequest, PrepStep, SessionRecord } from "./contract";
 import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meetings";
 import { mockPrep } from "./mock/prep";
@@ -103,7 +104,9 @@ const FRESH_MS = 2_500;
 const SETTLED_MS = 30_000;
 const reads = ((globalThis as { __dryrunReads?: Map<string, { until: number; value: Promise<unknown> }> }).__dryrunReads ??= new Map());
 
-function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Promise<T>): Promise<T> {
+async function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Promise<T>): Promise<T> {
+  // n8n's answer can change at any time, so it's read at request time, never while prerendering (the clock below needs it too)
+  await connection();
   const hit = reads.get(key);
   if (hit && Date.now() < hit.until) return hit.value as Promise<T>;
   const value = load();
