@@ -274,11 +274,25 @@ The panel (what each cares about and will push on): {personas}
 The plan for each slide (key points, target time): {slides}
 Weak spots from the last rehearsal of this meeting (check whether they were fixed): {weak_spots}
 
-What the presenter said, slide by slide, with the time spent and the numbers already counted:
+What the presenter said, slide by slide, with the time spent and the numbers already counted (the time on a slide counts only the
+pitch, not the questions asked on it):
 {transcript}
 
 The questions, the answers and how each answer was judged live:
 {exchanges}
+
+{length}
+
+What went wrong on the system's side, not the presenter's (discount these; never judge the presenter for them): {trouble}
+A transcript listed as possibly mis-heard came from speech recognition: never mark a quote from it, never call it jargon or nonsense,
+and say "the transcript was unclear here" if it matters. A question that cut the pitch short is the panel's fault, not a pitch that
+was too short.
+
+Questions the presenter could not answer well (thread id, who asked, what they said):
+{owed}
+
+What n8n found about the company (the brief's research, with numbered sources):
+{research}
 
 Decide:
 - headline: one sentence on how it went and what it means for the real meeting (e.g. "A clear story, but finance left unconvinced
@@ -295,11 +309,16 @@ Decide:
   each); marks on the transcript: up to 4 per slide, each a quote copied exactly from that slide's transcript (a few words to one
   sentence), its kind ("hedge" for weak or apologetic phrasing, "unsupported" for a claim with nothing behind it, "wrong_fact" for
   something false or contradicting the deck, "landed" for something that clearly worked), a short note on why, and better: how to say it
-  instead (empty for "landed"). Do not mark filler words; they are already counted. notes: the talk track for this slide next time, 2 to 4
+  instead (empty for "landed"). At most one "landed" per slide, and only for a specific claim, number or answer that worked; never for
+  reading out a title. Do not mark filler words; they are already counted. notes: the talk track for this slide next time, 2 to 4
   sentences in the presenter's voice, keeping what worked and fixing what did not.
 - drill: the one thing to practise next: a short title, focus_persona (the id of the person who will press on it), the slides it is about
   (indexes) and minutes (2 to 5).
 - weak_spots: 1 to 3 topics to press on next time, a few words each (e.g. "the payback period", "integration with their TMS").
+- owed: for each question the presenter could not answer well (listed above), by its thread id: suggested, a model answer in the
+  presenter's voice, 3 to 5 sentences, built only from their deck's key points, the research above and what they actually said;
+  confirm, what they must check or fill in themselves before the real meeting (never invent facts about their own product, numbers
+  or customers: say what to confirm instead); and sources, the numbers of the research sources it used (empty if none).
 Be honest and specific; no generic advice. Answer in JSON."""
 
 DEBRIEF_SCHEMA = {"type": "object", "properties": {
@@ -327,5 +346,9 @@ DEBRIEF_SCHEMA = {"type": "object", "properties": {
         "title": {"type": "string"}, "focus_persona": {"type": "string"}, "slides": {"type": "array", "items": {"type": "integer"}},
         "minutes": {"type": "integer"}},
         "required": ["title", "focus_persona", "slides", "minutes"]},
-    "weak_spots": {"type": "array", "items": {"type": "string"}}},
-    "required": ["headline", "metrics", "stakeholders", "slides", "drill", "weak_spots"]}
+    "weak_spots": {"type": "array", "items": {"type": "string"}},
+    "owed": {"type": "array", "items": {"type": "object", "properties": {
+        "thread_id": {"type": "string"}, "suggested": {"type": "string"}, "confirm": {"type": "string"},
+        "sources": {"type": "array", "items": {"type": "integer"}}},
+        "required": ["thread_id", "suggested", "confirm", "sources"]}}},
+    "required": ["headline", "metrics", "stakeholders", "slides", "drill", "weak_spots", "owed"]}

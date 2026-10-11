@@ -1171,7 +1171,8 @@ const debriefSteps = [
     judged ? 'Scored ' + judged.debrief.metrics.length + ' things with evidence, marked ' + judged.marks + ' moments, ' + judged.backs + ' of ' + judged.debrief.stakeholders.length + ' would back it' : '',
     'Marking the transcript, scoring the answers and reading the room'),
   step('plan', 'Planned the next rehearsal', !!judged, !!judged,
-    judged ? 'Drill: ' + judged.debrief.drill.title + (judged.debrief.weak_spots.length ? '. The panel will press on ' + judged.debrief.weak_spots.join(', ') : '') : '', ''),
+    judged ? (judged.debrief.owed.length ? 'Drafted answers to ' + judged.debrief.owed.length + ' question' + (judged.debrief.owed.length === 1 ? '' : 's') + ' you owe them. ' : '')
+      + 'Drill: ' + judged.debrief.drill.title + (judged.debrief.weak_spots.length ? '. The panel will press on ' + judged.debrief.weak_spots.join(', ') : '') : '', ''),
   step('email', 'Emailed you the report', !!mailed && !mailed.error, !!judged, 'To ' + (read.owner_email || 'you'), 'Emailing you the report'),
 ];
 if (mailed && mailed.error) Object.assign(debriefSteps[3], { state: 'error', detail: "Couldn't email the report" });
@@ -1190,10 +1191,16 @@ def debrief():
         "returnAll": True,
     }, [{"session_id": "s0", "meeting_id": "evt123", "status": "done", "overall": 65, "at": "2026-10-10T19:12:00.000Z", "debrief": "{}"}],
         extra={"alwaysOutputData": True})
+    # The meeting's brief (0.26): the research the homework's suggested answers are drawn from, with its sources
+    c += make_node("findBrief", "node", "n8n-nodes-base.dataTable", 1.1, "The brief", {
+        "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $('Debrief a session (laptop)').first().json.body.meeting_id || 'none' }}")}]},
+    }, [{"meeting_id": "evt123", "brief": "{}"}], extra={"alwaysOutputData": True, "executeOnce": True})
     c += code_node("readSession", "Read the session", REPLY_JS + """
 // What happened, slide by slide, with everything that can be counted counted here (the same input always gives the same numbers):
 // time on each slide, words per minute, filler words, pacing against the plan. The model only judges (docs/CONTRACT.md, POST /debrief).
 const b = $('Debrief a session (laptop)').first().json.body;
+const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
 const bundle = b.bundle || {};
 const personas = bundle.personas || [];
 const planned = bundle.slides || [];
@@ -1205,11 +1212,22 @@ const pitchEnd = end ? end.t : duration;
 // Time on each slide during the pitch, from the slide changes
 const changes = events.filter(e => e.type === 'slide');
 if (!changes.length || changes[0].t > 0) changes.unshift({ t: 0, type: 'slide', slide_index: changes.length ? 0 : 0 });
+// Exchanges during the pitch (0.26), from the question to the end of its last answer, aren't the presenter's pitch time: the report
+// blamed them for the panel's questions before
+const asks = [];
+turns.forEach((t, k) => (t.reactions || []).filter(r => r.kind === 'question' || r.kind === 'follow_up').forEach(r => asks.push({ k, t, r })));
+const busy = [];
+asks.filter(a => a.t.t < pitchEnd).forEach(a => {
+  const answers = turns.slice(a.k + 1).filter(x => x.mode === 'answer' && x.asked_by === a.r.persona_id && x.t <= pitchEnd);
+  const until = answers.length ? answers[0].t : null;
+  if (until != null) busy.push([a.t.t, until]);
+});
+const overlap = (from, to) => busy.reduce((n, [a, z]) => n + Math.max(0, Math.min(to, z) - Math.max(from, a)), 0);
 const seconds = {};
 changes.forEach((c, i) => {
   const from = Math.min(c.t, pitchEnd);
   const to = Math.min(i + 1 < changes.length ? changes[i + 1].t : duration, pitchEnd);
-  seconds[c.slide_index] = (seconds[c.slide_index] || 0) + Math.max(0, to - from);
+  seconds[c.slide_index] = (seconds[c.slide_index] || 0) + Math.max(0, to - from - overlap(from, to));
 });
 // What was said on each slide during the pitch (the opening, each slide, the last slide), and the answers apart
 const said = {};
@@ -1235,8 +1253,11 @@ turns.forEach(t => {
     if (open) Object.assign(open, { answer: t.transcript || '', verdict: t.answer_verdict || null });
   }
   (t.reactions || []).filter(r => r.kind === 'question' || r.kind === 'follow_up').forEach(r =>
-    exchanges.push({ t: t.t, slide_index: t.slide_index, persona_id: r.persona_id, question: r.text, answer: null, verdict: null }));
+    exchanges.push({ t: t.t, slide_index: t.slide_index, persona_id: r.persona_id, question: r.text, answer: null, verdict: null, thread_id: r.thread_id || '', kind: r.kind }));
 });
+// Every question's life (0.26): the last status each thread reached
+const threads = {};
+turns.forEach(t => (t.threads || []).forEach(x => { threads[x.id] = x; }));
 // Pacing: how far each slide was from its target, and the whole pitch from its length
 const timed = slides.filter(s => s.target_seconds > 0 && s.seconds > 0);
 const off = timed.length ? timed.reduce((a, s) => a + Math.min(1, Math.abs(s.seconds / s.target_seconds - 1)), 0) / timed.length : 0;
@@ -1248,12 +1269,65 @@ const pacing = { name: 'Pacing', score: timed.length ? Math.max(20, Math.round(1
     + (end && end.time_up ? ', and the chair stopped you for time' : '')
     + (worst ? '; slide ' + (worst.index + 1) + ' took ' + clock(worst.seconds) + ' against ' + clock(worst.target_seconds) : '') + '.', evidence: [] };
 // Earlier debriefed rehearsals of this meeting, oldest first, and the weak spots the last one left
-const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
-const earlier = $input.all().map(i => i.json).filter(r => r.session_id && r.session_id !== b.session_id && r.status === 'done' && typeof r.overall === 'number')
+const earlier = $('Earlier rehearsals').all().map(i => i.json).filter(r => r.session_id && r.session_id !== b.session_id && r.status === 'done' && typeof r.overall === 'number')
   .sort((x, y) => Date.parse(x.at) - Date.parse(y.at));
 const history = earlier.map(r => ({ session_id: r.session_id, at: r.at, overall: r.overall }));
 const last = earlier.length ? parse(earlier[earlier.length - 1].debrief) : null;
 const weakBefore = (last && last.weak_spots) || [];
+// What went wrong on the system's side (0.26), for the model to discount and the report to show quietly
+const STEM = w => w.slice(0, 5);
+const content = t => String(t || '').toLowerCase().split(/[^a-z0-9%]+/).filter(w => w.length > 3).map(STEM);
+const deckWords = new Set(planned.flatMap(x => content([x.title].concat(x.key_points || []).join(' ')))
+  .concat(personas.flatMap(p => content((p.objections || []).map(o => o.text).join(' ')))));
+const trouble = [];
+const garbled = [];
+// (not the opening: a greeting shares no words with the deck)
+turns.filter(t => t.mode === 'segment' || t.mode === 'answer').forEach(t => {
+  const own = content(t.transcript);
+  const asked = t.mode === 'answer' ? exchanges.filter(x => x.persona_id === t.asked_by && x.t <= t.t).map(x => x.question).join(' ') : '';
+  const near = new Set([...deckWords, ...content(asked)]);
+  const shared = own.filter(w => near.has(w)).length;
+  if (own.length >= 3 && words(t.transcript) <= 12 && shared / own.length < 0.2) {
+    garbled.push(t.transcript);
+    trouble.push({ t: t.t, kind: 'garbled', note: 'The transcript may be mis-heard: "' + String(t.transcript).trim().slice(0, 80) + '"' });
+  }
+});
+let spoken = 0;
+turns.filter(t => t.t < pitchEnd).forEach(t => {
+  if (t.mode !== 'answer') spoken += words(t.transcript);
+  const cut = (t.reactions || []).find(r => r.kind === 'open_floor' || (r.kind === 'question' && t.mode !== 'answer'));
+  if (cut && spoken < 30) trouble.push({ t: t.t, kind: 'cut_short', note: name(cut.persona_id) + (cut.kind === 'open_floor' ? ' opened the floor' : ' asked a question') + ' after only ' + spoken + ' words of your pitch' });
+});
+events.filter(e => e.type === 'turn_failed').forEach(e => trouble.push({ t: e.t, kind: 'turn_failed', note: 'n8n did not answer this ' + (e.mode || 'turn') + ', so nobody reacted' }));
+// Too little to judge: under about 45 s of pitch or 60 words, nothing is scored
+const pitchSeconds = Math.round(slides.reduce((a, x) => a + x.seconds, 0));
+const pitchWords = slides.reduce((a, x) => a + words(x.transcript), 0);
+const scored = pitchSeconds >= 45 && pitchWords >= 60;
+// Questions the presenter owes them (0.26): threads parked or dodged, and answers judged partial
+const ownedBy = {};
+// Without thread ids (a run before 0.26), a follow-up or a repeat of the same question belongs with that person's earlier one
+const STEMS = t => new Set(content(t));
+const same = (a, b) => { const A = STEMS(a), B = STEMS(b); let n = 0; A.forEach(w => { if (B.has(w)) n++; }); return n >= 3 && n / Math.min(A.size, B.size) >= 0.5; };
+exchanges.forEach(x => {
+  const earlierOwn = Object.values(ownedBy).filter(o => o.persona_id === x.persona_id);
+  const latest = earlierOwn[earlierOwn.length - 1];
+  const id = x.thread_id || (x.kind === 'follow_up' && latest ? latest.thread_id : '') || ((earlierOwn.find(o => same(o.question, x.question)) || {}).thread_id) || ('x' + Math.round(x.t) + x.persona_id);
+  const th = threads[x.thread_id];
+  const status = th && (th.status === 'parked' || th.status === 'dodged') ? th.status : x.verdict === 'partial' || x.verdict === 'dodged' ? (x.verdict === 'dodged' ? 'dodged' : 'partial') : null;
+  const o = ownedBy[id] || { thread_id: id, persona_id: x.persona_id, question: (th && th.text) || x.question, said: [], status: null };
+  if (x.answer) o.said.push(x.answer);
+  if (status) o.status = o.status === 'parked' || o.status === 'dodged' ? o.status : status;
+  if (th && th.status === 'answered' && x.verdict !== 'partial') o.status = o.status === 'partial' ? 'partial' : null;
+  ownedBy[id] = o;
+});
+const owed = Object.values(ownedBy).filter(o => o.status).map(o => ({ ...o, said: o.said.join(' ').trim() })).slice(0, 5);
+// The research from the meeting's brief, numbered so the model can cite it
+const briefRow = $('The brief').first().json || {};
+const brief = parse(briefRow.brief) || {};
+const sources = (brief.sources || []).slice(0, 12);
+const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
+  .concat(((brief.company && brief.company.recent_news) || []).map(n => 'News' + (n.date ? ' (' + n.date + ')' : '') + ': ' + n.text))
+  .concat(sources.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' ' + x.url)).filter(Boolean).join('\\n') || 'No research saved for this meeting.';
 const totalWords = slides.reduce((a, s) => a + words(s.transcript), 0) + exchanges.reduce((a, x) => a + words(x.answer), 0);
 const answered = exchanges.filter(x => x.answer).length;
 const summary = totalWords + ' words over ' + slides.filter(s => s.transcript).length + ' slide' + (slides.length === 1 ? '' : 's')
@@ -1271,12 +1345,18 @@ const parts = {
     + s.words_per_minute + ' words a minute, ' + s.filler_count + ' filler words] "' + (s.transcript || '(nothing said)') + '"').join('\\n') || 'Nothing was said.',
   exchanges: exchanges.map(x => name(x.persona_id) + ' (' + x.persona_id + ') asked on slide ' + (x.slide_index + 1) + ': "' + x.question + '" Answer: "'
     + (x.answer || '(not answered)') + '"' + (x.verdict ? ' (judged ' + x.verdict + ')' : '')).join('\\n') || 'No questions were asked.',
+  trouble: trouble.length ? trouble.map(x => '- at ' + clock(x.t) + ': ' + x.note).join('\\n') : 'None.',
+  length: scored ? 'You pitched for ' + clock(pitchSeconds) + ' (' + pitchWords + ' words), not counting the questions.'
+    : 'Only ' + clock(pitchSeconds) + ' of pitch (' + pitchWords + ' words): too little to score. Give scores of 0; they will not be shown. Still write the talk tracks, weak spots and drill.',
+  owed: owed.length ? owed.map(o => o.thread_id + ': ' + name(o.persona_id) + ' asked "' + o.question + '"; the presenter said "' + (o.said || '(nothing)') + '" (' + o.status + ')').join('\\n') : 'None.',
+  research,
 };
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
 const telemetry = { session_id: b.session_id, client: b.client || 'web', duration_s: duration, events, ...(b.gaze_dwell_s ? { gaze_dwell_s: b.gaze_dwell_s } : {}),
                     ...(b.facing_slides_s != null ? { facing_slides_s: b.facing_slides_s } : {}) };
 return [{ json: { session_id: b.session_id, meeting_id: b.meeting_id || '', owner_email: b.owner_email || (b.presenter && b.presenter.email) || '',
-                  bundle, telemetry, slides, exchanges, pacing, history, weak_before: weakBefore, summary, prompt } }];""",
+                  bundle, telemetry, slides, exchanges, pacing, history, weak_before: weakBefore, summary, prompt,
+                  trouble, garbled, owed, sources, pitch: { seconds: pitchSeconds, words: pitchWords, scored } } }];""",
                    [{"session_id": "s1", "meeting_id": "evt123", "summary": "", "prompt": "", "slides": [], "exchanges": [], "history": []}])
     c += code_node("rowStart", "Row: debriefing", DEBRIEF_PROGRESS_JS + """
 // The session in the DryRun sessions table while n8n debriefs it
@@ -1309,11 +1389,18 @@ const moment = (quote, slideIndex) => {
 };
 const NAMES = ['Clarity', 'Evidence', 'Objection handling', 'Structure'];
 const clamp = n => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+// A quote from a transcript that may be mis-heard is never used against the presenter (0.26)
+const misheard = quote => r.garbled.some(g => find(g, quote));
+const scored = r.pitch.scored;
 const metrics = NAMES.map(n => {
   const m = (d.metrics || []).find(x => x.name === n) || { score: 50, explanation: '', evidence: [] };
-  return { name: n, score: clamp(m.score), explanation: m.explanation || '', evidence: (m.evidence || []).map(e => moment(e.quote, e.slide_index)).filter(Boolean).slice(0, 2) };
-}).concat([r.pacing]);
-const overall = Math.round(metrics.reduce((a, m) => a + m.score, 0) / metrics.length);
+  return { name: n, score: scored ? clamp(m.score) : null, explanation: m.explanation || '',
+           evidence: (m.evidence || []).filter(e => !misheard(e.quote)).map(e => moment(e.quote, e.slide_index)).filter(Boolean).slice(0, 2) };
+}).concat([{ ...r.pacing, score: scored ? r.pacing.score : null }]);
+// Too little pitch to judge: no scores at all, said plainly
+const overall = scored ? Math.round(metrics.reduce((a, m) => a + m.score, 0) / metrics.length) : null;
+const clock = s => Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0');
+const headline = scored ? d.headline || '' : 'Too short to score: ' + clock(r.pitch.seconds) + ' of pitch. Try a 2-minute run.';
 const stakeholders = ids.map(id => {
   const s = (d.stakeholders || []).find(x => x.persona_id === id) || { stance: 'undecided', reason: '' };
   return { persona_id: id, stance: ['backs', 'undecided', 'opposes'].includes(s.stance) ? s.stance : 'undecided', reason: s.reason || '',
@@ -1322,7 +1409,10 @@ const stakeholders = ids.map(id => {
 let marks = 0;
 const slides = r.slides.map(s => {
   const j = (d.slides || []).find(x => x.index === s.index) || { covered: [], missed: [], marks: [], notes: '' };
-  const judged = (j.marks || []).map(m => ({ ...m, quote: find(s.transcript, m.quote) })).filter(m => m.quote)
+  let landed = 0;
+  // Marks have to matter: never on a mis-heard transcript, and one "landed" a slide at most
+  const judged = (j.marks || []).map(m => ({ ...m, quote: find(s.transcript, m.quote) })).filter(m => m.quote && !misheard(m.quote))
+    .filter(m => m.kind !== 'landed' || landed++ < 1)
     .map(m => ({ quote: m.quote, kind: m.kind, note: m.note || '', better: m.kind === 'landed' ? '' : (m.better || '') })).slice(0, 4);
   const fillers = s.fillers.map(f => ({ quote: f, kind: 'filler', note: s.filler_count > 1 ? 'Filler word (' + s.filler_count + ' on this slide)' : 'Filler word', better: '' }));
   marks += judged.length;
@@ -1334,8 +1424,16 @@ const drill = { title: dr.title || 'Run it again', focus_persona: ids.includes(d
                 slides: (dr.slides || []).filter(i => r.slides.some(s => s.index === i)), minutes: Math.max(2, Math.min(5, Math.round(dr.minutes || 3))) };
 const g = r.telemetry.gaze_dwell_s;
 const facing = g ? { slides_s: r.telemetry.facing_slides_s || 0, longest_gap: null } : null;
-const debrief = { headline: d.headline || '', overall, previous_overall: r.history.length ? r.history[r.history.length - 1].overall : null,
-                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), actions_taken: ['weak_spots_saved'] };
+// Homework (0.26): a suggested answer, with its sources, for every question the presenter couldn't answer
+const drafts = Object.fromEntries((d.owed || []).map(o => [o.thread_id, o]));
+const owed = r.owed.map(o => {
+  const x = drafts[o.thread_id] || {};
+  return { thread_id: o.thread_id, persona_id: o.persona_id, question: o.question, said: o.said, status: o.status, suggested: x.suggested || '', confirm: x.confirm || '',
+           sources: (x.sources || []).map(n => r.sources[n - 1]).filter(Boolean).map(x => ({ title: x.title, url: x.url })) };
+}).filter(o => o.suggested);
+const debrief = { headline, overall, previous_overall: r.history.length ? r.history[r.history.length - 1].overall : null,
+                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), owed, trouble: r.trouble, pitch: r.pitch,
+                  actions_taken: (owed.length ? ['answers_drafted'] : []).concat(['weak_spots_saved']) };
 return [{ json: { session_id: r.session_id, debrief, marks, backs: stakeholders.filter(s => s.stance === 'backs').length } }];""",
                    [{"session_id": "s1", "debrief": {"metrics": [], "stakeholders": [], "drill": {"title": ""}, "weak_spots": []}, "marks": 0, "backs": 0}])
     c += code_node("rowJudged", "Row: judged", DEBRIEF_PROGRESS_JS + """
@@ -1346,15 +1444,18 @@ return [{ json: { session_id: j.session_id, overall: j.debrief.overall, headline
         "resource": "message", "operation": "send",
         "sendTo": Expr("{{ $('Read the session').first().json.owner_email }}"),
         "subject": Expr("{{ (() => { const r = $('Read the session').first().json; const d = $('Build the debrief').first().json.debrief; "
-                        "return 'Your rehearsal for ' + ((r.bundle.prospect || {}).company || 'your meeting') + ': ' + d.overall + '/100'; })() }}"),
+                        "const co = (r.bundle.prospect || {}).company || 'your meeting'; "
+                        "return 'Your rehearsal for ' + co + ': ' + (d.overall == null ? 'too short to score' : d.overall + '/100') + (d.owed.length ? ', ' + d.owed.length + ' question' + (d.owed.length === 1 ? '' : 's') + ' you owe ' + co : ''); })() }}"),
         "emailType": "html",
         "message": Expr("{{ (() => { const r = $('Read the session').first().json; const d = $('Build the debrief').first().json.debrief; "
                         "const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); "
                         "const who = id => ((r.bundle.personas || []).find(p => p.id === id) || {}).display_name || id; "
                         "const STANCE = { backs: 'would back it', undecided: 'is undecided', opposes: 'is not convinced' }; "
-                        "return '<h2>' + esc(d.headline) + '</h2><p><b>' + d.overall + '/100</b>' + (d.previous_overall != null ? ' (last time ' + d.previous_overall + ')' : '') + '</p>'"
+                        "const co = esc((r.bundle.prospect || {}).company || 'them'); "
+                        "const owed = d.owed.length ? '<h3>' + d.owed.length + ' question' + (d.owed.length === 1 ? '' : 's') + ' you couldn&#39;t answer for ' + co + ', with suggested answers</h3>' + d.owed.map(o => '<p><b>' + esc(who(o.persona_id)) + ':</b> ' + esc(o.question) + '<br><i>You said:</i> ' + esc(o.said || '(nothing)') + '<br><i>Try:</i> ' + esc(o.suggested) + (o.confirm ? '<br><i>Check first:</i> ' + esc(o.confirm) : '') + (o.sources.length ? '<br><small>Sources: ' + o.sources.map(x => '<a href=\"' + esc(x.url) + '\">' + esc(x.title) + '</a>').join(', ') + '</small>' : '') + '</p>').join('') : ''; "
+                        "return owed + '<h2>' + esc(d.headline) + '</h2><p><b>' + (d.overall == null ? 'Not scored' : d.overall + '/100') + '</b>' + (d.previous_overall != null ? ' (last time ' + d.previous_overall + ')' : '') + '</p>'"
                         " + '<h3>The room</h3><ul>' + d.stakeholders.map(s => '<li><b>' + esc(who(s.persona_id)) + '</b> ' + STANCE[s.stance] + '. ' + esc(s.reason) + '</li>').join('') + '</ul>'"
-                        " + '<h3>Scores</h3><ul>' + d.metrics.map(m => '<li>' + esc(m.name) + ': ' + m.score + '. ' + esc(m.explanation) + '</li>').join('') + '</ul>'"
+                        " + '<h3>Scores</h3><ul>' + d.metrics.map(m => '<li>' + esc(m.name) + (m.score == null ? '' : ': ' + m.score) + '. ' + esc(m.explanation) + '</li>').join('') + '</ul>'"
                         " + '<h3>Next time</h3><p><b>' + esc(d.drill.title) + '</b>, ' + d.drill.minutes + ' minutes against ' + esc(who(d.drill.focus_persona)) + '.'"
                         " + (d.weak_spots.length ? ' The panel will press on ' + esc(d.weak_spots.join(', ')) + '.' : '') + '</p>'"
                         " + '<p><a href=\"" + APP_URL + "/s/' + encodeURIComponent(r.session_id) + '/report\">Open the full report</a>: what you said on each slide, marked up, with a talk track for next time.</p>'; })() }}"),
@@ -1420,6 +1521,7 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
   .add(about)
   .add(debriefTrigger)
   .to(findHistory)
+  .to(findBrief)
   .to(readSession)
   .to(rowStart)
   .to(saveStart)
@@ -1441,7 +1543,7 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
   .to(readSessions)
   .to(shapeSession)
   .to(sendSession)
-  .group('Read', [findHistory, readSession, rowStart, saveStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
+  .group('Read', [findHistory, findBrief, readSession, rowStart, saveStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
   .group('Judge', [judge, judgeGroq, buildDebrief, rowJudged, saveJudged], { description: 'Marks the transcript, scores with evidence, reads the room, plans the drill' })
   .group('Act', [emailReport, rowDone, saveDone, practised, savePractised, theRecord, replyDebrief], { description: 'Emails the report, saves it for the next rehearsal and marks the meeting practised' });
 """

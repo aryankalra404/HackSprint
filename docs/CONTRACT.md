@@ -349,6 +349,7 @@ Laptop to n8n: the same, plus `bundle` (without audio), `meeting_id` (the meetin
 The laptop sends it as soon as the session ends, whoever ended it, with the headset's telemetry if it arrived first (so the headset posts `/api/debrief` before it ends the session; it sends none yet). `session_id` is the run's id (the room's `debrief.run_id`). Without a briefed panel or any turns there's nothing to debrief and nothing is sent.
 Field notes:
 - `rescue_level` is 1 for calm, 2 for keyword and 3 for bridge.
+- *(0.26)* Events also include `{ "t", "type": "rescue", "level": 2 | 3, "line_id" }` (the chair spoke during a freeze: "Take your time" or the way-back-in question) from the rehearsing client, and `{ "t", "type": "turn_failed", "mode" }` from the laptop (a turn n8n didn't answer).
 - *(0.23)* The browser rehearsal page sends this too, with `client: "web"` and its silences (`{ t, type: "silence", duration_s, rescue_level }`), before it ends the session. It has no `gaze_dwell_s` or `facing_slides_s`.
 - `gaze_dwell_s` *(VR)*: seconds the presenter's head faced each person. The Quest 3S has no eye tracking, so this is head direction, shown as "Who you faced", never as eye contact. `facing_slides_s` *(VR)*: seconds they spent turned to the TV behind them.
 
@@ -395,7 +396,21 @@ n8n works through the debrief, saving its progress and the result to the **DryRu
   },
   "drill": { "title": "string", "focus_persona": "p1", "slides": [2, 4], "minutes": 3 },
   "weak_spots": ["string"],
-  "actions_taken": ["report_emailed", "drill_scheduled", "weak_spots_saved"]
+  "owed": [
+    {
+      "thread_id": "q2",
+      "persona_id": "p1",
+      "question": "string",
+      "said": "string",
+      "status": "parked | dodged | partial",
+      "suggested": "string",
+      "confirm": "string",
+      "sources": [{ "title": "string", "url": "string" }]
+    }
+  ],
+  "trouble": [{ "t": 19.2, "kind": "garbled | cut_short | turn_failed", "note": "string" }],
+  "pitch": { "seconds": 92, "words": 210, "scored": true },
+  "actions_taken": ["report_emailed", "drill_scheduled", "weak_spots_saved", "answers_drafted"]
 }
 ```
 Field notes:
@@ -403,6 +418,8 @@ Field notes:
 - `slides` is the transcript slide by slide, for the report. `seconds`, `words_per_minute` and filler marks are counted by a Code node (the same input always gives the same numbers); `covered`, `missed` (the slide's key points) and the other marks are the model's judgement. Each mark's `quote` is copied exactly from `transcript`, so the report can underline it; `better` is a way to say it instead (empty for `landed`). `notes` is the talk track for next time, which the next `/prep` returns as the slide's `notes`.
 - `metrics` *(0.20)*: `Clarity`, `Evidence`, `Objection handling` and `Structure` are the model's, with quotes as evidence; `Pacing` is counted from the time on each slide against its target. `overall` is their average. `name` is shown as is.
 - `weak_spots` *(0.20)*: what to press on next time, in a few words each; the next `/prep` for the meeting raises those topics.
+- *(0.26)* **A fair report.** `seconds` and `words_per_minute` count only the presenter's pitch: each exchange during the pitch (from the question to the end of its answer) is taken out of the slide it happened on. `pitch` is the pitch time and words counted that way. Under about 45 s of pitch or 60 words, `scored` is `false`: `overall` and every metric's `score` are `null`, the headline says so ("Too short to score: 0:19 of pitch. Try a 2-minute run."), and the talk tracks and weak spots are still given. `trouble` lists what went wrong on the system's side, found by a Code node and given to the model to discount, never to judge: a transcript that looks mis-heard (`garbled`: short and sharing no words with the slide, the question or the deck), the panel cutting the pitch short (`cut_short`: a question or the floor opened before the presenter said about 30 words) and turns that failed (`turn_failed`, from the laptop). The model never marks a quote from a garbled transcript, at most one `landed` mark per slide, and only for a specific claim, number or answer.
+- `owed` *(0.26)*: the questions the presenter couldn't answer (threads `parked` or `dodged`, and answers judged `partial`), each with what they said, a suggested answer in their voice (3 to 5 sentences) drafted from the deck, the research in the brief and their own words, what they must `confirm` themselves (n8n never invents facts about their product), and the brief's sources it used. The report shows them as "Questions you owe them", the email leads with them, and the next `/prep` asks them again, early (as `history` objections).
 - `facing` *(VR)* is `null` without `gaze_dwell_s`. A person's share of the presenter's attention can count towards their stance, and the `reason` then says so.
 
 ## GET `/status?session_id=`
@@ -591,4 +608,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.23 (11 Oct): rehearse in the browser. The room gains `rehearse_in` (`"vr"` or `"browser"`, set when briefed and with `PUT /api/room/settings`; the headset doesn't take turns when it's `"browser"`) and `live.now` (who is speaking and who has a hand up, set with the new `POST /api/room/now`). The browser sends `/api/debrief` with `client: "web"` and its silences.
 - 0.24 (11 Oct): `/prep` streams its answer: a progress chunk after each stage (gathered, planned, voiced, and Groq standing in for Gemini), with the n8n execution on the first, then the bundle. The practice page has one "Rehearse" button that asks where (this laptop or the headset) and shows those steps live.
 - 0.25 (11 Oct): time no longer decides when the panel hears the presenter. A slide is sent whole when they move on, and mid-slide only at the interruption points n8n plans (`plan.interrupts`; `/turn` gains `mid_slide`). The pitch length can be `null` (no time limit). With a limit, n8n decides how the chair keeps time (`time`: nudge, and maybe stop the pitch for questions) and voices the chair's `time_nudge` and `time_up` lines, which the client plays itself; `pitch_end` gains `time_up`.
-- 0.26 (12 Oct): a panel that feels real. `/turn` keeps every question's life in `threads` (in the context and in the response, with `thread_id` on reactions): at most one follow-up, then answered, parked or dodged, never asked again. Reactions gain `park`, `move_on` and `hand_back`. n8n enforces the rules after the model in a Code node. Generic lines (`generic`, `voice`; fillers, park, move-on, hand-back, the chair's thanks and "Take your time") are voiced once per voice and cached by the laptop (`/prep` takes `cached_voices`); the client plays a filler the moment it sends an answer. Lines gain `rescue_question` per slide.
+- 0.26 (12 Oct): a panel that feels real. `/turn` keeps every question's life in `threads` (in the context and in the response, with `thread_id` on reactions): at most one follow-up, then answered, parked or dodged, never asked again. Reactions gain `park`, `move_on` and `hand_back`. n8n enforces the rules after the model in a Code node. Generic lines (`generic`, `voice`; fillers, park, move-on, hand-back, the chair's thanks and "Take your time") are voiced once per voice and cached by the laptop (`/prep` takes `cached_voices`); the client plays a filler the moment it sends an answer. Lines gain `rescue_question` per slide; at a freeze the chair says "Take your time", then asks it. The debrief is fair: slide time counts only the pitch, `trouble` lists the system's mistakes for the model to discount, a run too short to judge isn't scored (`pitch.scored`, `overall` and scores `null`), and `owed` drafts an answer, with sources, to each question the presenter couldn't answer.
