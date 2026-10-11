@@ -1,11 +1,15 @@
-import { N8N_URL, postToN8n } from "@/lib/api";
+import type { TurnRequest } from "@/lib/contract";
+import { N8N_URL } from "@/lib/api";
+import { TurnError, takeTurn } from "@/lib/turns";
 
-// The headset only talks to the laptop; this forwards /turn to n8n unchanged (contract: POST `/turn`)
+// What the presenter just said, from the headset (contract: POST /turn). The laptop adds the context, n8n decides who reacts,
+// and the answer carries each voice as a path on the laptop.
 export async function POST(request: Request) {
   if (!N8N_URL) return Response.json({ error: "n8n isn't connected (DRYRUN_N8N_URL is unset)" }, { status: 503 });
   try {
-    return Response.json(await postToN8n("/turn", await request.json()));
+    return Response.json(await takeTurn((await request.json()) as TurnRequest));
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : "n8n failed" }, { status: 502 });
+    if (err instanceof TurnError) return Response.json({ error: err.message }, { status: err.status });
+    return Response.json({ error: err instanceof Error ? err.message : "The turn failed" }, { status: 500 });
   }
 }

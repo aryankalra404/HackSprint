@@ -110,13 +110,13 @@ export interface Persona extends Seating {
 }
 
 // A short line voiced ahead of time in /prep, so common reactions play without waiting.
-// n8n sends audio_wav_base64; the laptop saves it and puts audio_url (/api/audio/<id>.wav) in the room's bundle.
+// n8n sends audio_base64 (MP3 or WAV); the laptop saves it as WAV and puts audio_url (/api/audio/<id>.wav) in the room's bundle.
 export interface VoicedLine {
   id: string;
   persona_id: PersonaId;
   kind: "welcome" | "open_floor" | "acknowledge";
   text: string;
-  audio_wav_base64?: string;
+  audio_base64?: string;
   audio_url?: string;
 }
 
@@ -151,8 +151,8 @@ export interface Reaction {
   text: string;
   // One of the bundle's lines, played instead of new audio
   line_id?: string;
-  // n8n to laptop
-  audio_wav_base64?: string;
+  // n8n to laptop: MP3 or WAV
+  audio_base64?: string;
   // laptop to headset: /api/audio/<id>.wav
   audio_url?: string;
   // Raise a hand and wait for the presenter to pause before speaking
