@@ -56,17 +56,17 @@ opening ──► pitch (a segment per slide) ──► pitch_end ──► ques
 ```
 
 ## Workflow 1: Rehearsal prep (built, 11 Oct; with voices, and the last debrief's weak spots and talk tracks) (`POST /dryrun/prep`)
-Sent when the presenter starts the rehearsal from the practice page. Input: the meeting id, the confirmed panel, the pitch length (n8n's suggestion from the invite unless changed) and each slide's text (extracted by the laptop when the deck is converted).
+Sent when the presenter starts the rehearsal from the practice page. Input: the meeting id, the confirmed panel, the pitch length (n8n's suggestion from the invite unless changed, or no time limit) and each slide's text (extracted by the laptop when the deck is converted).
 1. **Load the meeting:** its brief and research from the DryRun meetings table, and weak spots and talk tracks from earlier rehearsals in the DryRun sessions table.
-2. **Plan the slides:** key points, a target time per slide adding up to the pitch length, rescue cues (calm, keyword, bridge).
+2. **Plan the slides:** key points, a target time per slide adding up to the pitch length (with no limit, n8n's estimate of a natural pace, only a guide), rescue cues (calm, keyword, bridge).
 3. **Brief the panel:** priorities and objections tied to slides and research for each person, whether they interrupt or wait, who chairs, and a voice that fits their avatar. Weak spots raise difficulty on those topics.
-4. **Plan the questions:** how many during and after the pitch, with a reason, from the length, the kind of meeting and the panel.
-5. **Voice lines ahead of time:** the chair's welcome and opening of the floor and a few acknowledgements per person, written for this meeting, so common reactions never wait on TTS.
+4. **Plan the questions:** how many during and after the pitch, with a reason, from the length, the kind of meeting and the panel, and where each interruption would come (`plan.interrupts`: who, which slide, after how much speech), the only points where the client sends a slide before the presenter moves on. With a pitch length, also how the chair keeps time (`time`): when they say time is nearly up, and whether this kind of meeting stops the pitch for questions, and when.
+5. **Voice lines ahead of time:** the chair's welcome and opening of the floor (and with a limit, the time nudge and the stop for questions, which the client plays itself) and a few acknowledgements per person, written for this meeting, so common reactions never wait on TTS.
 6. **Return the bundle;** the laptop saves the audio and puts the bundle in the room for the headset.
 The webhook streams its answer (contract 0.24): after loading, planning (or Groq standing in for Gemini) and voicing, a Respond to Webhook node sends a progress chunk with n8n's own summary, then the bundle. The practice page shows those steps live, with a link to the execution, in the same single execution.
 
 ## Workflow 2: Turn (built; the headset side is editor-tested) (`POST /dryrun/turn`)
-The headset sends what the presenter said at four moments: the `opening` (their first words), each slide's `segment`, an `answer`, and `pitch_end` (quiet on the last slide). The laptop adds the bundle, the turns so far and questions left unasked.
+The headset sends what the presenter said at four moments: the `opening` (their first words), each slide's `segment` (whole when they move on; mid-slide only at a planned interruption point), an `answer`, and `pitch_end` (quiet on the last slide, or the chair stopping the pitch for time). The laptop adds the bundle, the turns so far and questions left unasked.
 1. Transcribe (Groq Whisper).
 2. **Decide** with the plan, the time left, the persona briefs and everything said so far: welcome or not; whether anyone reacts, who and why (most slides get nothing, and a question already answered by the pitch is dropped); open the floor; or close the meeting the way this kind of meeting ends.
 3. Write the lines, then voice them (or pick a line voiced in prep).

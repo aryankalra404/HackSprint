@@ -10,7 +10,7 @@ npm run dev
 Pages:
 - http://localhost:3000/: your upcoming meetings (from n8n), with a "prepare for this meeting?" pop-up for the next one whose brief is ready, and the meetings n8n skipped (with its reason and "Prepare anyway")
 - http://localhost:3000/m/<id>: a meeting's brief (facts only). While n8n is still preparing it, the page shows each step live, with a link to the run in n8n
-- http://localhost:3000/m/<id>/practise: the practice panel (the attendees plus practice roles), editable on a drawing of the table and live in the headset; your deck under it (upload, page through, replace); the pitch length (n8n's suggestion for the meeting, if it gave one); **Rehearse in the browser** briefs the panel and opens the rehearsal page, **Rehearse in VR** briefs it and opens the dashboard
+- http://localhost:3000/m/<id>/practise: the practice panel (the attendees plus practice roles), editable on a drawing of the table and live in the headset; your deck under it (upload, page through, replace); the pitch length (n8n's suggestion for the meeting, if it gave one) or no time limit; **Rehearse in the browser** briefs the panel and opens the rehearsal page, **Rehearse in VR** briefs it and opens the dashboard
 - http://localhost:3000/new: add a meeting by hand; n8n prepares it in about 20 seconds
 - http://localhost:3000/s/<session id>/rehearse: rehearse in the browser (below)
 - http://localhost:3000/s/<session id>: the dashboard for the big screen. For the session in the room it starts, ends and restarts the rehearsal, shows the room plan while waiting and switches to the headset view when the session goes live (for a browser rehearsal, the room plan stays, showing who is speaking and who has a hand up)
