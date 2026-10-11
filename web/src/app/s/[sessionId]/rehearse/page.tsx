@@ -6,18 +6,18 @@ import { Rehearsal } from "@/components/rehearse/Rehearsal";
 
 export const metadata = { title: "DryRun rehearsal" };
 
-export default function RehearsePage({ params }: PageProps<"/s/[sessionId]/rehearse">) {
+export default function RehearsePage({ params, searchParams }: PageProps<"/s/[sessionId]/rehearse">) {
   return (
     <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Seating the panel…</p>}>
-      {params.then(({ sessionId }) => (
-        <RehearsalFromRoom sessionId={sessionId} />
+      {Promise.all([params, searchParams]).then(([{ sessionId }, query]) => (
+        <RehearsalFromRoom sessionId={sessionId} debug={query.debug === "1"} />
       ))}
     </Suspense>
   );
 }
 
-// Rehearse in the browser: only the session in the laptop's room can be rehearsed
-async function RehearsalFromRoom({ sessionId }: { sessionId: string }) {
+// Rehearse in the browser: only the session in the laptop's room can be rehearsed. ?debug=1 shows the mic's numbers.
+async function RehearsalFromRoom({ sessionId, debug }: { sessionId: string; debug: boolean }) {
   await connection();
   const room = getRoom();
   if (room.session_id !== sessionId || !room.bundle) {
@@ -32,5 +32,5 @@ async function RehearsalFromRoom({ sessionId }: { sessionId: string }) {
       </div>
     );
   }
-  return <Rehearsal room={room} meetingId={getBrief()?.draft_id ?? null} />;
+  return <Rehearsal room={room} meetingId={getBrief()?.draft_id ?? null} debug={debug} />;
 }

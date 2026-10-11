@@ -86,8 +86,8 @@ function lasted(room: Room): string {
   return ` after ${clock(Math.max(0, (Date.parse(ended_at) - Date.parse(started_at)) / 1000))}`;
 }
 
-// "02:14" since the session started, ticking every second
-function useElapsed(since: string | undefined): string {
+// "02:14" since the session started, ticking every second (the browser rehearsal's header uses it too)
+export function useElapsed(since: string | undefined): string {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!since) return;
