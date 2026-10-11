@@ -44,14 +44,45 @@ export async function saveAudio(base64: string, id = `a${Date.now().toString(36)
   }
 }
 
-// The presenter's speech, smaller for the trip to n8n: AAC (m4a), which Whisper reads. Falls back to the WAV as it is.
+// The Quest's mic is quiet (11 Oct: background about 0.0001, speech peaking about 0.06), which Whisper hears as mumbling. The speech is
+// raised so its loudest moment is about TARGET_PEAK, by at most MAX_GAIN so a near-silent clip isn't turned into loud noise.
+const TARGET_PEAK = 0.7;
+const MAX_GAIN = 20;
+
+// 16-bit PCM WAV, louder; anything else (or a clip that's loud enough already) as it is
+export function normaliseWav(wav: Buffer): Buffer {
+  if (wav.length < 44 || wav.subarray(0, 4).toString("latin1") !== "RIFF" || wav.subarray(8, 12).toString("latin1") !== "WAVE") return wav;
+  let at = 12;
+  let bits = 0;
+  while (at + 8 <= wav.length) {
+    const id = wav.subarray(at, at + 4).toString("latin1");
+    const size = wav.readUInt32LE(at + 4);
+    if (id === "fmt ") bits = wav.readUInt16LE(at + 22);
+    if (id === "data") {
+      if (bits !== 16) return wav;
+      const from = at + 8;
+      const to = Math.min(wav.length, from + size) & ~1;
+      let peak = 0;
+      for (let i = from; i < to; i += 2) peak = Math.max(peak, Math.abs(wav.readInt16LE(i)));
+      const gain = peak > 0 ? Math.min(MAX_GAIN, (TARGET_PEAK * 32767) / peak) : 1;
+      if (gain < 1.2) return wav;
+      const out = Buffer.from(wav);
+      for (let i = from; i < to; i += 2) out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(wav.readInt16LE(i) * gain))), i);
+      return out;
+    }
+    at += 8 + size + (size & 1);
+  }
+  return wav;
+}
+
+// The presenter's speech, smaller for the trip to n8n: louder (above), then AAC (m4a), which Whisper reads. Falls back to the WAV.
 export async function compressSpeech(wavBase64: string): Promise<{ base64: string; format: "m4a" | "wav" }> {
   if (!wavBase64) return { base64: "", format: "wav" };
   const work = await mkdtemp(path.join(os.tmpdir(), "dryrun-speech-"));
   try {
     const input = path.join(work, "speech.wav");
     const output = path.join(work, "speech.m4a");
-    await writeFile(input, Buffer.from(wavBase64, "base64"));
+    await writeFile(input, normaliseWav(Buffer.from(wavBase64, "base64")));
     await run("afconvert", ["-f", "m4af", "-d", "aac", "-b", "32000", input, output], { timeout: 10_000 });
     return { base64: (await readFile(output)).toString("base64"), format: "m4a" };
   } catch {
