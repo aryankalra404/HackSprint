@@ -59,9 +59,12 @@ Rules:
   company like this (e.g. CTO, procurement) and who are not already among the attendees, most influential first. Give them invented,
   realistic Indian names. Never use the names of real people found in the research. These are clearly hypothetical and are never presented
   as attendees: the presenter rehearses against the real attendees and adds these if they want.
-- questions: the 5 hardest questions likely to come up. asked_by: the name of the attendee most likely to ask it, or "" if it is not
+- goal: what the presenter most likely wants from this meeting, in one short line (e.g. "a paid 3-month pilot of RouteIQ approved"),
+  inferred only from the invite, the emails and what they offer if the meeting says so; why: one sentence on what it is based on
+  (e.g. "Rajiv's last email asks for a pilot proposal"). If nothing shows it, your best reading of the invite, and say so in why.
+- questions: the 5 hardest questions likely to come up about that goal (what would stop them saying yes to it). asked_by: the name of the attendee most likely to ask it, or "" if it is not
   clearly one of them. Never attribute a question to a practice_panel person. Include why it is likely and a short suggested answer.
-- risks: what could lose this meeting, in short phrases, grounded in the emails and research.
+- risks: what could lose this meeting (stop the goal), in short phrases, grounded in the emails and research.
 - recent_news: only facts stated in the research above, each with its date. Do not add facts that are not in the research.
 - pitch: how many minutes the presenter should plan to pitch in this meeting (whole minutes, 1 to 60), leaving the rest of the slot for
   discussion, from the meeting's length in minutes (if known) and the kind of meeting; why: one sentence, e.g. "30-minute call: about
@@ -91,8 +94,9 @@ BRIEF_SCHEMA = {"type": "object", "properties": {
     "practice_panel": {"type": "array", "items": PRACTICE},
     "questions": {"type": "array", "items": {"type": "object", "properties": {"question": {"type": "string"}, "asked_by": {"type": "string"}, "why": {"type": "string"}, "suggested_answer": {"type": "string"}}, "required": ["question", "asked_by", "why", "suggested_answer"]}},
     "risks": {"type": "array", "items": {"type": "string"}},
-    "pitch": {"type": "object", "properties": {"minutes": {"type": "integer"}, "why": {"type": "string"}}, "required": ["minutes", "why"]}},
-    "required": ["summary", "what_they_do", "recent_news", "attendees", "practice_panel", "questions", "risks", "pitch"]}
+    "pitch": {"type": "object", "properties": {"minutes": {"type": "integer"}, "why": {"type": "string"}}, "required": ["minutes", "why"]},
+    "goal": {"type": "object", "properties": {"text": {"type": "string"}, "why": {"type": "string"}}, "required": ["text", "why"]}},
+    "required": ["summary", "what_they_do", "recent_news", "attendees", "practice_panel", "questions", "risks", "pitch", "goal"]}
 
 # DryRun rehearsal prep (/prep): brief the confirmed practice panel for one rehearsal. Nothing about the meeting is fixed in
 # code: how many questions, who interrupts, who chairs and what they say all come from here (and later from /turn).
@@ -107,6 +111,9 @@ The presenter's brief (real attendees, research, likely questions, risks):
 
 The practice panel (ids are fixed; "source": "email" means a real attendee, anything else is a practice role):
 {panel}
+
+What the presenter offers, and what they want from this meeting (aim the objections at whatever would stop that ask):
+{side}
 
 The deck, slide by slide (index from 0; empty if there is no deck or a slide has no text):
 {deck}
@@ -125,7 +132,9 @@ Decide, for this meeting and this panel (never a generic template):
   priorities (what they care about most in this meeting), and objections tied to slides (slide_index, or -1 when there is no deck or it
   could come at any time), grounded in the deck and the research, with source "deck" or "research". If there was a last rehearsal,
   give each of its weak spots to the person who would press on it hardest, as an objection with source "history", on the slide it is
-  about, so this rehearsal is harder exactly where the last one was weak; the plan must leave room to ask about them. manner: "interrupts" if, in a real
+  about, so this rehearsal is harder exactly where the last one was weak; the plan must leave room to ask about them. Each question
+  it owes (owed: questions the presenter could not answer last time) goes back to the person who asked it, as a "history" objection
+  with that exact question, and is among the first asked. manner: "interrupts" if, in a real
   meeting like this, this person would raise a hand during the pitch; "waits" if they would keep it for the questions. Base it on the
   role, the kind of meeting and difficulty (1 easy to 3 hard).
 - chair: the id of the one person who would run this meeting (usually the most senior person from the company): they welcome the
@@ -143,6 +152,7 @@ Decide, for this meeting and this panel (never a generic template):
 - lines: short lines voiced ahead of time so common reactions play at once, in the voice of each person, for this meeting:
   the chair's "welcome" (one, greeting the presenter by name if known, warm and brief, inviting them to begin),
   the chair's "open_floor" (one, thanking them and opening the questions, without naming who asks first: that is decided live),
+  both fitting what the presenter wants from the meeting if it is known,
   and 2 "acknowledge" lines per person: 2 to 6 words that fit after ANY reasonable answer to ANY question, so never mention a topic
   (e.g. "Okay, that helps.", "Fair enough.", "Understood, thanks."), in that person's manner. {time_lines} Spoken English, natural;
   the welcome and open_floor under 20 words each.
@@ -241,8 +251,8 @@ What to do for each moment:
 - pitch_end (the pitch is over): the chair opens the floor (kind "open_floor", its line_id), then the first "question" from whoever
   matters most, an open thread first. If the plan has no questions after the pitch, the chair closes instead. If the chair has just
   stopped the pitch for time, they have already moved to the questions: no open_floor, straight to the first question.
-- closing (by the chair): how this kind of meeting really ends, in one or two sentences, fitting how it went (a next step if it went
-  well, polite and noncommittal if not), and end_session true.
+- closing (by the chair): how this kind of meeting really ends, in one or two sentences, fitting how it went and what the presenter
+  wants (a next step towards it if it went well, polite and noncommittal if not), and end_session true.
 After the pitch, questions are asked directly (raise_hand false). Every reaction has a reason: one sentence on why this person said this
 now, which the presenter reads afterwards. note: one short sentence to the presenter ("you") on how this moment landed, matching what
 actually happens in reactions, also when nobody reacts (e.g. "You put a number on the savings, so Rajiv held his cost question.").
@@ -301,7 +311,7 @@ Decide:
   for word, from what the presenter said, with the slide it was on):
   "Clarity" (could the panel follow what you offer and why it matters), "Evidence" (claims backed by numbers, proof, customers),
   "Objection handling" (how the questions were answered; 60 if there were none), "Structure" (opening, flow between slides, a clear ask
-  at the end).
+  at the end: did they ask for what they wanted from the meeting, if it is given above, plainly enough for the panel to say yes).
 - stakeholders: for each panel member, by id: stance "backs", "undecided" or "opposes" after this pitch, given what they care about and
   how their questions went; reason (one sentence, specific); and the deciding moment: a quote copied exactly from the presenter and its
   slide (or an empty quote if nothing decided it).

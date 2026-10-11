@@ -49,7 +49,8 @@ export interface DeckText {
 }
 
 export interface BriefInput {
-  presenter: { name: string; email: string };
+  // offer (0.26): what the presenter offers, set once on the web app
+  presenter: { name: string; email: string; offer?: string };
   deck: DeckText | null;
   prospect: { company: string; website: string; context: string };
 }
@@ -77,6 +78,8 @@ export interface PrepRequest extends BriefInput {
   panel: DraftMember[];
   // false skips voicing the lines (testing without spending TTS credits); default true
   voices?: boolean;
+  // What the presenter wants from this meeting (0.26): n8n's guess, or their own
+  goal?: { text: string; source: "n8n" | "presenter" } | null;
   // The generic lines the laptop already has, by voice (0.26): n8n doesn't voice them again
   cached_voices?: Record<string, string[]>;
 }
@@ -98,6 +101,8 @@ export interface PanelProposal {
   suggestions: PanelSuggestion[];
   // Missing on meetings prepared before contract 0.18
   pitch?: PitchSuggestion;
+  // n8n's guess at what the presenter wants from the meeting (0.26), from the invite and emails; missing before 0.26
+  goal?: { text: string; why: string };
 }
 
 export interface Slide {
@@ -165,6 +170,9 @@ export interface Bundle {
   personas: Persona[];
   lines: VoicedLine[];
   drill: Drill | null;
+  // What the presenter wants from the meeting and offers (0.26), for /turn and /debrief; missing before 0.26
+  goal?: string | null;
+  offer?: string | null;
 }
 
 // Seconds since the session began: the chair says time is nearly up at nudge_at_s, and stops the pitch for the questions at
@@ -474,6 +482,8 @@ export interface NewMeeting {
   context: string;
   attendees: { name: string; email: string }[];
   owner_email: string;
+  // What the presenter offers (0.26)
+  offer?: string;
 }
 
 // The one room, held by the laptop (contract: Room API). The headset seats `panel` live.

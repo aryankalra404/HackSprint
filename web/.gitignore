@@ -42,6 +42,7 @@ next-env.d.ts
 
 # the laptop's room state (one headset, one room)
 /.room.json
+/.profile.json
 
 # decks uploaded to the laptop, turned into slide images
 /.decks/

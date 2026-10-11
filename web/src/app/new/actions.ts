@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { addMeeting } from "@/lib/api";
+import { getProfile } from "@/lib/profile";
 
 type Result = { ok: false; error: string };
 
@@ -36,6 +37,7 @@ export async function addMeetingAction(form: {
       context: form.context.trim(),
       attendees,
       owner_email: form.owner_email.trim() || process.env.DRYRUN_OWNER_EMAIL || "",
+      offer: (await getProfile()).offer || undefined,
     });
   } catch {
     return { ok: false, error: "n8n didn't take the meeting. Check that the DryRun prep workflow is active, then try again." };

@@ -247,7 +247,7 @@ return $input.all().map(({ json: e }) => {
         "httpMethod": "POST", "path": "dryrun/add-meeting", "responseMode": "onReceived", "options": {},
     }, [{"body": {"company": "Delhivery", "context": "", "attendees": []}}])
     c += code_node("shapeRequest", "Shape the request", """
-// The web app sends { id, title, start, company, website, context, attendees: [{ name, email }], owner_email }
+// The web app sends { id, title, start, company, website, context, attendees: [{ name, email }], owner_email, offer }
 return $input.all().map(({ json }) => {
   const b = json.body || json;
   return { json: {
@@ -255,7 +255,7 @@ return $input.all().map(({ json }) => {
     title: b.title || ('Meeting with ' + (b.company || 'a prospect')),
     start: b.start || new Date(Date.now() + 2 * 86400000).toISOString(),
     minutes: b.minutes || null,
-    description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.context].filter(Boolean).join('\\n').slice(0, 4000),
+    description: [b.company && ('Company: ' + b.company), b.website && ('Website: ' + b.website), b.offer && ('What the presenter offers: ' + b.offer), b.context].filter(Boolean).join('\\n').slice(0, 4000),
     attendees: b.attendees || [],
     owner_email: b.owner_email || '',
     from_web: true,
@@ -434,7 +434,9 @@ const brief = {
 };
 // n8n's suggested pitch length (contract 0.18: proposal.pitch), kept to whole minutes from 1 to 60
 const pitch = b.pitch && b.pitch.minutes ? { minutes: Math.max(1, Math.min(60, Math.round(b.pitch.minutes))), why: b.pitch.why || '' } : undefined;
-const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions, ...(pitch ? { pitch } : {}) };
+// n8n's guess at what the presenter wants from the meeting (0.26: proposal.goal), for them to confirm or edit on the brief
+const goal = b.goal && b.goal.text ? { text: b.goal.text, why: b.goal.why || '' } : undefined;
+const proposal = { draft_id: prev.meeting.meeting_id, members, suggestions, ...(pitch ? { pitch } : {}), ...(goal ? { goal } : {}) };
 return [{ json: { meeting: prev.meeting, brief, proposal } }];""", [{"meeting": MEETING, "brief": {}, "proposal": {}}])
     c += code_node("rowReady", "Row: ready", PROGRESS_JS + """
 const s = $('Seat the panel').first().json;
@@ -643,7 +645,11 @@ const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return
 const done = $input.all().map(i => i.json).filter(r => r.session_id && r.status === 'done').sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 const lastDebrief = done.length ? parse(done[0].debrief) : null;
 const last = lastDebrief ? { overall: lastDebrief.overall, headline: lastDebrief.headline || '', weak_spots: lastDebrief.weak_spots || [], drill: lastDebrief.drill || null,
-                             notes: Object.fromEntries((lastDebrief.slides || []).filter(s => s.notes).map(s => [s.index, s.notes])) } : null;
+                             notes: Object.fromEntries((lastDebrief.slides || []).filter(s => s.notes).map(s => [s.index, s.notes])),
+                             // The questions they couldn't answer (0.26: owed), asked again, early
+                             owed: (lastDebrief.owed || []).map(o => ({ persona_id: o.persona_id, question: o.question })) } : null;
+// Know your side (0.26): what the presenter offers, and what they want from this meeting
+const side = { offer: (req.presenter && req.presenter.offer) || '', goal: (req.goal && req.goal.text) || '' };
 const brief = parse(row.brief) || {};
 // No pitch length (null, contract 0.25) means no time limit: n8n paces the slides naturally and nobody keeps time
 const limited = req.pitch_minutes !== null;
@@ -655,8 +661,9 @@ const meeting = { title: row.title || (req.prospect && req.prospect.context) || 
 const panel = (req.panel || []).map(p => ({ id: p.id, name: p.display_name || '', role: p.role, difficulty: p.difficulty || 2,
                                             source: p.source || 'typical', will_push_on: p.will_push_on || '', why: p.why || '' }));
 const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1500) }));
-return [{ json: { req, minutes, timing, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last,
-                  history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title }) : 'First rehearsal.',
+return [{ json: { req, minutes, timing, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last, side,
+                  side_text: (side.offer ? 'They offer: ' + side.offer + '. ' : '') + (side.goal ? 'They want: ' + side.goal + '.' : '') || 'Not given.',
+                  history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title, owed: last.owed }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
                            company: brief.company || {} } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
     c += progress_chunk("saidGather", "Report: gathered", "gather",
@@ -669,7 +676,7 @@ return [{ json: { req, minutes, timing, presenter: (req.presenter && req.present
                    ".split('{length}').join($json.timing.length).split('{pace}').join($json.timing.pace).split('{time_rule}').join($json.timing.time_rule)"
                    ".split('{time_lines}').join($json.timing.time_lines).replace('{presenter}', $json.presenter || 'the presenter')"
                    ".replace('{meeting}', JSON.stringify($json.meeting, null, 1)).replace('{brief}', JSON.stringify($json.brief, null, 1))"
-                   ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{deck}', JSON.stringify($json.slides, null, 1))"
+                   ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{side}', $json.side_text || 'Not given.').replace('{deck}', JSON.stringify($json.slides, null, 1))"
                    ".replace('{history}', $json.history || 'First rehearsal.')",
                    GEMINI_REPLY, schema=REHEARSAL_SCHEMA, source="$('Gather what n8n knows').first().json")
     c += code_node("bundle", "Build the bundle", REPLY_JS + """
@@ -741,7 +748,9 @@ personas.forEach((x, k) => {
   Object.entries(set).forEach(([kind, texts]) => texts.forEach(text => lines.push({ id: 'g-' + x.id + '-' + (++n), persona_id: x.id, kind, text, generic: true, voice: x.voice })));
 });
 return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company: g.meeting.company }, pitch_seconds: pitchSeconds, time, plan,
-                  rescue_after_s: rescue, slides, personas, lines, drill: (g.last && g.last.drill) || null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
+                  rescue_after_s: rescue, slides, personas, lines, drill: (g.last && g.last.drill) || null,
+                  // What the presenter offers and wants (0.26), so /turn and /debrief judge against the ask
+                  goal: g.side.goal || null, offer: g.side.offer || null } }];""", [{"session_id": "s1", "personas": [], "slides": [], "lines": []}])
     c += progress_chunk("saidPlan", "Report: planned", "plan",
                         "(() => { const b = $json; const clock = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); const chair = b.personas.find(p => p.chair); const n = b.personas.reduce((a, p) => a + p.objections.length, 0); "
                         "return [b.slides.length ? b.slides.length + ' slides timed to the pitch' : '', n + ' objections', chair ? chair.display_name.split(' ')[0] + ' chairs' : '', "
@@ -1068,7 +1077,8 @@ const name = id => ((b.personas || []).find(p => p.id === id) || {}).display_nam
 const history = r.turns.slice(-12).map(t => '[' + t.mode + (t.slide_index >= 0 ? ', slide ' + (t.slide_index + 1) : '') + '] presenter: "' + String(t.transcript || '').slice(0, 400) + '"'
   + (t.reactions || []).map(x => ' | ' + name(x.persona_id) + ' (' + x.kind + '): "' + x.text + '"').join('') + (t.answer_verdict ? ' | answer ' + t.answer_verdict : '')).join('\\n') || 'Nothing yet.';
 const parts = {
-  meeting: b.prospect && b.prospect.company ? 'with ' + b.prospect.company : 'a meeting', plan: JSON.stringify(b.plan || {}),
+  meeting: (b.prospect && b.prospect.company ? 'with ' + b.prospect.company : 'a meeting') + (b.offer ? '. The presenter offers: ' + b.offer : '') + (b.goal ? '. They want: ' + b.goal : ''),
+  plan: JSON.stringify(b.plan || {}),
   asked_during: String(r.asked_during), asked_after: String(r.asked_after),
   // With a limit, how the chair keeps time; with none (time null, 0.25), the pitch length is only an estimate
   time: b.time && b.time.limit_s ? r.elapsed + ' seconds in, for a pitch of ' + b.time.limit_s + ' seconds' + (b.time.cut_at_s ? '; the chair stops the pitch at ' + b.time.cut_at_s + ' seconds' : '') + '.'
@@ -1337,7 +1347,8 @@ const PROMPT = """ + json.dumps(DEBRIEF_PROMPT) + """;
 const parts = {
   presenter: (b.presenter && b.presenter.name) || 'The presenter',
   meeting: (bundle.prospect && bundle.prospect.company ? 'with ' + bundle.prospect.company : 'a meeting') + (bundle.time === null ? ', a pitch with no time limit' : ', a ' + clock(bundle.pitch_seconds || pitchSec) + ' pitch')
-    + (end && end.time_up ? ' (the chair stopped it for time)' : ''),
+    + (end && end.time_up ? ' (the chair stopped it for time)' : '')
+    + (bundle.offer ? '. The presenter offers: ' + bundle.offer : '') + (bundle.goal ? '. What they wanted from the meeting: ' + bundle.goal : ''),
   personas: JSON.stringify(personas.map(p => ({ id: p.id, name: p.display_name, role: p.role, priorities: p.priorities, objections: (p.objections || []).map(o => o.text) }))),
   slides: JSON.stringify(planned.map(s => ({ index: s.index, title: s.title, key_points: s.key_points, target_seconds: s.target_seconds }))),
   weak_spots: weakBefore.length ? weakBefore.join('; ') : 'None (first rehearsal).',

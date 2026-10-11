@@ -11,7 +11,7 @@ const FILE = path.join(process.cwd(), ".room.json");
 interface Store {
   room: Room;
   // What the Brief screen needs to pick up where it left off; not part of the room the headset sees
-  brief: { input: BriefInput; draft_id: string; suggestions: PanelProposal["suggestions"]; pitch?: PitchSuggestion } | null;
+  brief: { input: BriefInput; draft_id: string; suggestions: PanelProposal["suggestions"]; pitch?: PitchSuggestion; goal?: PanelProposal["goal"] } | null;
   waiters: Set<() => void>;
   // When the headset last had a poll open (it renews every 25 s)
   headsetSeen: number;

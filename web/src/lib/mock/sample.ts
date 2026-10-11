@@ -94,6 +94,7 @@ export const sampleDetail: MeetingDetail = {
     draft_id: SAMPLE_ID,
     members: PERSONAS.map(({ id, seat, color, role, role_short, display_name, avatar }) => ({ id, seat, color, role, role_short, display_name, avatar, ...WHY[id] })),
     suggestions: [],
+    goal: { text: "A paid 3-month pilot of RouteIQ on Kaveri's Delhi to Mumbai lane", why: "Sample: the invite asks for a pilot proposal." },
   },
 };
 

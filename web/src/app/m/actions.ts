@@ -8,6 +8,7 @@ import { prepDone, prepFailed, prepProgress, prepStarted } from "@/lib/prepProgr
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
 import { SAMPLE_ID, sampleDeck } from "@/lib/mock/sample";
 import { briefSample } from "@/lib/sample";
+import { getProfile, saveProfile } from "@/lib/profile";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -27,7 +28,7 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
   // The pitch length starts at n8n's suggestion for this meeting; the presenter can change it on the practice page
   updateRoom(
     { phase: "drafting", prospect: { company: meeting.company }, panel, bundle: null, session_id: null, pitch_minutes: proposal.pitch?.minutes ?? 5 },
-    { input, draft_id: meeting.id, suggestions: proposal.suggestions, pitch: proposal.pitch },
+    { input, draft_id: meeting.id, suggestions: proposal.suggestions, pitch: proposal.pitch, goal: proposal.goal },
   );
   redirect(`/m/${encodeURIComponent(meeting.id)}/practise`);
 }
@@ -49,10 +50,17 @@ export async function retryMeetingAction(meetingId: string): Promise<Result<null
       context: m.status === "skipped" ? "" : m.why,
       attendees: m.attendees,
       owner_email: process.env.DRYRUN_OWNER_EMAIL ?? "",
+      offer: (await getProfile()).offer || undefined,
     });
   } catch {
     return { ok: false, error: "n8n didn't take it. Check that the DryRun prep workflow is active." };
   }
+  return { ok: true, value: null };
+}
+
+// Know your side (0.26): what the presenter offers (once, for every meeting) and what they want from this one. Saved on the laptop only.
+export async function saveSideAction(meetingId: string, side: { offer: string; goal: string }): Promise<Result<null>> {
+  await saveProfile({ offer: side.offer, goal: { meetingId, text: side.goal } });
   return { ok: true, value: null };
 }
 
@@ -67,10 +75,16 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
   // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
   const room = getRoom();
   const deck = room.deck ? await deckText(room.deck) : null;
+  // Know your side (0.26): what they offer, and what they want from this meeting (their own words, else n8n's guess)
+  const profile = await getProfile();
+  const own = profile.goals[draftId];
+  const guess = getBrief()?.draft_id === draftId ? getBrief()?.goal?.text : undefined;
+  const goal = own ? { text: own, source: "presenter" as const } : guess ? { text: guess, source: "n8n" as const } : null;
+  input = { ...input, presenter: { ...input.presenter, ...(profile.offer ? { offer: profile.offer } : {}) } };
   prepStarted(runId, deck ? deck.slides.length : null, panel.length, room.pitch_minutes);
   let bundle;
   try {
-    bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel }, room.deck, (p, url) => prepProgress(runId, p, url));
+    bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel, goal }, room.deck, (p, url) => prepProgress(runId, p, url));
   } catch (err) {
     prepFailed(runId, "n8n couldn't plan the rehearsal. Try again in a moment.");
     throw err;
