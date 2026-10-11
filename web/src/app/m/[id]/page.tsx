@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getMeeting, n8nRunUrl } from "@/lib/api";
+import { getMeeting, n8nProblem, n8nRunUrl } from "@/lib/api";
 import type { MeetingDetail } from "@/lib/contract";
 import { meetingWhen, stillResearching, untilLabel } from "@/lib/format";
 import { PersonaAvatar } from "@/components/ui";
@@ -25,7 +25,19 @@ export default function MeetingPage({ params }: PageProps<"/m/[id]">) {
 }
 
 async function Meeting({ id }: { id: string }) {
-  const detail = await getMeeting(id);
+  let detail: MeetingDetail | null;
+  try {
+    detail = await getMeeting(id);
+  } catch (err) {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-10 sm:px-8">
+        <Link href="/" className="font-display text-2xl">DryRun</Link>
+        <p role="alert" className="rounded-2xl border border-line bg-surface p-5 text-sm text-ink-2">
+          Couldn&apos;t reach n8n for this meeting. {n8nProblem(err)}
+        </p>
+      </div>
+    );
+  }
   // A meeting just added from the web app takes a few seconds to reach n8n's table
   if (!detail && id.startsWith("web-")) return <JustAdded />;
   if (!detail) notFound();

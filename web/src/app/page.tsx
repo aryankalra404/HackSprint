@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
-import { listMeetings } from "@/lib/api";
+import { listMeetings, n8nProblem } from "@/lib/api";
 import type { Meeting } from "@/lib/contract";
 import { MeetingList } from "@/components/meetings/MeetingList";
 import { PreparePopup } from "@/components/meetings/PreparePopup";
@@ -39,10 +39,10 @@ async function Meetings() {
   let meetings: Meeting[];
   try {
     meetings = await listMeetings();
-  } catch {
+  } catch (err) {
     return (
       <p role="alert" className="rounded-2xl border border-line bg-surface p-5 text-sm text-ink-2">
-        Couldn&apos;t reach n8n. Check that the DryRun meetings API workflow is active, then reload.
+        Couldn&apos;t reach n8n. {n8nProblem(err)}
       </p>
     );
   }

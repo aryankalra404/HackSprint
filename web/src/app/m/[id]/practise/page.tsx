@@ -24,7 +24,7 @@ async function PracticeFromRoom({ id }: { id: string }) {
   const room = getRoom();
   const brief = getBrief();
   if (room.phase !== "drafting" || !brief || brief.draft_id !== id) {
-    const detail = await getMeeting(id);
+    const detail = await getMeeting(id).catch(() => null);
     return (
       <div className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-24">
         <h1 className="font-display text-3xl">The table is set for another meeting</h1>
@@ -33,7 +33,8 @@ async function PracticeFromRoom({ id }: { id: string }) {
       </div>
     );
   }
-  const detail = await getMeeting(id);
+  // The title only; the practice page works from the room even when n8n can't be reached
+  const detail = await getMeeting(id).catch(() => null);
   return (
     <Practice
       meeting={{ id, title: detail?.meeting.title ?? "Meeting", company: room.prospect?.company ?? detail?.meeting.company ?? "" }}

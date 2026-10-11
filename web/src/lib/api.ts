@@ -111,9 +111,21 @@ function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Pro
   reads.set(key, { until: Number.POSITIVE_INFINITY, value });
   value.then(
     (v) => reads.set(key, { until: Date.now() + keepFor(v), value }),
-    () => reads.delete(key),
+    // A failure is kept for a few seconds too, so pages that can't reach n8n don't retry it in a tight loop
+    () => reads.set(key, { until: Date.now() + FAILED_MS, value }),
   );
   return value;
+}
+
+const FAILED_MS = 5_000;
+
+// Why n8n couldn't be reached, in words the presenter can act on
+export function n8nProblem(err: unknown): string {
+  const code = (err as { cause?: { code?: string } })?.cause?.code ?? "";
+  if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code))
+    return "This network is intercepting secure connections, usually a Wi-Fi login page. Sign in to the Wi-Fi (open http://neverssl.com in the browser) or use a phone hotspot, then reload.";
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|UND_ERR/.test(code)) return "The laptop has no connection to n8n. Check the internet connection, then reload.";
+  return "Check that the DryRun workflows are active in n8n, then reload.";
 }
 
 // After a change (a meeting added or retried), the next read goes to n8n
