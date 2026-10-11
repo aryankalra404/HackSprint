@@ -74,6 +74,8 @@ export interface PrepRequest extends BriefInput {
   draft_id: string;
   pitch_minutes: number;
   panel: DraftMember[];
+  // false skips voicing the lines (testing without spending TTS credits); default true
+  voices?: boolean;
 }
 
 export interface PanelProposal {

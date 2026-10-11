@@ -45,3 +45,5 @@ next-env.d.ts
 
 # decks uploaded to the laptop, turned into slide images
 /.decks/
+# voices n8n generated, saved by the laptop
+/.audio/

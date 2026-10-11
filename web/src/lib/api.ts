@@ -3,6 +3,7 @@ import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meeti
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
 import { getRoom } from "./room";
+import { saveBundleAudio } from "./audio";
 
 const MOCKS: Record<string, SessionRecord> = { demo: demoSession, "demo-prep": demoPrepSession };
 
@@ -69,10 +70,11 @@ export async function addMeeting(meeting: NewMeeting): Promise<void> {
 }
 
 // Builds the rehearsal bundle for a practice panel (contract: POST /prep): n8n plans the slides, the panel, the questions and the
-// lines. Each slide's image is the laptop's own (n8n leaves image_url empty). Without n8n, the sample bundle stands in.
+// lines, and voices the lines. Each slide's image is the laptop's own (n8n leaves image_url empty), and the voices are saved on it. Without n8n, the sample bundle stands in.
 export async function prepSession(input: PrepRequest, deck: Deck | null): Promise<Bundle> {
   if (!N8N_URL) return mockPrep(input.panel, input.pitch_minutes);
-  const bundle = await postToN8n<Bundle>("/prep", input);
+  // DRYRUN_VOICES=off skips voicing the lines (testing without spending TTS credits)
+  const bundle = await saveBundleAudio(await postToN8n<Bundle>("/prep", { ...input, voices: process.env.DRYRUN_VOICES !== "off" }));
   const images = new Map((deck?.slides ?? []).map((s) => [s.index, s.image_url]));
   return { ...bundle, slides: bundle.slides.map((s) => ({ ...s, image_url: images.get(s.index) ?? "" })) };
 }
