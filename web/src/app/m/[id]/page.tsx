@@ -13,6 +13,8 @@ import { PrepareAnyway } from "@/components/meetings/PrepareAnyway";
 import { Rehearsals } from "@/components/meetings/Rehearsals";
 import { YourSide } from "@/components/brief/YourSide";
 import { getProfile } from "@/lib/profile";
+import { getDeckReview } from "@/lib/deckReview";
+import { DeckReview } from "@/components/brief/DeckReview";
 
 export const metadata = { title: "DryRun brief" };
 
@@ -44,7 +46,7 @@ async function Meeting({ id }: { id: string }) {
   if (!detail && id.startsWith("web-")) return <JustAdded />;
   if (!detail) notFound();
   const { meeting, brief, proposal } = detail;
-  const profile = await getProfile();
+  const [profile, review] = await Promise.all([getProfile(), getDeckReview(id)]);
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-6 sm:px-8 sm:py-10">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -68,6 +70,8 @@ async function Meeting({ id }: { id: string }) {
       {brief && proposal && (
         <YourSide meetingId={meeting.id} guess={proposal.goal ?? null} own={profile.goals[meeting.id] ?? ""} offer={profile.offer} />
       )}
+
+      {review && <DeckReview meetingId={meeting.id} initial={review} />}
 
       {detail.sessions && detail.sessions.length > 0 && <Rehearsals sessions={detail.sessions} />}
 

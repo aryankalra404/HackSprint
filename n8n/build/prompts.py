@@ -362,3 +362,37 @@ DEBRIEF_SCHEMA = {"type": "object", "properties": {
         "sources": {"type": "array", "items": {"type": "integer"}}},
         "required": ["thread_id", "suggested", "confirm", "sources"]}}},
     "required": ["headline", "metrics", "stakeholders", "slides", "drill", "weak_spots", "owed"]}
+
+# DryRun deck review (/deck-review, contract 0.26): the presenter's slides against what n8n found about the company and its people
+DECK_REVIEW_PROMPT = """You check a presenter's deck before a real meeting, against what is known about the people they will pitch to.
+Find where the deck will get pushback in this meeting, and from whom.
+
+The meeting: {meeting}
+What the presenter offers and wants from it: {side}
+The brief (real attendees and what they care about, the hardest questions, the risks):
+{brief}
+The research on the company, with numbered sources:
+{research}
+The deck, slide by slide (index from 0):
+{deck}
+
+items: 3 to 5, the strongest first, each:
+- slide_index: the slide it is about;
+- claim: the claim on that slide, copied or closely paraphrased from its text (e.g. "30% lower fuel cost");
+- pushback: what they know or care about that challenges it, in one or two sentences, from the research or the brief only
+  (e.g. "Their FY25 report says fuel cost already fell 18%, so they will ask what is left to save"). If nothing in the research
+  contradicts it but nothing supports it either, say what evidence they will ask for;
+- source: the number of the research source it rests on, or 0 if it comes from the brief or is a claim with nothing behind it;
+- who: who will push, an attendee's name from the brief with their focus in brackets, or a role if no attendee fits;
+- fix: what to change on the slide or what to say, in one sentence.
+summary: one sentence on how the deck will land with this panel.
+Never state facts that are not in the brief or the research, and never invent facts about the presenter's own product.
+Answer in JSON."""
+
+DECK_REVIEW_SCHEMA = {"type": "object", "properties": {
+    "items": {"type": "array", "items": {"type": "object", "properties": {
+        "slide_index": {"type": "integer"}, "claim": {"type": "string"}, "pushback": {"type": "string"}, "source": {"type": "integer"},
+        "who": {"type": "string"}, "fix": {"type": "string"}},
+        "required": ["slide_index", "claim", "pushback", "source", "who", "fix"]}},
+    "summary": {"type": "string"}},
+    "required": ["items", "summary"]}

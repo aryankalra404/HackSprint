@@ -15,6 +15,8 @@ import { DeckPanel } from "../room/DeckPanel";
 import { PitchLength } from "./PitchLength";
 import { RehearseDialog } from "./RehearseDialog";
 import { SAMPLE_ID } from "@/lib/mock/sample";
+import { DeckReview } from "./DeckReview";
+import type { StoredReview } from "@/lib/deckReview";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
 
@@ -29,11 +31,13 @@ interface Props {
   nameCards: boolean;
   // The laptop's room, followed live for the deck (the headset changes the slide too)
   room: Room;
+  // n8n's review of the deck (0.26), followed while it works
+  review: StoredReview | null;
 }
 
 // Practise a meeting: its panel (real attendees plus practice roles) on the table, editable, then briefed.
 // Every edit is saved to the room on the laptop, and the headset seats the panel as it changes.
-export function Practice({ meeting, input, draft, pitch, panel, nameCards, room: initialRoom }: Props) {
+export function Practice({ meeting, input, draft, pitch, panel, nameCards, room: initialRoom, review }: Props) {
   const proposal = draft;
   const room = useRoom(initialRoom);
   const [members, setMembers] = useState<DraftMember[]>(panel);
@@ -161,6 +165,7 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
             </div>
           </section>
           <DeckPanel room={room} />
+          {meeting.id !== SAMPLE_ID && <DeckReview meetingId={meeting.id} initial={review} live />}
         </div>
         <aside className="flex min-h-0 flex-col rounded-2xl border border-line bg-surface">
           <div className="min-h-0 flex-1 overflow-y-auto p-5">

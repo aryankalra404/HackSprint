@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_REVIEW_PROMPT, DECK_REVIEW_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
                      TURN_SCHEMA, WEB_PROMPT)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
@@ -665,7 +665,9 @@ return [{ json: { req, minutes, timing, presenter: (req.presenter && req.present
                   side_text: (side.offer ? 'They offer: ' + side.offer + '. ' : '') + (side.goal ? 'They want: ' + side.goal + '.' : '') || 'Not given.',
                   history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title, owed: last.owed }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
-                           company: brief.company || {} } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
+                           company: brief.company || {},
+                           // n8n's review of the uploaded deck (0.26, DryRun deck review): the panel presses on the same points
+                           where_the_deck_will_get_pushback: ((parse(row.deck_review) || {}).items || []).map(x => ({ slide_index: x.slide_index, claim: x.claim, pushback: x.pushback, who: x.who })) } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
     c += progress_chunk("saidGather", "Report: gathered", "gather",
                         "[$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', "
                         "$json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', "
@@ -1561,8 +1563,103 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
     return c
 
 
+# ---------------------------------------------------------------- DryRun deck review (/deck-review)
+
+DECK_REVIEW_REQUEST = {"body": {"meeting_id": "evt123", "deck": {"name": "RouteIQ.pdf", "slides": [{"index": 0, "text": "RouteIQ cuts fuel cost by 30%"}]},
+                                "presenter": {"offer": "RouteIQ: route optimisation"}, "goal": "a paid pilot"}}
+
+
+def deck_review():
+    c = IMPORTS
+    c += make_node("reviewTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "A deck was uploaded (laptop)", {
+        "httpMethod": "POST", "path": "dryrun/deck-review", "responseMode": "responseNode", "options": {},
+    }, [DECK_REVIEW_REQUEST])
+    c += make_node("reviewMeeting", "node", "n8n-nodes-base.dataTable", 1.1, "Find the meeting", {
+        "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.meeting_id || 'none' }}")}]},
+    }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "company": "Delhivery", "brief": "{}", "proposal": "{}"}], extra={"alwaysOutputData": True})
+    c += code_node("reviewGather", "What to check it against", """
+// The deck's slide text against the brief: its research with numbered sources, the attendees and what they care about, the hardest
+// questions and risks, and what the presenter offers and wants (docs/CONTRACT.md, POST /deck-review)
+const req = $('A deck was uploaded (laptop)').first().json.body;
+const row = $input.first().json || {};
+const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
+const brief = parse(row.brief) || {};
+const proposal = parse(row.proposal) || {};
+const sources = (brief.sources || []).slice(0, 12);
+const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
+  .concat(((brief.company && brief.company.recent_news) || []).map(n => 'News' + (n.date ? ' (' + n.date + ')' : '') + ': ' + n.text))
+  .concat(sources.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' ' + x.url)).filter(Boolean).join('\\n') || 'No research saved for this meeting.';
+const goal = req.goal || (proposal.goal && proposal.goal.text) || '';
+const offer = (req.presenter && req.presenter.offer) || '';
+const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1200) })).filter(s => s.text);
+const parts = {
+  meeting: (row.title || 'A meeting') + (row.company ? ' with ' + row.company : ''),
+  side: (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.',
+  brief: JSON.stringify({ summary: brief.summary || '', attendees: brief.attendees || [], questions: (brief.questions || []).map(q => q.question), risks: brief.risks || [] }),
+  research,
+  deck: JSON.stringify(slides),
+};
+const PROMPT = """ + json.dumps(DECK_REVIEW_PROMPT) + """;
+const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
+const indexes = ((req.deck && req.deck.slides) || []).map(s => s.index);
+return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, slides: slides.length, indexes, sources, prompt } }];""",
+                   [{"meeting_id": "evt123", "found": True, "slides": 1, "sources": [], "prompt": ""}])
+    c += llm_nodes("reviewJudge", "Review the deck", "$json.prompt", GEMINI_REPLY, schema=DECK_REVIEW_SCHEMA,
+                   source="$('What to check it against').first().json")
+    c += code_node("reviewBuild", "The review", REPLY_JS + """
+// Held to the deck and the sources: real slides only, each source by its number, at most five
+const g = $('What to check it against').first().json;
+const d = JSON.parse(replyText($json) || '{}');
+const items = (d.items || []).filter(x => g.indexes.includes(x.slide_index) && x.claim && x.pushback).slice(0, 5)
+  .map(x => ({ slide_index: x.slide_index, claim: x.claim, pushback: x.pushback, who: x.who || '', fix: x.fix || '',
+               source: g.sources[x.source - 1] ? { title: g.sources[x.source - 1].title, url: g.sources[x.source - 1].url } : null }));
+const review = { items, summary: d.summary || '', at: new Date().toISOString() };
+return [{ json: { meeting_id: g.meeting_id, found: g.found, review, deck_review: JSON.stringify(review), updated_at: review.at } }];""",
+                   [{"meeting_id": "evt123", "found": True, "review": {"items": []}, "deck_review": "{}"}])
+    c += make_node("reviewKnown", "ifElse", "n8n-nodes-base.if", 2.3, "A known meeting?", {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"leftValue": Expr("{{ $json.found }}"), "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": True}}],
+            "combinator": "and",
+        }, "options": {},
+    }, [{"found": True}])
+    # Saved on the meeting, so the next /prep aims the panel at the same points
+    c += make_node("reviewSave", "node", "n8n-nodes-base.dataTable", 1.1, "Save it on the meeting", {
+        "resource": "row", "operation": "update", "dataTableId": MEETINGS_TABLE, "matchType": "allConditions",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.meeting_id }}")}]},
+        "columns": {"mappingMode": "defineBelow", "value": {"deck_review": Expr("{{ $json.deck_review }}"), "updated_at": Expr("{{ $json.updated_at }}")},
+                    "matchingColumns": [], "schema": [
+                        {"id": "deck_review", "displayName": "deck_review", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True},
+                        {"id": "updated_at", "displayName": "updated_at", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True}]},
+    }, [{"id": 1}], extra={"onError": "continueRegularOutput", "alwaysOutputData": True})
+    c += make_node("reviewReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the review", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('The review').first().json.review) }}"), "options": {},
+    }, [{}])
+    c += ("const about = sticky('## DryRun deck review\\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-review, docs/CONTRACT.md): "
+          "checks its claims against the brief (the research and its sources, the attendees and what they care about) and says where it will "
+          "get pushback, from whom, and how to fix it. Saved on the meeting, so the next rehearsal presses on the same points.', [reviewTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-deck-review', 'DryRun deck review')
+  .add(about)
+  .add(reviewTrigger)
+  .to(reviewMeeting)
+  .to(reviewGather)
+  .to(reviewJudge)
+  .to(reviewBuild)
+  .to(reviewKnown
+    .onTrue(reviewSave.to(reviewReply))
+    .onFalse(reviewReply))
+  .add(reviewJudge.onError(reviewJudgeGroq))
+  .add(reviewJudgeGroq)
+  .to(reviewBuild)
+  .group('Review', [reviewMeeting, reviewGather, reviewJudge, reviewJudgeGroq, reviewBuild], { description: 'Checks the deck against the brief and its sources' })
+  .group('Save', [reviewKnown, reviewSave], { description: 'Saves the review on the meeting for the next rehearsal' });
+"""
+    return c
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-review.ts", deck_review())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")

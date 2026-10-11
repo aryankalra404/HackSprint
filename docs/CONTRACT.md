@@ -128,6 +128,31 @@ Field notes:
 - `source: email` means a real attendee named in `prospect.context`; their real name and title are used.
 - `suggestions` are ranked roles not seated yet, offered when the presenter clicks an empty seat.
 
+## POST `/deck-review` *(0.26)*
+Sent by the laptop when the presenter uploads a deck for a meeting (once per upload, in the background after the slides are converted). n8n reads the meeting's brief (its research and sources, the attendees, the hardest questions) and checks the deck's claims against it: where the deck will get pushback, and from whom.
+```json
+{ "meeting_id": "string", "deck": { "name": "RouteIQ.pdf", "slides": [{ "index": 0, "text": "string" }] }, "presenter": { "offer": "string" }, "goal": "string" }
+```
+Response:
+```json
+{
+  "items": [
+    {
+      "slide_index": 2,
+      "claim": "30% lower fuel cost",
+      "pushback": "Their FY25 report says fuel cost already fell 18%, so they'll ask what's left to save.",
+      "source": { "title": "delhivery.com", "url": "https://..." },
+      "who": "Rajiv Menon (finance)",
+      "fix": "Show the saving on top of their 18%: put the baseline on the slide."
+    }
+  ],
+  "summary": "string"
+}
+```
+Field notes:
+- 3 to 5 items, the strongest first. Facts only from the brief's research; `source` is `null` when the pushback comes from what the attendees care about or a claim with nothing behind it (then `pushback` says what evidence they'll ask for). n8n never invents facts about the presenter's own product.
+- n8n saves the review on the meeting (the DryRun meetings table's `deck_review`), so the next `/prep` aims the panel's objections at the same points. The laptop keeps a copy and shows it on the brief and the practice page as "Where your deck will get pushback"; reading it costs no execution.
+
 ## POST `/prep`
 Sent by the laptop when the presenter confirms the panel ("Start the rehearsal"). n8n briefs the panel for this pitch: what each person cares about and will push on, how they behave, how the questions are spread over the time, and the lines it can voice ahead of time.
 ```json
@@ -611,4 +636,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.23 (11 Oct): rehearse in the browser. The room gains `rehearse_in` (`"vr"` or `"browser"`, set when briefed and with `PUT /api/room/settings`; the headset doesn't take turns when it's `"browser"`) and `live.now` (who is speaking and who has a hand up, set with the new `POST /api/room/now`). The browser sends `/api/debrief` with `client: "web"` and its silences.
 - 0.24 (11 Oct): `/prep` streams its answer: a progress chunk after each stage (gathered, planned, voiced, and Groq standing in for Gemini), with the n8n execution on the first, then the bundle. The practice page has one "Rehearse" button that asks where (this laptop or the headset) and shows those steps live.
 - 0.25 (11 Oct): time no longer decides when the panel hears the presenter. A slide is sent whole when they move on, and mid-slide only at the interruption points n8n plans (`plan.interrupts`; `/turn` gains `mid_slide`). The pitch length can be `null` (no time limit). With a limit, n8n decides how the chair keeps time (`time`: nudge, and maybe stop the pitch for questions) and voices the chair's `time_nudge` and `time_up` lines, which the client plays itself; `pitch_end` gains `time_up`.
-- 0.26 (12 Oct): a panel that feels real. `/turn` keeps every question's life in `threads` (in the context and in the response, with `thread_id` on reactions): at most one follow-up, then answered, parked or dodged, never asked again. Reactions gain `park`, `move_on` and `hand_back`. n8n enforces the rules after the model in a Code node. Generic lines (`generic`, `voice`; fillers, park, move-on, hand-back, the chair's thanks and "Take your time") are voiced once per voice and cached by the laptop (`/prep` takes `cached_voices`); the client plays a filler the moment it sends an answer. Lines gain `rescue_question` per slide; at a freeze the chair says "Take your time", then asks it. The debrief is fair: slide time counts only the pitch, `trouble` lists the system's mistakes for the model to discount, a run too short to judge isn't scored (`pitch.scored`, `overall` and scores `null`), and `owed` drafts an answer, with sources, to each question the presenter couldn't answer. Know your side: the meeting prep guesses the presenter's goal (`proposal.goal`), the presenter can set what they offer (`presenter.offer`, also on `/add-meeting`) and confirm the goal, and `/prep` takes both (`goal`); the bundle carries them for `/turn` and `/debrief`. The next `/prep` asks the last run's owed questions again, early.
+- 0.26 (12 Oct): a panel that feels real. `/turn` keeps every question's life in `threads` (in the context and in the response, with `thread_id` on reactions): at most one follow-up, then answered, parked or dodged, never asked again. Reactions gain `park`, `move_on` and `hand_back`. n8n enforces the rules after the model in a Code node. Generic lines (`generic`, `voice`; fillers, park, move-on, hand-back, the chair's thanks and "Take your time") are voiced once per voice and cached by the laptop (`/prep` takes `cached_voices`); the client plays a filler the moment it sends an answer. Lines gain `rescue_question` per slide; at a freeze the chair says "Take your time", then asks it. The debrief is fair: slide time counts only the pitch, `trouble` lists the system's mistakes for the model to discount, a run too short to judge isn't scored (`pitch.scored`, `overall` and scores `null`), and `owed` drafts an answer, with sources, to each question the presenter couldn't answer. Know your side: the meeting prep guesses the presenter's goal (`proposal.goal`), the presenter can set what they offer (`presenter.offer`, also on `/add-meeting`) and confirm the goal, and `/prep` takes both (`goal`); the bundle carries them for `/turn` and `/debrief`. The next `/prep` asks the last run's owed questions again, early. New `POST /deck-review`: n8n checks an uploaded deck against the brief's research and says where it will get pushback, with sources; the next `/prep` reads it.

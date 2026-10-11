@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { getMeeting } from "@/lib/api";
 import { getBrief, getRoom } from "@/lib/room";
 import { Practice } from "@/components/brief/Practice";
+import { getDeckReview } from "@/lib/deckReview";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
 
 export const metadata = { title: "DryRun practice" };
@@ -44,6 +45,7 @@ async function PracticeFromRoom({ id }: { id: string }) {
       panel={room.panel}
       nameCards={room.name_cards}
       room={room}
+      review={await getDeckReview(id)}
     />
   );
 }

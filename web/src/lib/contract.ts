@@ -427,6 +427,23 @@ export function isDebriefed(s: SessionRecord): s is DebriefedSession {
   return s.telemetry != null && s.debrief != null;
 }
 
+// Where the deck will get pushback (0.26, POST /deck-review): n8n's check of the slides against the brief's research
+export interface DeckReviewItem {
+  slide_index: number;
+  claim: string;
+  pushback: string;
+  // null: from what the attendees care about, or a claim with nothing behind it
+  source: { title: string; url: string } | null;
+  who: string;
+  fix: string;
+}
+
+export interface DeckReview {
+  items: DeckReviewItem[];
+  summary: string;
+  at: string;
+}
+
 // A meeting n8n picked up from the calendar (or the web app added), with its brief once ready (contract: Meetings and briefs)
 export interface Meeting {
   id: string;

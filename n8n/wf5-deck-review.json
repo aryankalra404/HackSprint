@@ -1,0 +1,302 @@
+{
+  "name": "DryRun deck review",
+  "nodes": [
+    {
+      "name": "A deck was uploaded (laptop)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dryrun/deck-review",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "name": "Find the meeting",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wURCb4PjdZLpttns",
+          "cachedResultName": "DryRun meetings"
+        },
+        "matchType": "anyCondition",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "meeting_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.body.meeting_id || 'none' }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "name": "What to check it against",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The deck's slide text against the brief: its research with numbered sources, the attendees and what they care about, the hardest\n// questions and risks, and what the presenter offers and wants (docs/CONTRACT.md, POST /deck-review)\nconst req = $('A deck was uploaded (laptop)').first().json.body;\nconst row = $input.first().json || {};\nconst parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };\nconst brief = parse(row.brief) || {};\nconst proposal = parse(row.proposal) || {};\nconst sources = (brief.sources || []).slice(0, 12);\nconst research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']\n  .concat(((brief.company && brief.company.recent_news) || []).map(n => 'News' + (n.date ? ' (' + n.date + ')' : '') + ': ' + n.text))\n  .concat(sources.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' ' + x.url)).filter(Boolean).join('\\n') || 'No research saved for this meeting.';\nconst goal = req.goal || (proposal.goal && proposal.goal.text) || '';\nconst offer = (req.presenter && req.presenter.offer) || '';\nconst slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1200) })).filter(s => s.text);\nconst parts = {\n  meeting: (row.title || 'A meeting') + (row.company ? ' with ' + row.company : ''),\n  side: (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.',\n  brief: JSON.stringify({ summary: brief.summary || '', attendees: brief.attendees || [], questions: (brief.questions || []).map(q => q.question), risks: brief.risks || [] }),\n  research,\n  deck: JSON.stringify(slides),\n};\nconst PROMPT = \"You check a presenter's deck before a real meeting, against what is known about the people they will pitch to.\\nFind where the deck will get pushback in this meeting, and from whom.\\n\\nThe meeting: {meeting}\\nWhat the presenter offers and wants from it: {side}\\nThe brief (real attendees and what they care about, the hardest questions, the risks):\\n{brief}\\nThe research on the company, with numbered sources:\\n{research}\\nThe deck, slide by slide (index from 0):\\n{deck}\\n\\nitems: 3 to 5, the strongest first, each:\\n- slide_index: the slide it is about;\\n- claim: the claim on that slide, copied or closely paraphrased from its text (e.g. \\\"30% lower fuel cost\\\");\\n- pushback: what they know or care about that challenges it, in one or two sentences, from the research or the brief only\\n  (e.g. \\\"Their FY25 report says fuel cost already fell 18%, so they will ask what is left to save\\\"). If nothing in the research\\n  contradicts it but nothing supports it either, say what evidence they will ask for;\\n- source: the number of the research source it rests on, or 0 if it comes from the brief or is a claim with nothing behind it;\\n- who: who will push, an attendee's name from the brief with their focus in brackets, or a role if no attendee fits;\\n- fix: what to change on the slide or what to say, in one sentence.\\nsummary: one sentence on how the deck will land with this panel.\\nNever state facts that are not in the brief or the research, and never invent facts about the presenter's own product.\\nAnswer in JSON.\";\nconst prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);\nconst indexes = ((req.deck && req.deck.slides) || []).map(s => s.index);\nreturn [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, slides: slides.length, indexes, sources, prompt } }];"
+      }
+    },
+    {
+      "name": "Review the deck",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"items\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"slide_index\": {\"type\": \"integer\"}, \"claim\": {\"type\": \"string\"}, \"pushback\": {\"type\": \"string\"}, \"source\": {\"type\": \"integer\"}, \"who\": {\"type\": \"string\"}, \"fix\": {\"type\": \"string\"} }, \"required\": [\"slide_index\", \"claim\", \"pushback\", \"source\", \"who\", \"fix\"]} }, \"summary\": {\"type\": \"string\"} }, \"required\": [\"items\", \"summary\"]} } }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Review the deck (Groq)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const j = $('What to check it against').first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (j.prompt) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"items\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"slide_index\": {\"type\": \"integer\"}, \"claim\": {\"type\": \"string\"}, \"pushback\": {\"type\": \"string\"}, \"source\": {\"type\": \"integer\"}, \"who\": {\"type\": \"string\"}, \"fix\": {\"type\": \"string\"} }, \"required\": [\"slide_index\", \"claim\", \"pushback\", \"source\", \"who\", \"fix\"]} }, \"summary\": {\"type\": \"string\"} }, \"required\": [\"items\", \"summary\"]}) }], response_format: { type: 'json_object' } }); })() }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "The review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// Held to the deck and the sources: real slides only, each source by its number, at most five\nconst g = $('What to check it against').first().json;\nconst d = JSON.parse(replyText($json) || '{}');\nconst items = (d.items || []).filter(x => g.indexes.includes(x.slide_index) && x.claim && x.pushback).slice(0, 5)\n  .map(x => ({ slide_index: x.slide_index, claim: x.claim, pushback: x.pushback, who: x.who || '', fix: x.fix || '',\n               source: g.sources[x.source - 1] ? { title: g.sources[x.source - 1].title, url: g.sources[x.source - 1].url } : null }));\nconst review = { items, summary: d.summary || '', at: new Date().toISOString() };\nreturn [{ json: { meeting_id: g.meeting_id, found: g.found, review, deck_review: JSON.stringify(review), updated_at: review.at } }];"
+      }
+    },
+    {
+      "name": "A known meeting?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Save it on the meeting",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wURCb4PjdZLpttns",
+          "cachedResultName": "DryRun meetings"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "meeting_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.meeting_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deck_review": "={{ $json.deck_review }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "deck_review",
+              "displayName": "deck_review",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Send the review",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('The review').first().json.review) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "A deck was uploaded (laptop)": {
+      "main": [
+        [
+          {
+            "node": "Find the meeting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find the meeting": {
+      "main": [
+        [
+          {
+            "node": "What to check it against",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "What to check it against": {
+      "main": [
+        [
+          {
+            "node": "Review the deck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review the deck": {
+      "main": [
+        [
+          {
+            "node": "The review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Review the deck (Groq)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review the deck (Groq)": {
+      "main": [
+        [
+          {
+            "node": "The review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "The review": {
+      "main": [
+        [
+          {
+            "node": "A known meeting?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A known meeting?": {
+      "main": [
+        [
+          {
+            "node": "Save it on the meeting",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send the review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save it on the meeting": {
+      "main": [
+        [
+          {
+            "node": "Send the review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
