@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import type { BriefInput, DraftMember, RehearseIn } from "@/lib/contract";
 import { deckText } from "@/lib/deck";
-import { addMeeting, getMeeting, prepSession } from "@/lib/api";
+import { addMeeting, getMeeting, prepSession, prepSteps } from "@/lib/api";
+import { prepDone, prepFailed, prepProgress, prepStarted } from "@/lib/prepProgress";
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
 import { SAMPLE_ID, sampleDeck } from "@/lib/mock/sample";
 import { briefSample } from "@/lib/sample";
@@ -61,11 +62,19 @@ function rehearsalPath(sessionId: string, rehearseIn: RehearseIn): string {
 }
 
 // Runs n8n's /prep for the panel and puts the bundle in the room, briefed. Returns the session id, or throws.
-async function prepare(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn): Promise<string> {
+// With a `runId`, the practice page follows n8n's progress (GET /api/prep/progress).
+async function prepare(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn, runId?: string): Promise<string> {
   // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
   const room = getRoom();
   const deck = room.deck ? await deckText(room.deck) : null;
-  const bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel }, room.deck);
+  prepStarted(runId, deck ? deck.slides.length : null, panel.length, room.pitch_minutes);
+  let bundle;
+  try {
+    bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel }, room.deck, (p, url) => prepProgress(runId, p, url));
+  } catch (err) {
+    prepFailed(runId, "n8n couldn't plan the rehearsal. Try again in a moment.");
+    throw err;
+  }
   updateRoom({
     phase: "briefed",
     bundle,
@@ -77,12 +86,19 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
     scripted: false,
     panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
   });
+  prepDone(runId, prepSteps(bundle));
   return bundle.session_id;
 }
 
-// Briefs the practice panel, puts the bundle in the room, then goes to the browser's rehearsal page or the dashboard (for VR).
-// Only returns if something is wrong.
-export async function briefPanelAction(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn = "vr"): Promise<Result<never>> {
+// Briefs the practice panel and puts the bundle in the room. Answers with where to rehearse: the browser's rehearsal page, or the dashboard (for VR).
+// The sample redirects straight away.
+export async function briefPanelAction(
+  input: BriefInput,
+  draftId: string,
+  panel: DraftMember[],
+  rehearseIn: RehearseIn = "vr",
+  runId?: string,
+): Promise<Result<string>> {
   const problem = panel.length === 0 ? "The panel needs at least one person." : panelProblem(panel);
   if (problem) return { ok: false, error: problem };
   const roleless = panel.filter((m) => !m.role.trim()).map((m) => m.display_name || "someone");
@@ -92,11 +108,12 @@ export async function briefPanelAction(input: BriefInput, draftId: string, panel
 
   let sessionId: string;
   try {
-    sessionId = await prepare(input, draftId, panel, rehearseIn);
+    sessionId = await prepare(input, draftId, panel, rehearseIn, runId);
   } catch {
     return { ok: false, error: "Couldn't brief the panel. Try again in a moment." };
   }
-  redirect(rehearsalPath(sessionId, rehearseIn));
+  // The practice page shows n8n's finished steps for a moment, then opens the rehearsal
+  return { ok: true, value: rehearsalPath(sessionId, rehearseIn) };
 }
 
 // "Run it again, harder": briefs the same panel again through n8n's /prep, which reads the last debrief and presses on the weak spots.

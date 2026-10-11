@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, RehearseIn, Room, Seat } from "@/lib/contract";
+import { useRouter } from "next/navigation";
+import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
@@ -12,6 +13,7 @@ import { NameCardsToggle } from "../room/NameCardsToggle";
 import { HeightControl } from "../room/HeightControl";
 import { DeckPanel } from "../room/DeckPanel";
 import { PitchLength } from "./PitchLength";
+import { RehearseDialog } from "./RehearseDialog";
 import { SAMPLE_ID } from "@/lib/mock/sample";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
@@ -40,8 +42,9 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
   const [saved, setSaved] = useState<"saved" | "saving" | "failed">("saved");
   const [headset, setHeadset] = useState<{ connected: boolean; via: "wifi" | "usb" }>({ connected: false, via: "usb" });
   const [briefing, startBriefing] = useTransition();
-  // Which of the two buttons was pressed, for its label while n8n plans
-  const [chosen, setChosen] = useState<RehearseIn | null>(null);
+  // The rehearse dialog: where to rehearse, then n8n's prep step by step
+  const [choosing, setChoosing] = useState(false);
+  const router = useRouter();
 
   // Is the headset following the room? Checked every few seconds while editing.
   useEffect(() => {
@@ -84,14 +87,16 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
   // The sample's run is scripted for its own five, briefed on the laptop, and the headset plays it
   const sample = meeting.id === SAMPLE_ID;
 
-  function brief(where: RehearseIn) {
+  // The sample: seated on the laptop, no n8n call (the action redirects)
+  function briefSample() {
     setError(null);
-    setChosen(where);
     startBriefing(async () => {
-      const res = await briefPanelAction(input, proposal.draft_id, members, where);
+      const res = await briefPanelAction(input, proposal.draft_id, members, "vr");
       if (!res.ok) setError(res.error);
     });
   }
+
+  const notReady = members.length === 0 || members.some((m) => !m.role.trim());
 
   // Someone new gets the chosen chair and a free colour. A suggestion from n8n comes as a whole person (name, face, what they push on),
   // keeping their face if it's free; a role typed in gets a free face (one with a portrait if there is one) and n8n names them.
@@ -181,8 +186,8 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
               <>
                 <button
                   type="button"
-                  onClick={() => brief("vr")}
-                  disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
+                  onClick={briefSample}
+                  disabled={briefing || notReady}
                   className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-50"
                 >
                   {briefing ? "Seating the sample…" : "Start the rehearsal (5)"}
@@ -196,27 +201,27 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
               <>
                 <button
                   type="button"
-                  onClick={() => brief("browser")}
-                  disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
-                  className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-50"
+                  onClick={() => {
+                    setError(null);
+                    setChoosing(true);
+                  }}
+                  disabled={notReady}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface hover:bg-ink/85 disabled:opacity-50"
                 >
-                  {briefing && chosen === "browser" ? "n8n is planning the rehearsal…" : "Rehearse in the browser"}
+                  <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="currentColor">
+                    <path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.2-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5z" />
+                  </svg>
+                  Rehearse
                 </button>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => brief("vr")}
-                    disabled={briefing || members.length === 0 || members.some((m) => !m.role.trim())}
-                    className="flex-1 rounded-full border border-ink px-5 py-3 text-sm font-medium disabled:opacity-50"
-                  >
-                    {briefing && chosen === "vr" ? "n8n is planning the rehearsal…" : "Rehearse in VR"}
-                  </button>
-                  <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-ink-2">
-                    <span aria-hidden="true" className={`size-2 rounded-full ${headset.connected ? "bg-good" : "bg-axis"}`} />
-                    {headset.connected ? "Headset ready" : "Headset not connected"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted">n8n plans each slide, the panel&apos;s questions and voices. About 20 seconds.</p>
+                {notReady && <p className="text-xs text-muted">Give everyone at the table a role first.</p>}
+                <RehearseDialog
+                  open={choosing}
+                  members={members}
+                  headset={headset}
+                  onStart={(where, runId) => briefPanelAction(input, proposal.draft_id, members, where, runId)}
+                  onOpen={(path) => router.push(path)}
+                  onClose={() => setChoosing(false)}
+                />
               </>
             )}
           </footer>

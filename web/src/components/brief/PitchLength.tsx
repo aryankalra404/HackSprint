@@ -79,9 +79,7 @@ export function PitchLength({ initial, suggestion }: { initial: number; suggesti
             </>
           )}
         </p>
-      ) : (
-        <p className="text-xs text-muted">Questions come on top. n8n plans the slide times and when the panel asks around it.</p>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { demoPrepSession, demoSession } from "./mock/session";
 import { getRoom } from "./room";
 import { saveBundleAudio } from "./audio";
 import { cachedSession } from "./sessions";
+import type { N8nProgress } from "./prepProgress";
 
 const MOCKS: Record<string, SessionRecord> = { demo: demoSession, "demo-prep": demoPrepSession };
 
@@ -39,7 +40,7 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
 }
 
 // What n8n's rehearsal prep did, read from its bundle, so the dashboard's feed shows this panel's real prep
-function prepSteps(bundle: Bundle): PrepStep[] {
+export function prepSteps(bundle: Bundle): PrepStep[] {
   const objections = bundle.personas.reduce((n, p) => n + p.objections.length, 0);
   const chair = bundle.personas.find((p) => p.chair);
   const interrupts = bundle.personas.filter((p) => p.manner === "interrupts").map((p) => p.display_name.split(" ")[0]);
@@ -160,10 +161,83 @@ export async function addMeeting(meeting: NewMeeting): Promise<void> {
 
 // Builds the rehearsal bundle for a practice panel (contract: POST /prep): n8n plans the slides, the panel, the questions and the
 // lines, and voices the lines. Each slide's image is the laptop's own (n8n leaves image_url empty), and the voices are saved on it. Without n8n, the sample bundle stands in.
-export async function prepSession(input: PrepRequest, deck: Deck | null): Promise<Bundle> {
+export async function prepSession(input: PrepRequest, deck: Deck | null, onProgress?: (p: N8nProgress, n8nUrl: string | null) => void): Promise<Bundle> {
   if (!N8N_URL) return mockPrep(input.panel, input.pitch_minutes);
   // DRYRUN_VOICES=off skips voicing the lines (testing without spending TTS credits)
-  const bundle = await saveBundleAudio(await postToN8n<Bundle>("/prep", { ...input, voices: process.env.DRYRUN_VOICES !== "off" }));
+  const bundle = await saveBundleAudio(await streamPrep({ ...input, voices: process.env.DRYRUN_VOICES !== "off" }, onProgress));
   const images = new Map((deck?.slides ?? []).map((s) => [s.index, s.image_url]));
   return { ...bundle, slides: bundle.slides.map((s) => ({ ...s, image_url: images.get(s.index) ?? "" })) };
+}
+
+// POST /prep (contract 0.24). n8n streams its answer: a chunk after each stage ({ progress, execution_id, workflow_id }), then the bundle.
+// Each chunk is n8n's { type: "begin" | "item" | "end" | "error", content } object; a plain JSON bundle (before streaming) works too.
+async function streamPrep(body: unknown, onProgress?: (p: N8nProgress, n8nUrl: string | null) => void): Promise<Bundle> {
+  const res = await fetch(`${N8N_URL}/prep`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok || !res.body) throw new Error(`n8n /prep failed: ${res.status}`);
+  let bundle: Bundle | null = null;
+  let failed: string | null = null;
+  const take = (value: unknown) => {
+    const v = typeof value === "string" ? parseOrNull(value) : value;
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    if (o.type === "error") failed = typeof o.content === "string" ? o.content : "n8n stopped with an error";
+    else if (typeof o.type === "string" && "content" in o) take(o.content);
+    else if (o.progress) {
+      const run = typeof o.execution_id === "string" && typeof o.workflow_id === "string" ? { execution_id: o.execution_id, workflow_id: o.workflow_id } : null;
+      onProgress?.(o.progress as N8nProgress, n8nRunUrl(run));
+    } else if (typeof o.session_id === "string") bundle = o as unknown as Bundle;
+  };
+  const split = jsonObjects();
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    for (const text of split(value)) take(parseOrNull(text));
+  }
+  if (failed) throw new Error(`n8n /prep failed: ${failed}`);
+  if (!bundle) throw new Error("n8n /prep answered without a bundle");
+  return bundle;
+}
+
+function parseOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// Splits a stream of JSON objects (one per line or run together) into each object's text, however the chunks are cut
+function jsonObjects() {
+  let buf = "";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let start = -1;
+  return (chunk: string): string[] => {
+    const out: string[] = [];
+    const from = buf.length;
+    buf += chunk;
+    for (let i = from; i < buf.length; i++) {
+      const c = buf[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (c === "\\") escaped = true;
+        else if (c === '"') inString = false;
+      } else if (c === '"') inString = true;
+      else if (c === "{") {
+        if (depth++ === 0) start = i;
+      } else if (c === "}" && depth > 0 && --depth === 0) {
+        out.push(buf.slice(start, i + 1));
+        start = -1;
+      }
+    }
+    // Keep only the object still being read
+    if (depth === 0) buf = "";
+    else if (start > 0) {
+      buf = buf.slice(start);
+      start = 0;
+    }
+    return out;
+  };
 }
