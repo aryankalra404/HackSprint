@@ -137,7 +137,8 @@ Nothing in the meeting is scripted: n8n decides who speaks, what they say and wh
 - [ ] VR: rescue cues on the monitor (timings from the bundle); who you faced and time turned to the slides; telemetry to `/api/debrief`
 
 ### Mon 12 – Wed 14 (second laptop): rehearse in the browser
-- [ ] Build it from `docs/WEB_REHEARSAL.md` (contract 0.21, stand-in turns, the page, mic, turns, wrap-up, rescue cues, dashboard live, "Run it again, harder", 3 real runs at most)
+- [x] Build it from `docs/WEB_REHEARSAL.md` (11 Oct): contract 0.21, stand-in turns (`DRYRUN_FAKE_TURNS`), the practice page's two buttons, the page, mic and voice activity, turns and voices, wrap-up, rescue cues, the dashboard's live room plan for browser runs, "Run it again, harder". Tested in Chrome with a spoken WAV as the mic against stand-in turns: a whole meeting (welcome, a segment per slide, the wrap-up countdown, pitch end, a raised hand and question, the answer, the chair's closing, telemetry, the debrief panel), reload and resume, both "run it again" buttons, and the dashboard in a second tab. Not yet with n8n or with voiced lines (the sample bundle has none).
+- [ ] 3 real runs with n8n at most (`WEB_REHEARSAL.md` step 9): latency per turn, the debrief and report, then "Run it again, harder" once
 - [ ] VR side of 0.21 on the main laptop: the headset stays idle when `rehearse_in` is `browser`
 
 ### Thu 15
@@ -206,6 +207,8 @@ Nothing in the meeting is scripted: n8n decides who speaks, what they say and wh
 | 11 Oct | Transcription with Groq Whisper (credential exists, fast); voices from Sarvam if we get a key (Indian voices, for the Sarvam mentor), else Gemini TTS | Proposed |
 | 11 Oct | The web app is the full product, so you can rehearse in the browser too: a 2D page (`/s/<id>/rehearse`) with the same table, faces and seats as VR, your slides as a speaker view, the panel's voices, raised hands, captions and rescue cues, sending the same `/turn` requests as the headset (no n8n change). The practice page offers "Rehearse in the browser" or "Rehearse in VR" (`rehearse_in`, contract 0.21). 3D in the browser (Unity WebGL, Three.js) and a Zoom-style call were rejected: 3D is too risky this week and would take the wow from VR; a video call would feel like a different product. Built on the second laptop from `docs/WEB_REHEARSAL.md` | Accepted |
 | 10 Oct | The dashboard follows the session: room plan while waiting, headset view while live (so the Quest only encodes during a rehearsal), a click overrides it until the next phase. "Run it again" (dashboard, or A in the headset) restarts with the same panel instead of re-briefing. Contract 0.13 | Accepted |
+
+| 11 Oct | The browser's voice activity learns the background only from quiet windows (below the threshold), not from every window while not speaking as the plan describes for `VoiceActivity.cs`. Tested with recorded speech, learning during the 0.6 s onset hold raised the threshold above normal speech within a few sentences, so everything after the opening went unheard. The cost: a lasting jump in room noise above 3× the background now counts as speech until it stops. Compare with the headset's `VoiceActivity.cs` on the main laptop and keep the two the same | Proposed: check on the main laptop |
 
 ## Risks
 - **The Unity project only has local Git** (since 11 Oct), so a dead disk would still lose it. Copy it to an external drive or a private remote before the event. Disk: 16 GB free after clearing an old copy's cache.
