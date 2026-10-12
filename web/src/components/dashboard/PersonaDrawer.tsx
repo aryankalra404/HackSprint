@@ -6,7 +6,8 @@ import { momentLabel, slideLabel } from "@/lib/format";
 import { exchanges } from "@/lib/timeline";
 import { PersonaAvatar, StancePill, VerdictPill } from "../ui";
 
-const SOURCE_LABEL = { deck: "From your deck", research: "From research", history: "From a past session" } as const;
+// "twin" (0.27): what this real person actually raised before, with where it came from
+const SOURCE_LABEL = { deck: "From your deck", research: "From research", history: "From a past session", twin: "From their twin" } as const;
 
 export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord; id: PersonaId; onClose: () => void }) {
   const ref = useRef<HTMLElement>(null);
@@ -34,6 +35,11 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
           <div className="flex-1">
             <h2 className="font-display text-3xl leading-none">{persona.display_name}</h2>
             <p className="mt-1 text-sm text-muted">{persona.role}</p>
+            {persona.twin_email && (
+              <a href={`/people/${encodeURIComponent(persona.twin_email)}`} className="mt-1 inline-block text-xs text-ink-2 underline decoration-line hover:text-ink">
+                From their twin: what they really raised before ↗
+              </a>
+            )}
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-line px-3 py-1 text-sm hover:border-ink">
             Close
@@ -64,7 +70,8 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
                 <p>{o.text}</p>
                 <p className="mt-0.5 text-[11px] text-muted">
                   {/* -1: not tied to a slide (no deck, or it could come at any time) */}
-                  {SOURCE_LABEL[o.source]}, {o.slide_index < 0 ? "at any time" : `about ${slideLabel(o.slide_index).toLowerCase()}`}
+                  {SOURCE_LABEL[o.source]}
+                  {o.source === "twin" && o.from ? ` (${o.from})` : ""}, {o.slide_index < 0 ? "at any time" : `about ${slideLabel(o.slide_index).toLowerCase()}`}
                 </p>
               </li>
             ))}

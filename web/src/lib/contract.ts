@@ -1,4 +1,4 @@
-// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.26).
+// Types for the n8n webhook contract. Source of truth: docs/CONTRACT.md (v0.27).
 // Field names stay snake_case so JSON from n8n can be used as-is.
 
 // Persona ids are per panel ("p1", "p2", …); every field that names a person uses one.
@@ -40,6 +40,8 @@ export interface PanelMember extends Seating {
   // "email": a real attendee from the invite; anything else is a hypothetical practice role
   source: "email" | "research" | "deck" | "typical";
   will_push_on?: string;
+  // A real attendee's address, so /prep can read their twin (0.27). The laptop fills it in from the brief's attendees.
+  twin_email?: string;
 }
 
 // The deck as /prep gets it: each slide's text, extracted by the laptop (n8n can't reach its files)
@@ -118,7 +120,10 @@ export interface Slide {
 
 export interface Persona extends Seating {
   priorities: string[];
-  objections: { slide_index: number; text: string; source: "deck" | "research" | "history" }[];
+  // "twin" (0.27): something that real person actually raised, from their twin, with the source's date and a short label
+  objections: { slide_index: number; text: string; source: "deck" | "research" | "history" | "twin"; date?: string; from?: string }[];
+  // The real person this seat is, when DryRun has their twin (0.27)
+  twin_email?: string;
   difficulty: 1 | 2 | 3;
   // interrupts: raises a hand during the pitch; waits: keeps it for the questions
   manner: "interrupts" | "waits";
@@ -454,7 +459,8 @@ export interface Meeting {
   why: string;
   // skipped: n8n decided it isn't worth preparing; it can still be prepared anyway (POST /add-meeting with the same id)
   status: "researching" | "ready" | "practised" | "done" | "failed" | "skipped";
-  attendees: { name: string; email: string }[];
+  // twin (0.27): what DryRun knows of each, from the DryRun people table; null when there's no twin of that address
+  attendees: { name: string; email: string; twin?: TwinSummary | null }[];
   // Where n8n is in preparing it, saved by the workflow after each stage
   progress?: PrepStep[];
   started_at?: string | null;
@@ -471,6 +477,15 @@ export interface MeetingBrief {
   questions: { question: string; asked_by: string; why: string; suggested_answer: string }[];
   risks: string[];
   sources: { title: string; url: string }[];
+  // For each attendee with a twin (0.27): what they raised and what the presenter promised, facts only, newest first
+  since_last_time?: SinceLastTime[];
+}
+
+export interface SinceLastTime {
+  email: string;
+  name: string;
+  raised: { text: string; date: string; source: string }[];
+  promised: { text: string; date: string; source: string }[];
 }
 
 export interface MeetingDetail {
@@ -592,3 +607,106 @@ export interface ThinkingTurn {
   t: number;
   asked_by?: PersonaId;
 }
+
+// ---------------------------------------------------------------- Twins (0.27): one per real person, keyed by email
+
+export type TwinSourceType = "email" | "meeting_note" | "web" | "news" | "manual";
+// connected: sure (the same address, the presenter's note, or confirmed); suggested: found by name, waiting; rejected: kept so it's never suggested again
+export type TwinStatus = "connected" | "suggested" | "rejected";
+export type TwinFactKind = "raised" | "promised" | "decision" | "preference" | "role" | "context";
+
+export interface TwinSource {
+  id: string;
+  type: TwinSourceType;
+  title: string;
+  date: string;
+  url?: string;
+  from?: string;
+  status: TwinStatus;
+  why?: string;
+  key: string;
+  // A note or pasted text the presenter added
+  text?: string;
+}
+
+export interface TwinFact {
+  id: string;
+  kind: TwinFactKind;
+  text: string;
+  source_id: string;
+  quote: string;
+  status: TwinStatus;
+  added: string;
+}
+
+// n8n's interpretation, never a fact: at least two connected facts behind it
+export interface TwinReading {
+  id: string;
+  text: string;
+  evidence: string[];
+}
+
+export interface TwinMeeting {
+  id: string;
+  title: string;
+  date: string;
+}
+
+// What one build step added, by id (the build log) or whole (the live stream)
+export interface TwinAdds<T = string> {
+  sources: T extends string ? string[] : TwinSource[];
+  facts: T extends string ? string[] : TwinFact[];
+  readings: T extends string ? string[] : TwinReading[];
+  meetings?: T extends string ? string[] : TwinMeeting[];
+}
+
+export type TwinStepId = "load" | "emails" | "meetings" | "mentions" | "fallback" | "extract" | "save";
+
+export interface TwinLogStep {
+  step: TwinStepId;
+  text: string;
+  // ms from the start of the build
+  t: number;
+  adds: TwinAdds;
+}
+
+export interface Twin {
+  email: string;
+  aliases: string[];
+  name: string;
+  company: string;
+  role: { text: string; source_id: string } | null;
+  sources: TwinSource[];
+  facts: TwinFact[];
+  readings: TwinReading[];
+  meetings: TwinMeeting[];
+  // Per real meeting, how much of what they asked the rehearsal predicted (WF4, later)
+  predictions: { meeting_id: string; asked: number; predicted: number }[];
+  build_log: TwinLogStep[];
+  updated: string;
+  sample: boolean;
+}
+
+export interface TwinSummary {
+  facts: number;
+  meetings: number;
+  to_check: number;
+  last_met: string | null;
+}
+
+// GET /twins: everyone DryRun knows
+export interface TwinListItem extends TwinSummary {
+  email: string;
+  name: string;
+  company: string;
+  role: string;
+  updated: string;
+}
+
+// POST /twin/update: one change in the batch
+export type TwinChange =
+  | { op: "confirm" | "reject"; source_id: string }
+  | { op: "note"; text: string; kind?: TwinFactKind }
+  | { op: "alias"; email: string }
+  | { op: "delete"; fact_id: string }
+  | { op: "forget" };

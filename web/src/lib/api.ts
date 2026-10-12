@@ -114,7 +114,7 @@ const FRESH_MS = 2_500;
 const SETTLED_MS = 30_000;
 const reads = ((globalThis as { __dryrunReads?: Map<string, { until: number; value: Promise<unknown> }> }).__dryrunReads ??= new Map());
 
-async function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Promise<T>): Promise<T> {
+export async function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Promise<T>): Promise<T> {
   // n8n's answer can change at any time, so it's read at request time, never while prerendering (the clock below needs it too)
   await connection();
   const hit = reads.get(key);

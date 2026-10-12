@@ -44,6 +44,8 @@ next-env.d.ts
 /.room.json
 /.profile.json
 /.deck-reviews/
+# The laptop's copies of twins (contract 0.27): real people's facts, never committed
+/.twins/
 
 # decks uploaded to the laptop, turned into slide images
 /.decks/
