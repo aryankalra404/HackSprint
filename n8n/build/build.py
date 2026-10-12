@@ -563,27 +563,60 @@ const meetings = $('Read meetings').all().map(i => i.json).filter(r => r.meeting
                progress: parse(r.progress) || [], started_at: r.started_at || null,
                run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null, practice: practice(r.meeting_id) }));
 return [{ json: { meetings } }];""", [{"meetings": []}])
-    c += code_node("shapeOne", "The meeting and its brief", """
+    # The twins of its attendees (0.27): how much DryRun knows of each, and "Since last time" for the brief
+    c += read_people("peopleOne", "Read their twins")
+    c += code_node("shapeOne", "The meeting and its brief", TWIN_ROW_JS + """
 // One meeting by id, with its brief, proposed panel and rehearsals, newest first (docs/CONTRACT.md, GET /meeting)
 const id = $('GET /meeting').first().json.query.id;
 const r = $('Read meeting').all().map(i => i.json).find(r => String(r.meeting_id) === String(id));
 const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
 if (!r) return [{ json: { error: 'not found' } }];
-const sessions = $input.all().map(i => i.json).filter(x => x.session_id && String(x.meeting_id) === String(id))
+const sessions = $('Read its rehearsals').all().map(i => i.json).filter(x => x.session_id && String(x.meeting_id) === String(id))
   .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
   .map(x => ({ session_id: x.session_id, at: x.at, status: x.status, overall: typeof x.overall === 'number' ? x.overall : null, headline: x.headline || '' }));
 const done = sessions.filter(x => x.status === 'done');
+// Each attendee's twin, as counts; and for those DryRun knows, what they raised and what you promised, facts only (never readings)
+const rows = $input.all().map(i => i.json).filter(x => x.email);
+const twinOf = a => { const row = a && a.email ? findRow(rows, lower(a.email)) : null; return row ? rowToTwin(row) : null; };
+const attendees = (parse(r.attendees) || []).map(a => { const t = twinOf(a); return { ...a, twin: t ? twinSummary(t) : null }; });
+const brief = parse(r.brief);
+const label = s => s.type === 'email' ? (s.from === 'you' ? 'your email' : 'email') + ' of ' + s.date + ': ' + s.title : s.type === 'manual' ? 'your note of ' + s.date : s.title;
+const since = (parse(r.attendees) || []).map(a => {
+  const t = twinOf(a);
+  if (!t) return null;
+  const src = Object.fromEntries(t.sources.filter(s => s.status === 'connected').map(s => [s.id, s]));
+  const pick = kinds => t.facts.filter(f => f.status === 'connected' && kinds.includes(f.kind) && src[f.source_id])
+    .map(f => ({ text: f.text, date: src[f.source_id].date || '', source: label(src[f.source_id]) })).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 4);
+  const raised = pick(['raised', 'decision']);
+  const promised = pick(['promised']);
+  return raised.length || promised.length ? { email: t.email, name: t.name || a.name, raised, promised } : null;
+}).filter(Boolean);
 return [{ json: {
-  meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees: parse(r.attendees) || [],
+  meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees,
              progress: parse(r.progress) || [], started_at: r.started_at || null,
              run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null,
              practice: done.length ? { sessions: done.length, last: { session_id: done[0].session_id, at: done[0].at, overall: done[0].overall, headline: done[0].headline } } : null },
-  brief: parse(r.brief), proposal: parse(r.proposal), sessions,
+  brief: brief ? { ...brief, since_last_time: since } : null, proposal: parse(r.proposal), sessions,
 } }];""", [{"meeting": {}, "brief": None, "proposal": None, "sessions": []}])
-    for var, name in [("sendList", "Send meetings"), ("sendOne", "Send the meeting")]:
+    # Twins (0.27): one, or everyone, from the DryRun people table. The laptop keeps copies, so these are read rarely.
+    for var, name, path in [("twinTrigger", "GET /twin", "dryrun/twin"), ("twinsTrigger", "GET /twins", "dryrun/twins")]:
+        c += make_node(var, "trigger", "n8n-nodes-base.webhook", 2.2, name, {"httpMethod": "GET", "path": path, "responseMode": "responseNode", "options": {}}, [{"query": {}}])
+    c += read_people("peopleTwin", "Read the people table")
+    c += read_people("peopleTwins", "Read everyone")
+    c += code_node("shapeTwin", "Their twin", TWIN_ROW_JS + """
+// One twin by any of their addresses (docs/CONTRACT.md, GET /twin)
+const row = findRow($input.all().map(i => i.json), lower($('GET /twin').first().json.query.email));
+return [{ json: { twin: row ? rowToTwin(row) : null } }];""", [{"twin": None}])
+    c += code_node("shapeTwins", "Everyone", TWIN_ROW_JS + """
+// Everyone DryRun keeps a twin of, with honest counts (docs/CONTRACT.md, GET /twins)
+const twins = $input.all().map(i => i.json).filter(r => r.email).map(rowToTwin)
+  .map(t => ({ email: t.email, name: t.name, company: t.company, role: (t.role && t.role.text) || '', updated: t.updated, ...twinSummary(t) }))
+  .sort((a, b) => (a.updated < b.updated ? 1 : -1));
+return [{ json: { twins } }];""", [{"twins": []}])
+    for var, name in [("sendList", "Send meetings"), ("sendOne", "Send the meeting"), ("sendTwin", "Send the twin"), ("sendTwins", "Send everyone")]:
         c += make_node(var, "node", "n8n-nodes-base.respondToWebhook", 1.5, name, {"respondWith": "firstIncomingItem", "options": {}}, [{}])
     c += ("const about = sticky('## DryRun meetings API\\nThe web app reads your meetings and briefs from the DryRun meetings table, with each meeting\\'s "
-          "rehearsals from DryRun sessions: GET /webhook/dryrun/meetings and GET /webhook/dryrun/meeting?id= (docs/CONTRACT.md).', [listTrigger, oneTrigger], { color: 4 });\n\n")
+          "rehearsals from DryRun sessions and its attendees\\' twins from DryRun people: GET /webhook/dryrun/meetings, GET /webhook/dryrun/meeting?id=, GET /webhook/dryrun/twin?email= and GET /webhook/dryrun/twins (docs/CONTRACT.md).', [listTrigger, oneTrigger], { color: 4 });\n\n")
     c += """export default workflow('dryrun-meetings-api', 'DryRun meetings API')
   .add(about)
   .add(listTrigger)
@@ -594,10 +627,20 @@ return [{ json: {
   .add(oneTrigger)
   .to(readOne)
   .to(sessionsOne)
+  .to(peopleOne)
   .to(shapeOne)
   .to(sendOne)
+  .add(twinTrigger)
+  .to(peopleTwin)
+  .to(shapeTwin)
+  .to(sendTwin)
+  .add(twinsTrigger)
+  .to(peopleTwins)
+  .to(shapeTwins)
+  .to(sendTwins)
   .group('Meetings', [readAll, sessionsAll, shapeList, sendList], { description: 'GET /meetings: upcoming meetings, each with its rehearsals so far' })
-  .group('One meeting', [readOne, sessionsOne, shapeOne, sendOne], { description: 'GET /meeting: one meeting with its brief, panel and rehearsals' });
+  .group('One meeting', [readOne, sessionsOne, peopleOne, shapeOne, sendOne], { description: 'GET /meeting: one meeting with its brief, panel, rehearsals and its attendees\' twins' })
+  .group('Twins', [peopleTwin, shapeTwin, sendTwin, peopleTwins, shapeTwins, sendTwins], { description: 'GET /twin and GET /twins: the DryRun people table' });
 """
     return c
 
@@ -639,6 +682,8 @@ def rehearsal():
         "returnAll": True,
     }, [{"session_id": "s0", "meeting_id": "evt123", "status": "done", "at": "2026-10-10T19:12:00.000Z", "overall": 63, "debrief": "{}"}],
         extra={"alwaysOutputData": True, "executeOnce": True})
+    # The twins of the real people at the table (0.27): what they actually raised before, from real sources only
+    c += read_people("prepTwins", "Their twins")
     c += code_node("gather", "Gather what n8n knows", """
 // Everything the rehearsal is planned from: the meeting and its brief (from the DryRun meetings table), the confirmed panel,
 // the deck's slide text and the pitch length (docs/CONTRACT.md, POST /prep)
@@ -646,7 +691,7 @@ const req = $('Start a rehearsal (web app)').first().json.body;
 const row = $('Find the meeting').first().json || {};
 const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
 // The last debriefed rehearsal of this meeting, if any: its score, weak spots, drill and each slide's talk track
-const done = $input.all().map(i => i.json).filter(r => r.session_id && r.status === 'done').sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+const done = $('Last rehearsal').all().map(i => i.json).filter(r => r.session_id && r.status === 'done').sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 const lastDebrief = done.length ? parse(done[0].debrief) : null;
 const last = lastDebrief ? { overall: lastDebrief.overall, headline: lastDebrief.headline || '', weak_spots: lastDebrief.weak_spots || [], drill: lastDebrief.drill || null,
                              notes: Object.fromEntries((lastDebrief.slides || []).filter(s => s.notes).map(s => [s.index, s.notes])),
@@ -665,7 +710,22 @@ const meeting = { title: row.title || (req.prospect && req.prospect.context) || 
 const panel = (req.panel || []).map(p => ({ id: p.id, name: p.display_name || '', role: p.role, difficulty: p.difficulty || 2,
                                             source: p.source || 'typical', will_push_on: p.will_push_on || '', why: p.why || '' }));
 const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1500) }));
-return [{ json: { req, minutes, timing, presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last, side,
+// Twins (0.27): for each real attendee DryRun knows (twin_email), their connected facts with dates and sources, and n8n's readings
+// labelled as such. Nothing from a rehearsal is in a twin.
+const low = e => String(e || '').trim().toLowerCase();
+const people = $input.all().map(i => i.json).filter(r => r.email);
+const twins = (req.panel || []).filter(m => m.twin_email).map(m => {
+  const r = people.find(x => low(x.email) === low(m.twin_email) || (parse(x.aliases) || []).map(low).includes(low(m.twin_email)));
+  if (!r) return null;
+  const sources = Object.fromEntries((parse(r.sources) || []).map(s => [s.id, s]));
+  const label = s => !s ? '' : s.type === 'email' ? (s.from === 'you' ? 'your email' : 'email') + ' of ' + s.date + ': ' + s.title : s.type === 'manual' ? 'your note of ' + s.date : s.title;
+  const facts = (parse(r.facts) || []).filter(f => f.status === 'connected' && sources[f.source_id]).map(f => ({ id: f.id, kind: f.kind, text: f.text, date: sources[f.source_id].date || '', from: label(sources[f.source_id]) }));
+  const raised = facts.filter(f => f.kind === 'raised' || f.kind === 'decision').slice(-8);
+  const prefers = facts.filter(f => f.kind === 'preference').slice(-4);
+  if (!raised.length && !prefers.length) return null;
+  return { persona_id: m.id, name: r.name || m.display_name, raised, prefers, readings: (parse(r.readings) || []).map(x => 'n8n reading: ' + x.text) };
+}).filter(Boolean);
+return [{ json: { req, minutes, timing, twins, twins_text: twins.length ? JSON.stringify(twins, null, 1) : 'None.', presenter: (req.presenter && req.presenter.name) || '', meeting, panel, slides, last, side,
                   side_text: (side.offer ? 'They offer: ' + side.offer + '. ' : '') + (side.goal ? 'They want: ' + side.goal + '.' : '') || 'Not given.',
                   history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title, owed: last.owed }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
@@ -676,14 +736,15 @@ return [{ json: { req, minutes, timing, presenter: (req.presenter && req.present
                         "[$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', "
                         "$json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', "
                         "$json.slides.length ? $json.slides.length + ' slides' : 'no deck', $json.minutes ? $json.minutes + ' min pitch' : 'no time limit', "
-                        "$json.last ? 'last rehearsal ' + $json.last.overall + '/100 with ' + $json.last.weak_spots.length + ' weak spots to press on' : 'the first rehearsal'].join(', ')",
+                        "$json.last ? 'last rehearsal ' + $json.last.overall + '/100 with ' + $json.last.weak_spots.length + ' weak spots to press on' : 'the first rehearsal', "
+                        "$json.twins.length ? $json.twins.length + (($json.twins.length === 1) ? ' twin' : ' twins') + ' of real attendees: what they raised before' : ''].filter(Boolean).join(', ')",
                         with_run=True)
     c += llm_nodes("plan", "Plan the rehearsal", json.dumps(REHEARSAL_PROMPT) +
                    ".split('{length}').join($json.timing.length).split('{pace}').join($json.timing.pace).split('{time_rule}').join($json.timing.time_rule)"
                    ".split('{time_lines}').join($json.timing.time_lines).replace('{presenter}', $json.presenter || 'the presenter')"
                    ".replace('{meeting}', JSON.stringify($json.meeting, null, 1)).replace('{brief}', JSON.stringify($json.brief, null, 1))"
                    ".replace('{panel}', JSON.stringify($json.panel, null, 1)).replace('{side}', $json.side_text || 'Not given.').replace('{deck}', JSON.stringify($json.slides, null, 1))"
-                   ".replace('{history}', $json.history || 'First rehearsal.')",
+                   ".replace('{history}', $json.history || 'First rehearsal.').replace('{twins}', $json.twins_text || 'None.')",
                    GEMINI_REPLY, schema=REHEARSAL_SCHEMA, source="$('Gather what n8n knows').first().json")
     c += code_node("bundle", "Build the bundle", REPLY_JS + """
 // The rehearsal bundle (docs/CONTRACT.md, POST /prep response). Seats, colours, faces and difficulty stay as the presenter set them;
@@ -701,10 +762,15 @@ const personas = g.req.panel.map(m => {
   const x = byId[m.id] || {};
   return { id: m.id, seat: m.seat, color: m.color, role: m.role, role_short: m.role_short, avatar: m.avatar,
            display_name: m.display_name || x.display_name || m.role, priorities: x.priorities || [],
-           objections: (x.objections || []).map(o => ({ slide_index: o.slide_index, text: o.text, source: ['deck', 'history'].includes(o.source) ? o.source : 'research' })),
+           // A "twin" objection only when it names a connected fact of that person's twin (0.27), with that fact's date and source
+           objections: (x.objections || []).map(o => {
+             const fact = o.source === 'twin' && ((g.twins.find(w => w.persona_id === m.id) || {}).raised || []).find(f => f.id === o.fact_id);
+             if (fact) return { slide_index: o.slide_index, text: o.text, source: 'twin', date: fact.date, from: fact.from };
+             return { slide_index: o.slide_index, text: o.text, source: ['deck', 'history'].includes(o.source) ? o.source : 'research' };
+           }),
            // Whoever presses on a weak spot from last time is one step harder (at most 3)
            difficulty: Math.min(3, (m.difficulty || 2) + ((x.objections || []).some(o => o.source === 'history') ? 1 : 0)), manner: x.manner === 'interrupts' ? 'interrupts' : 'waits', chair: m.id === chair,
-           voice: voiceFor(m.avatar) };
+           voice: voiceFor(m.avatar), ...(m.twin_email ? { twin_email: m.twin_email } : {}) };
 });
 // Slide times scaled so they add up to the pitch length. With no time limit (0.25) they stay n8n's natural estimate, which is then
 // the pitch length (300 s for a pitch with no deck).
@@ -808,6 +874,7 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_bas
   .add(prepTrigger)
   .to(findMeeting)
   .to(lastRehearsal)
+  .to(prepTwins)
   .to(gather)
   .to(saidGather)
   .to(plan)
@@ -822,7 +889,7 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_bas
   .add(saidFallback)
   .to(planGroq)
   .to(bundle)
-  .group('Plan', [lastRehearsal, gather, saidGather, plan, saidFallback, planGroq, bundle, saidPlan], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
+  .group('Plan', [lastRehearsal, prepTwins, gather, saidGather, plan, saidFallback, planGroq, bundle, saidPlan], { description: 'Plans the slides, the panel, the questions and the lines for this meeting and pitch length' })
   .group('Voices', [eachLine, voice, addVoices, saidVoices], { description: 'Voices the lines ahead of time with Sarvam, in each person\\'s voice' });
 """
     return c

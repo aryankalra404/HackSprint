@@ -121,6 +121,10 @@ The deck, slide by slide (index from 0; empty if there is no deck or a slide has
 The last rehearsal of this meeting (empty if this is the first):
 {history}
 
+What the real attendees actually raised before, from their twins (the presenter's real emails and notes, never a rehearsal; each fact
+has an id; "readings" are n8n's interpretations, not facts; empty if none):
+{twins}
+
 Decide, for this meeting and this panel (never a generic template):
 - slides: for each slide in the deck, a short title, its 1 to 3 key points (what the presenter must get across), target_seconds
   (all slides together {pace}, more time where the slide carries more), and rescue cues for when the presenter
@@ -134,7 +138,10 @@ Decide, for this meeting and this panel (never a generic template):
   give each of its weak spots to the person who would press on it hardest, as an objection with source "history", on the slide it is
   about, so this rehearsal is harder exactly where the last one was weak; the plan must leave room to ask about them. Each question
   it owes (owed: questions the presenter could not answer last time) goes back to the person who asked it, as a "history" objection
-  with that exact question, and is among the first asked. manner: "interrupts" if, in a real
+  with that exact question, and is among the first asked. A panel member with a twin (above, by id) opens with what they actually
+  raised before: give them an objection on each of their most relevant raised facts (up to 3), in their words, with source "twin" and
+  that fact's fact_id, on the slide it is about; let their stated preferences shape their priorities and manner. Readings may shape
+  manner, never an objection. Every other objection has fact_id "". manner: "interrupts" if, in a real
   meeting like this, this person would raise a hand during the pitch; "waits" if they would keep it for the questions. Base it on the
   role, the kind of meeting and difficulty (1 easy to 3 hard).
 - chair: the id of the one person who would run this meeting (usually the most senior person from the company): they welcome the
@@ -170,8 +177,9 @@ REHEARSAL_SCHEMA = {"type": "object", "properties": {
         "id": {"type": "string"}, "display_name": {"type": "string"},
         "priorities": {"type": "array", "items": {"type": "string"}},
         "objections": {"type": "array", "items": {"type": "object", "properties": {
-            "slide_index": {"type": "integer"}, "text": {"type": "string"}, "source": {"type": "string", "enum": ["deck", "research", "history"]}},
-            "required": ["slide_index", "text", "source"]}},
+            "slide_index": {"type": "integer"}, "text": {"type": "string"}, "source": {"type": "string", "enum": ["deck", "research", "history", "twin"]},
+            "fact_id": {"type": "string"}},
+            "required": ["slide_index", "text", "source", "fact_id"]}},
         "manner": {"type": "string", "enum": ["interrupts", "waits"]}},
         "required": ["id", "display_name", "priorities", "objections", "manner"]}},
     "chair": {"type": "string"},
