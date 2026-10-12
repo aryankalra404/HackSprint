@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMeeting, n8nProblem, n8nRunUrl } from "@/lib/api";
 import type { MeetingDetail } from "@/lib/contract";
-import { meetingWhen, stillResearching, untilLabel } from "@/lib/format";
+import { hasStarted, meetingWhen, stillResearching, untilLabel } from "@/lib/format";
 import { PersonaAvatar } from "@/components/ui";
 import { MeetingStatus } from "@/components/meetings/MeetingStatus";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
@@ -11,6 +11,8 @@ import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResea
 import { LiveProgress } from "@/components/meetings/LiveProgress";
 import { PrepareAnyway } from "@/components/meetings/PrepareAnyway";
 import { Rehearsals } from "@/components/meetings/Rehearsals";
+import { HowDidItGo } from "@/components/meetings/HowDidItGo";
+import { HowItWent } from "@/components/meetings/HowItWent";
 import { YourSide } from "@/components/brief/YourSide";
 import { getProfile } from "@/lib/profile";
 import { getDeckReview } from "@/lib/deckReview";
@@ -52,6 +54,8 @@ async function Meeting({ id }: { id: string }) {
   if (!detail) notFound();
   const { meeting, brief, proposal } = detail;
   const [profile, review, twins] = await Promise.all([getProfile(), getDeckReview(id), twinSummaries(meeting.attendees)]);
+  // After the real meeting has started (0.28): "How did it go?", then what n8n found. The sample meeting never happens.
+  const happened = meeting.id !== SAMPLE_ID && meeting.status !== "researching" && hasStarted(meeting.start);
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-6 sm:px-8 sm:py-10">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -71,6 +75,12 @@ async function Meeting({ id }: { id: string }) {
         {meeting.why && <p className="max-w-3xl text-ink-2">{meeting.why}</p>}
         {brief && meeting.progress && meeting.progress.length > 0 && <HowPrepared meeting={meeting} />}
       </section>
+
+      {meeting.after ? (
+        <HowItWent after={meeting.after} runUrl={n8nRunUrl(meeting.after.run)} />
+      ) : (
+        happened && <HowDidItGo meetingId={meeting.id} names={meeting.attendees.map((a) => a.name.split(" ")[0]).filter(Boolean)} />
+      )}
 
       {brief && proposal && (
         <YourSide meetingId={meeting.id} guess={proposal.goal ?? null} own={profile.goals[meeting.id] ?? ""} offer={profile.offer} />

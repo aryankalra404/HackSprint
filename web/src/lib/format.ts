@@ -26,6 +26,11 @@ export function meetingWhen(iso: string): string {
   return d.toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 }
 
+// The meeting has started (or is over)
+export function hasStarted(iso: string, now = Date.now()): boolean {
+  return Date.parse(iso) <= now;
+}
+
 // "today", "tomorrow", "in 3 days", "2 days ago"
 export function untilLabel(iso: string, now = Date.now()): string {
   const d = new Date(iso);
