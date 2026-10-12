@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_REVIEW_PROMPT, DECK_REVIEW_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
-                     TURN_SCHEMA, WEB_PROMPT)
+                     TURN_SCHEMA, TWIN_PROMPT, TWIN_SCHEMA, WEB_PROMPT)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
 # One model for every Gemini step. Free-tier limits are per model (gemini-2.5-flash allows 20 requests a day).
@@ -43,6 +43,10 @@ GENERIC_CHAIR = {"thanks": ["Thank you."], "rescue_soft": ["Take your time."]}
 MEETINGS_TABLE = {"__rl": True, "mode": "id", "value": "wURCb4PjdZLpttns", "cachedResultName": "DryRun meetings"}
 # One row per rehearsal: its bundle, what happened, the debrief's progress and the debrief (JSON as strings)
 SESSIONS_TABLE = {"__rl": True, "mode": "id", "value": "xzUZexBbX6bcX18F", "cachedResultName": "DryRun sessions"}
+# One row per real person you meet, keyed by their lower-cased email (contract 0.27: twins). JSON as strings.
+PEOPLE_TABLE = {"__rl": True, "mode": "id", "value": "We8Agobm9SMWGc7E", "cachedResultName": "DryRun people"}
+PEOPLE_COLUMNS = ["email", "aliases", "name", "company", "role", "sources", "facts", "readings", "meetings", "predictions", "build_log", "updated",
+                  "execution_id", "workflow_id"]
 
 IMPORTS = ("import { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, "
            "nextBatch, languageModel, memory, tool, outputParser, embedding, embeddings, vectorStore, retriever, documentLoader, "
@@ -1695,8 +1699,448 @@ return [{ json: { meeting_id: g.meeting_id, found: g.found, review, deck_review:
     return c
 
 
+
+# ---------------------------------------------------------------- DryRun twin (/twin) and DryRun twin update (/twin/update)
+
+# A twin as the contract has it (0.27), from a DryRun people row and back. Inlined into every node that reads or writes one.
+TWIN_ROW_JS = r"""
+const parseJ = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };
+const lower = e => String(e || '').trim().toLowerCase();
+const KINDS = ['raised', 'promised', 'decision', 'preference', 'role', 'context'];
+const rowToTwin = r => ({ email: lower(r.email), aliases: parseJ(r.aliases, []), name: r.name || '', company: r.company || '', role: parseJ(r.role, null),
+  sources: parseJ(r.sources, []), facts: parseJ(r.facts, []), readings: parseJ(r.readings, []), meetings: parseJ(r.meetings, []),
+  predictions: parseJ(r.predictions, []), build_log: parseJ(r.build_log, []), updated: r.updated || '', sample: false });
+const twinToRow = t => ({ email: t.email, aliases: JSON.stringify(t.aliases || []), name: t.name || '', company: t.company || '', role: t.role ? JSON.stringify(t.role) : '',
+  sources: JSON.stringify(t.sources || []), facts: JSON.stringify(t.facts || []), readings: JSON.stringify(t.readings || []), meetings: JSON.stringify(t.meetings || []),
+  predictions: JSON.stringify(t.predictions || []), build_log: JSON.stringify(t.build_log || []), updated: t.updated || '' });
+// Any address of theirs finds the row: the key, or one the presenter linked
+const findRow = (rows, email) => rows.find(r => r.email && (lower(r.email) === email || parseJ(r.aliases, []).map(lower).includes(email)));
+const maxId = (list, prefix) => list.reduce((a, x) => Math.max(a, Number(String(x.id || '').replace(prefix, '')) || 0), 0);
+// Counts for the brief and the people list, honest: connected facts, real meetings already held, suggestions waiting
+const twinSummary = t => { const today = new Date().toISOString().slice(0, 10); const past = (t.meetings || []).map(m => m.date).filter(d => d && d <= today).sort();
+  return { facts: (t.facts || []).filter(f => f.status === 'connected').length, meetings: past.length, to_check: (t.sources || []).filter(s => s.status === 'suggested').length,
+           last_met: past.length ? past[past.length - 1] : null }; };
+"""
+
+# The text of a fetched email, without the quoted thread below it
+EMAIL_JS = r"""
+const addrText = x => (x && typeof x === 'object' ? (x.text || (x.value || []).map(v => v.address).join(', ')) : String(x || ''));
+const cleanMail = t => { const out = []; for (const l of String(t || '').split('\n')) { const s = l.trim();
+  if ((s.startsWith('On ') && s.endsWith('wrote:')) || s.startsWith('-----Original') || s.startsWith('From: ')) break; if (!s.startsWith('>')) out.push(l); }
+  return out.join('\n').split('\n\n\n').join('\n\n').trim().slice(0, 1800); };
+const mailDate = m => { const d = m.date ? new Date(m.date) : new Date(Number(m.internalDate) || Date.now()); return isNaN(d) ? '' : d.toISOString().slice(0, 10); };
+const gmailUrl = id => 'https://mail.google.com/mail/u/0/#all/' + id;
+"""
+
+PUBLIC_DOMAINS = ['gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com', 'rediffmail.com']
+
+TWIN_REQUEST = {"body": {"email": "rajiv.menon@kaverifreight.in", "name": "Rajiv Menon", "company": "Kaveri Freight", "domain": "kaverifreight.in"}}
+
+
+def twin_chunk(var, name, with_run=False):
+    """A streamed step for /twin (contract 0.27): { step: { step, text, adds } }, from the item's `say`."""
+    run = ", execution_id: $execution.id, workflow_id: $workflow.id" if with_run else ""
+    body = "{{ JSON.stringify({ step: { step: $json.say.step, text: $json.say.text, adds: $json.say.adds }" + run + " }) }}"
+    return make_node(var, "node", "n8n-nodes-base.respondToWebhook", 1.5, name, {"respondWith": "json", "responseBody": Expr(body), "options": {}}, [{}],
+                     extra={"onError": "continueRegularOutput"})
+
+
+def people_upsert(var, name):
+    """Saves $json.row to the DryRun people table, keyed by email (each column mapped, so nothing else on the item is written)."""
+    return make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name, {
+        "resource": "row", "operation": "upsert", "dataTableId": PEOPLE_TABLE, "matchType": "allConditions",
+        "filters": {"conditions": [{"keyName": "email", "condition": "eq", "keyValue": Expr("{{ $json.row.email }}")}]},
+        "columns": {"mappingMode": "defineBelow", "value": {c: Expr("{{ $json.row." + c + " }}") for c in PEOPLE_COLUMNS}, "matchingColumns": [],
+                    "schema": [{"id": c, "displayName": c, "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True} for c in PEOPLE_COLUMNS]},
+    }, [{"id": 1}])
+
+
+def read_people(var, name):
+    return make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name,
+                     {"resource": "row", "operation": "get", "dataTableId": PEOPLE_TABLE, "returnAll": True},
+                     [{"email": "rajiv.menon@kaverifreight.in", "facts": "[]", "sources": "[]"}], extra={"alwaysOutputData": True, "executeOnce": True})
+
+
+def twin():
+    c = IMPORTS
+    c += make_node("twinTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "Build a twin (laptop)", {
+        # Streamed like /prep: a step as each stage lands (the twin page draws it), then the twin
+        "httpMethod": "POST", "path": "dryrun/twin", "responseMode": "streaming", "options": {},
+    }, [TWIN_REQUEST])
+    c += read_people("twinPeople", "Read the people table")
+    c += code_node("twinWho", "Who they are", TWIN_ROW_JS + r"""
+// The person's row, or a new twin. Every address they use is searched; the row stays keyed by the first one.
+const req = $('Build a twin (laptop)').first().json.body || {};
+const email = lower(req.email);
+if (!email.includes('@')) throw new Error('No email address to build a twin of');
+const row = findRow($input.all().map(i => i.json), email);
+const twin = row ? rowToTwin(row) : { email, aliases: [], name: '', company: '', role: null, sources: [], facts: [], readings: [], meetings: [], predictions: [], build_log: [], updated: '', sample: false };
+twin.name = twin.name || String(req.name || '').trim();
+twin.company = twin.company || String(req.company || '').trim();
+const addresses = [twin.email].concat(twin.aliases.map(lower)).filter(Boolean);
+const PUBLIC = """ + json.dumps(PUBLIC_DOMAINS) + r""";
+const own = twin.email.split('@')[1] || '';
+const domain = lower(req.domain) || (PUBLIC.includes(own) ? '' : own);
+// What's there already is drawn first, so a replay starts from nothing
+const kept = twin.sources.filter(s => s.status !== 'rejected');
+const facts = twin.facts.filter(f => f.status !== 'rejected');
+const who = twin.name || twin.email;
+const text = row ? 'Opened ' + who + "'s twin: " + facts.length + ' fact' + (facts.length === 1 ? '' : 's') + ' from ' + kept.length + ' source' + (kept.length === 1 ? '' : 's') + ' so far'
+                 : 'Started a twin of ' + twin.email + (twin.name ? ' (' + twin.name + ')' : '');
+return [{ json: { twin, addresses, domain, start: Date.now(),
+                  say: { step: 'load', text, at: Date.now(), adds: { sources: kept, facts, readings: twin.readings, meetings: twin.meetings } } } }];""",
+                   [{"twin": {}, "addresses": ["rajiv.menon@kaverifreight.in"], "domain": "kaverifreight.in", "start": 0, "say": {}}])
+    c += twin_chunk("saidWho", "Report: opened", with_run=True)
+    # Rule 3: an email from or to one of their addresses is them, for sure
+    c += make_node("twinEmails", "node", "n8n-nodes-base.gmail", 2.2, "Your emails with them", {
+        "resource": "message", "operation": "getAll", "returnAll": False, "limit": 20, "simple": False,
+        "filters": {"readStatus": "both", "q": Expr("{{ '(' + $('Who they are').first().json.addresses.map(a => 'from:' + a + ' OR to:' + a).join(' OR ') + ')' }}")},
+        "options": {},
+    }, [{"id": "m1", "threadId": "t1", "subject": "Pilot proposal", "date": "2026-10-03T10:00:00.000Z", "from": {"text": "Rajiv Menon <rajiv.menon@kaverifreight.in>"}, "text": "Could you send a pilot proposal?"}],
+        credentials={"gmailOAuth2": "Gmail"}, extra={"alwaysOutputData": True, "executeOnce": True, "onError": "continueRegularOutput"})
+    c += code_node("twinReadEmails", "Read the emails", TWIN_ROW_JS + EMAIL_JS + r"""
+// Each email is a source card, connected (same address). Its text goes to the model; only the quotes are kept.
+const g = $('Who they are').first().json;
+const msgs = $input.all().map(i => i.json).filter(m => m.id);
+const sources = g.twin.sources.slice();
+const rejected = new Set(sources.filter(s => s.status === 'rejected').map(s => s.key));
+let n = maxId(sources, 's');
+const texts = {};
+const found = [];
+for (const m of msgs) {
+  const key = 'gmail:' + m.id;
+  if (rejected.has(key)) continue;
+  const from = addrText(m.from || m.From);
+  const theirs = g.addresses.some(a => from.toLowerCase().includes(a));
+  let src = sources.find(s => s.key === key);
+  if (!src) {
+    src = { id: 's' + (++n), type: 'email', title: m.subject || m.Subject || '(no subject)', date: mailDate(m), url: gmailUrl(m.id), from: theirs ? from : 'you',
+            status: 'connected', why: theirs ? 'From their address' : 'You wrote to their address', key };
+    sources.push(src);
+    found.push(src);
+  }
+  texts[src.id] = { kind: theirs ? 'email from them' : 'email from the presenter to them', date: src.date, subject: src.title, text: cleanMail(m.text || m.snippet || '') };
+}
+// The presenter's own notes are sources too (pasted profiles, notes from meetings DryRun didn't see)
+sources.filter(s => s.type === 'manual' && s.status === 'connected' && s.text).forEach(s => { texts[s.id] = { kind: 'note the presenter wrote', date: s.date, text: s.text.slice(0, 4000) }; });
+const all = g.addresses.join(' or ');
+const text = msgs.length ? 'Found ' + msgs.length + ' email' + (msgs.length === 1 ? '' : 's') + ' with ' + all + (found.length < msgs.length ? ' (' + found.length + ' new)' : '')
+                         : 'No emails with ' + all + ' in your inbox';
+return [{ json: { ...g, sources, texts, emails: msgs.length, say: { step: 'emails', text, at: Date.now(), adds: { sources: found, facts: [], readings: [] } } } }];""",
+                   [{"twin": {}, "addresses": [], "sources": [], "texts": {}, "say": {}}])
+    c += twin_chunk("saidEmails", "Report: emails")
+    c += make_node("twinMeetingRows", "node", "n8n-nodes-base.dataTable", 1.1, "Read the meetings", {
+        "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "returnAll": True,
+    }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "start": "2026-10-16T15:00:00+05:30", "company": "Kaveri Freight", "attendees": "[]"}],
+        extra={"alwaysOutputData": True, "executeOnce": True})
+    c += code_node("twinMeetings", "Find their meetings", TWIN_ROW_JS + r"""
+// The real meetings they were invited to (by address). A meeting is a date on the twin's timeline, not a source of facts: what was said
+// in it only reaches the twin through the presenter's notes afterwards. Nothing from a rehearsal of it is read.
+const g = $('Read the emails').first().json;
+const rows = $input.all().map(i => i.json).filter(r => r.meeting_id);
+const invited = r => parseJ(r.attendees, []).find(a => g.addresses.includes(lower(a.email)));
+const theirs = rows.filter(r => invited(r) && r.status !== 'skipped');
+const meetings = theirs.map(r => ({ id: String(r.meeting_id), title: r.title || '', date: String(r.start || '').slice(0, 10) })).sort((a, b) => (a.date < b.date ? -1 : 1));
+const known = new Set(g.twin.meetings.map(m => m.id));
+const name = g.twin.name || ((theirs.map(invited).find(a => a && a.name && a.name.includes(' ')) || {}).name) || '';
+const company = g.twin.company || ((theirs.find(r => r.company && r.company !== r.title) || {}).company) || '';
+const text = meetings.length ? 'Invited to ' + meetings.length + ' of your meetings: ' + meetings.slice(-2).map(m => m.title + ' (' + m.date + ')').join(', ')
+                             : 'Not in any meeting DryRun has seen yet';
+return [{ json: { ...g, name, company, meetings, say: { step: 'meetings', text, at: Date.now(), adds: { sources: [], facts: [], readings: [], meetings: meetings.filter(m => !known.has(m.id)) } } } }];""",
+                   [{"twin": {}, "name": "Rajiv Menon", "company": "Kaveri Freight", "meetings": [], "addresses": [], "domain": "", "say": {}}])
+    c += twin_chunk("saidMeetings", "Report: meetings")
+    # Rule 3 again: found by name only, so each of these is a suggestion for the presenter to confirm
+    c += make_node("twinMentionMail", "node", "n8n-nodes-base.gmail", 2.2, "Their name in other emails", {
+        "resource": "message", "operation": "getAll", "returnAll": False, "limit": 8, "simple": False,
+        "filters": {"readStatus": "both", "q": Expr("{{ (() => { const j = $('Find their meetings').first().json; const n = String(j.name || '').split('\"').join('').trim(); "
+                                                    "if (n.split(' ').length < 2) return 'from:nobody@invalid.invalid'; "
+                                                    "return '\"' + n + '\" ' + j.addresses.map(a => '-from:' + a + ' -to:' + a).join(' ') + ' newer_than:365d'; })() }}")},
+        "options": {},
+    }, [{"id": "m9", "subject": "Kaveri intro", "from": {"text": "Priya Nair <priya.nair@kaverifreight.in>"}, "text": "Loop in Rajiv Menon from finance"}],
+        credentials={"gmailOAuth2": "Gmail"}, extra={"alwaysOutputData": True, "executeOnce": True, "onError": "continueRegularOutput"})
+    c += make_node("twinNews", "node", "n8n-nodes-base.httpRequest", 4.5, "News that names them", {
+        "method": "GET",
+        "url": Expr("{{ (() => { const j = $('Find their meetings').first().json; return String(j.name || '').includes(' ') ? 'https://news.google.com/rss/search?q=' + "
+                    "encodeURIComponent('\"' + j.name + '\"' + (j.company ? ' \"' + j.company + '\"' : '')) + '&hl=en-IN&gl=IN&ceid=IN:en' : 'https://invalid.invalid'; })() }}"),
+        "options": {"timeout": 15000, "response": {"response": {"responseFormat": "text"}}},
+    }, [{"data": "<rss></rss>"}], extra={"onError": "continueRegularOutput", "executeOnce": True})
+    c += code_node("twinPlaces", "Where to look on their site", r"""
+// Their company's own pages that usually list people. Public professional pages only; LinkedIn is never read (against its terms).
+const j = $('Find their meetings').first().json;
+if (!j.domain || !String(j.name || '').includes(' ')) return [{ json: { url: 'https://invalid.invalid' } }];
+return ['', '/team', '/about', '/about-us', '/leadership'].map(p => ({ json: { url: 'https://' + j.domain + p } }));""", [{"url": "https://kaverifreight.in/team"}])
+    c += make_node("twinPages", "node", "n8n-nodes-base.httpRequest", 4.5, "Read their site", {
+        "method": "GET", "url": Expr("{{ $json.url }}"),
+        "options": {"timeout": 8000, "redirect": {"redirect": {}}, "response": {"response": {"responseFormat": "text"}}},
+    }, [{"data": "<html></html>"}], extra={"onError": "continueRegularOutput", "alwaysOutputData": True})
+    c += code_node("twinMentions", "Gather the mentions", TWIN_ROW_JS + EMAIL_JS + r"""
+// Everywhere else their full name appears: emails from other people, news headlines, their company's pages. Each is a suggestion
+// with why it might be them; a source the presenter rejected before is never suggested again.
+const g = $('Find their meetings').first().json;
+const name = String(g.name || '').trim();
+const full = name.toLowerCase();
+const sources = g.sources.slice();
+const texts = { ...g.texts };
+const rejected = new Set(sources.filter(s => s.status === 'rejected').map(s => s.key));
+let n = maxId(sources, 's');
+const found = [];
+const today = new Date().toISOString().slice(0, 10);
+const add = (src, text) => {
+  if (rejected.has(src.key)) return;
+  let s = sources.find(x => x.key === src.key);
+  if (!s) { s = { id: 's' + (++n), status: 'suggested', ...src }; sources.push(s); found.push(s); }
+  texts[s.id] = text;
+};
+if (full.includes(' ')) {
+  for (const m of $('Their name in other emails').all().map(i => i.json).filter(m => m.id)) {
+    const body = cleanMail(m.text || m.snippet || '');
+    const at = body.toLowerCase().indexOf(full);
+    if (at < 0) continue;
+    const from = addrText(m.from || m.From);
+    add({ type: 'email', title: m.subject || m.Subject || '(no subject)', date: mailDate(m), url: gmailUrl(m.id), from,
+          why: (from.split('<')[0].trim() || 'Someone') + ' mentions a ' + name, key: 'gmail:' + m.id },
+        { kind: 'email from someone else that mentions ' + name, date: mailDate(m), subject: m.subject || '', text: body.slice(Math.max(0, at - 600), at + 900) });
+  }
+  const rss = String($('News that names them').first().json.data || '');
+  const unescape = t => t.split('<![CDATA[').join('').split(']]>').join('').split('&amp;').join('&').split('&quot;').join('"').split('&#39;').join("'");
+  const tag = (xml, t) => { const a = xml.indexOf('<' + t); if (a < 0) return ''; const b = xml.indexOf('>', a); const e = xml.indexOf('</' + t + '>', b); return e < 0 ? '' : unescape(xml.slice(b + 1, e)).trim(); };
+  rss.split('<item>').slice(1, 16).forEach(it => {
+    const title = tag(it, 'title');
+    if (!title.toLowerCase().includes(full)) return;
+    const d = new Date(tag(it, 'pubDate'));
+    const date = isNaN(d) ? '' : d.toISOString().slice(0, 10);
+    const publisher = tag(it, 'source');
+    add({ type: 'news', title: (publisher ? publisher + ': ' : '') + title.replace(/ - [^-]+$/, ''), date, url: tag(it, 'link'), why: 'A news story names a ' + name, key: 'news:' + tag(it, 'link') },
+        { kind: 'news headline', date, text: title });
+  });
+  const places = $('Where to look on their site').all().map(i => i.json.url);
+  let pages = 0;
+  $input.all().forEach((page, i) => {
+    if (pages >= 2) return;
+    const html = String(page.json.data || '');
+    const text = html.replace(/<script[^]*?<\/script>/gi, ' ').replace(/<style[^]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const at = text.toLowerCase().indexOf(full);
+    if (at < 0 || !places[i] || places[i].includes('invalid.invalid')) return;
+    pages++;
+    const host = places[i].replace('https://', '').replace(/\/$/, '');
+    add({ type: 'web', title: host, date: today, url: places[i], why: host + ' lists a ' + name, key: 'web:' + places[i] },
+        { kind: 'their company web page', date: today, text: text.slice(Math.max(0, at - 250), at + 450).trim() });
+  });
+}
+// The model reads every live source: connected ones as they are, suggestions marked as such
+let budget = 26000;
+const list = sources.filter(s => s.status !== 'rejected' && texts[s.id]).map(s => {
+  const x = texts[s.id];
+  const line = '[' + s.id + '] ' + (s.status === 'suggested' ? 'SUGGESTION, ' : '') + x.kind + (x.date ? ', ' + x.date : '') + (x.subject ? ', subject "' + x.subject + '"' : '') + ':\n' + x.text;
+  budget -= line.length;
+  return budget > 0 ? line : '';
+}).filter(Boolean);
+const known = g.twin.facts.filter(f => f.status === 'connected').map(f => f.id + ' (' + f.kind + '): ' + f.text).join('\n') || 'Nothing yet.';
+const person = (name || g.twin.email) + ' <' + g.addresses.join(', ') + '>' + (g.company ? ', ' + g.company : '');
+const PROMPT = """ + json.dumps(TWIN_PROMPT) + r""";
+const prompt = PROMPT.split('{person}').join(person).split('{sources}').join(list.join('\n\n') || 'None.').split('{known}').join(known);
+const text = found.length ? found.length + ' possible mention' + (found.length === 1 ? '' : 's') + ' by name: ' + found.slice(0, 2).map(s => s.why).join('; ') + '. Same person?'
+           : full.includes(' ') ? 'No mentions of ' + name + ' elsewhere' : 'No full name to look for elsewhere';
+return [{ json: { ...g, sources, texts, prompt, readable: list.length, say: { step: 'mentions', text, at: Date.now(), adds: { sources: found, facts: [], readings: [] } } } }];""",
+                   [{"twin": {}, "sources": [], "texts": {}, "prompt": "", "readable": 0, "say": {}}])
+    c += twin_chunk("saidMentions", "Report: mentions")
+    c += make_node("twinAnything", "ifElse", "n8n-nodes-base.if", 2.3, "Anything to read?", {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"leftValue": Expr("{{ $json.readable }}"), "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}],
+            "combinator": "and",
+        }, "options": {},
+    }, [{"readable": 1}])
+    c += llm_nodes("twinExtract", "Pull the facts", "$json.prompt", GEMINI_REPLY, schema=TWIN_SCHEMA, source="$('Gather the mentions').first().json")
+    c += make_node("saidTwinFallback", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Report: Groq instead", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify({ step: { step: 'fallback', text: 'Gemini did not answer, so Groq reads the sources instead', adds: { sources: [], facts: [], readings: [] } } }) }}"), "options": {},
+    }, [{}], extra={"onError": "continueRegularOutput"})
+    c += code_node("twinRules", "Hold to the rules", TWIN_ROW_JS + REPLY_JS + r"""
+// The twin rules (docs/CONTRACT.md, Twins), after the model:
+// no source, no fact (the quote must be in that source's text); a fact takes its source's status (connected only on the same address);
+// a promise only from the presenter's own emails or notes; a reading needs two connected facts; the role only from a connected source.
+// Then merged: no duplicates, rejected stays rejected, the presenter's notes are never touched.
+const g = $('Gather the mentions').first().json;
+let d = {};
+try { d = JSON.parse(replyText($json) || '{}'); } catch (e) { d = {}; }
+const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const byId = Object.fromEntries(g.sources.map(s => [s.id, s]));
+const old = g.twin.facts;
+let n = maxId(old, 'f');
+const now = new Date().toISOString();
+const sameText = new Map(old.map(f => [norm(f.text), f.id]));
+const sameQuote = new Set(old.map(f => f.source_id + '|' + norm(f.quote)));
+const fresh = [];
+const ids = {};
+(d.facts || []).forEach((f, i) => {
+  const src = byId[f.source_id];
+  const from = g.texts[f.source_id];
+  if (!src || !from || src.status === 'rejected' || !KINDS.includes(f.kind) || !f.text) return;
+  const q = norm(f.quote);
+  if (q.split(' ').length < 4 || !norm(from.text + ' ' + (from.subject || '')).includes(q)) return;
+  if (f.kind === 'promised' && !(from.kind.startsWith('email from the presenter') || src.type === 'manual')) return;
+  const dup = sameText.get(norm(f.text));
+  if (dup || sameQuote.has(src.id + '|' + q)) { if (dup) ids['n' + i] = dup; return; }
+  const fact = { id: 'f' + (++n), kind: f.kind, text: String(f.text).slice(0, 120), source_id: src.id, quote: String(f.quote).slice(0, 300), status: src.status, added: now };
+  sameText.set(norm(fact.text), fact.id);
+  sameQuote.add(src.id + '|' + q);
+  fresh.push(fact);
+  ids['n' + i] = fact.id;
+});
+const facts = old.concat(fresh);
+const connected = new Set(facts.filter(f => f.status === 'connected').map(f => f.id));
+const held = r => ({ text: String(r.text || '').slice(0, 80), evidence: Array.from(new Set((r.evidence || []).map(e => ids[e] || e))).filter(id => connected.has(id)) });
+let readings = (d.readings || []).map(held).filter(r => r.text && r.evidence.length >= 2).slice(0, 3);
+// Readings are read afresh each build; with none new, last time's stay while their evidence holds
+if (!readings.length) readings = g.twin.readings.map(held).filter(r => r.text && r.evidence.length >= 2);
+readings = readings.map((r, i) => ({ id: 'r' + (i + 1), ...r }));
+const roleSrc = d.role && d.role.text && byId[d.role.source_id];
+const role = roleSrc && roleSrc.status === 'connected' && g.texts[roleSrc.id] ? { text: String(d.role.text).slice(0, 60), source_id: roleSrc.id } : g.twin.role;
+const twin = { ...g.twin, name: g.name, company: g.company, role, sources: g.sources, facts, readings, meetings: g.meetings, updated: now };
+const toCheck = g.sources.filter(s => s.status === 'suggested').length;
+const text = (fresh.length ? 'Pulled ' + fresh.length + ' new fact' + (fresh.length === 1 ? '' : 's') + ', each with its quote'
+                          : g.readable ? 'Nothing new in the sources' : 'Nothing to read yet') +
+             (toCheck ? '; ' + toCheck + ' source' + (toCheck === 1 ? '' : 's') + ' to check' : '') + (readings.length ? '; ' + readings.length + " reading" + (readings.length === 1 ? '' : 's') + ' with evidence' : '');
+const say = { step: 'extract', text, at: Date.now(), adds: { sources: [], facts: fresh, readings } };
+// The build, saved for Replay: each step with when it landed and the ids it added
+const start = $('Who they are').first().json.start;
+const steps = [$('Who they are').first().json.say, $('Read the emails').first().json.say, $('Find their meetings').first().json.say, g.say, say];
+twin.build_log = steps.map(s => ({ step: s.step, text: s.text, t: Math.max(0, s.at - start),
+  adds: { sources: (s.adds.sources || []).map(x => x.id), facts: (s.adds.facts || []).map(x => x.id), readings: (s.adds.readings || []).map(x => x.id),
+          meetings: (s.adds.meetings || []).map(x => x.id) } }));
+return [{ json: { twin, say, row: { ...twinToRow(twin), execution_id: String($execution.id), workflow_id: String($workflow.id) } } }];""",
+                   [{"twin": {}, "say": {}, "row": {"email": "rajiv.menon@kaverifreight.in"}}])
+    c += twin_chunk("saidRules", "Report: pulled")
+    c += people_upsert("twinSave", "Save the twin")
+    c += make_node("twinReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the twin", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify({ twin: $('Hold to the rules').first().json.twin }) }}"), "options": {},
+    }, [{}])
+    c += ("const about = sticky('## DryRun twin\\nBuilds the twin of one real person (POST /webhook/dryrun/twin, docs/CONTRACT.md 0.27), streamed step by step "
+          "to the twin page: your emails with their address (connected), the meetings they were invited to, their name elsewhere (suggestions only), "
+          "then facts with quotes. Nothing from a rehearsal is ever read. A step after the model drops any fact whose quote is not in its source.', [twinTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-twin', 'DryRun twin')
+  .add(about)
+  .add(twinTrigger)
+  .to(twinPeople)
+  .to(twinWho)
+  .to(saidWho)
+  .to(twinEmails)
+  .to(twinReadEmails)
+  .to(saidEmails)
+  .to(twinMeetingRows)
+  .to(twinMeetings)
+  .to(saidMeetings)
+  .to(twinMentionMail)
+  .to(twinNews)
+  .to(twinPlaces)
+  .to(twinPages)
+  .to(twinMentions)
+  .to(saidMentions)
+  .to(twinAnything
+    .onTrue(twinExtract.to(twinRules))
+    .onFalse(twinRules))
+  .add(twinExtract.onError(saidTwinFallback))
+  .add(saidTwinFallback)
+  .to(twinExtractGroq)
+  .to(twinRules)
+  .add(twinRules)
+  .to(saidRules)
+  .to(twinSave)
+  .to(twinReply)
+  .group('Who', [twinPeople, twinWho, saidWho], { description: 'Opens their row in DryRun people, or starts one' })
+  .group('Connected', [twinEmails, twinReadEmails, saidEmails, twinMeetingRows, twinMeetings, saidMeetings], { description: 'Sure: your emails with their address, the meetings they were invited to' })
+  .group('Suggestions', [twinMentionMail, twinNews, twinPlaces, twinPages, twinMentions, saidMentions], { description: 'Found by name only: you confirm or reject each' })
+  .group('Facts', [twinAnything, twinExtract, saidTwinFallback, twinExtractGroq, twinRules, saidRules, twinSave, twinReply], { description: 'Facts with quotes, held to the rules, merged and saved' });
+"""
+    return c
+
+
+TWIN_UPDATE_REQUEST = {"body": {"email": "rajiv.menon@kaverifreight.in", "changes": [{"op": "confirm", "source_id": "s5"}]}}
+
+
+def twin_update():
+    c = IMPORTS
+    c += make_node("updTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "Changes to a twin (laptop)", {
+        "httpMethod": "POST", "path": "dryrun/twin/update", "responseMode": "responseNode", "options": {},
+    }, [TWIN_UPDATE_REQUEST])
+    c += read_people("updPeople", "Read the people table")
+    c += code_node("updApply", "Apply the changes", TWIN_ROW_JS + r"""
+// The presenter's batch of changes from the twin page (docs/CONTRACT.md, POST /twin/update), in order. Confirming a suggestion connects
+// it and its facts; rejecting it rejects them and is remembered, so the same source is never suggested again.
+const req = $('Changes to a twin (laptop)').first().json.body || {};
+const email = lower(req.email);
+const changes = Array.isArray(req.changes) ? req.changes : [];
+const row = findRow($input.all().map(i => i.json), email);
+if (!row) return [{ json: { action: 'none', reply: { twin: null, error: 'DryRun has no twin of ' + email } } }];
+if (changes.some(x => x.op === 'forget')) return [{ json: { action: 'forget', email: lower(row.email), reply: { forgotten: true } } }];
+const t = rowToTwin(row);
+let sN = maxId(t.sources, 's');
+let fN = maxId(t.facts, 'f');
+const now = new Date().toISOString();
+for (const x of changes) {
+  if (x.op === 'confirm' || x.op === 'reject') {
+    const s = t.sources.find(y => y.id === x.source_id);
+    if (!s || s.type === 'manual') continue;
+    s.status = x.op === 'confirm' ? 'connected' : 'rejected';
+    if (x.op === 'confirm') s.why = 'You confirmed it: ' + (s.why || '');
+    t.facts.forEach(f => { if (f.source_id === s.id) f.status = s.status; });
+  } else if (x.op === 'note') {
+    const text = String(x.text || '').trim().slice(0, 8000);
+    if (!text) continue;
+    const s = { id: 's' + (++sN), type: 'manual', title: text.length < 300 ? 'Your note' : 'Text you pasted', date: now.slice(0, 10), status: 'connected', why: 'You added this', key: 'manual:' + now + ':' + sN, text };
+    t.sources.push(s);
+    // A short note is a fact as it stands; longer text is read for facts, with quotes, on the next build
+    if (text.length < 300) t.facts.push({ id: 'f' + (++fN), kind: KINDS.includes(x.kind) ? x.kind : 'context', text: text.slice(0, 120), source_id: s.id, quote: text, status: 'connected', added: now });
+  } else if (x.op === 'alias') {
+    const a = lower(x.email);
+    if (a.includes('@') && a !== t.email && !t.aliases.includes(a)) t.aliases.push(a);
+  } else if (x.op === 'delete') {
+    t.facts = t.facts.filter(f => f.id !== x.fact_id);
+  }
+}
+// What no longer holds goes: readings need two connected facts, the role a connected source
+const ok = new Set(t.facts.filter(f => f.status === 'connected').map(f => f.id));
+t.readings = t.readings.map(r => ({ ...r, evidence: r.evidence.filter(id => ok.has(id)) })).filter(r => r.evidence.length >= 2);
+if (t.role && !t.sources.some(s => s.id === t.role.source_id && s.status === 'connected')) t.role = null;
+t.updated = now;
+return [{ json: { action: 'save', row: { ...twinToRow(t), execution_id: String($execution.id), workflow_id: String($workflow.id) }, reply: { twin: t } } }];""",
+                   [{"action": "save", "row": {"email": "rajiv.menon@kaverifreight.in"}, "reply": {}}])
+    for var, name, action in [("updForget", "Forget them?", "forget"), ("updSave", "Save it?", "save")]:
+        c += make_node(var, "ifElse", "n8n-nodes-base.if", 2.3, name, {
+            "conditions": {
+                "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+                "conditions": [{"leftValue": Expr("{{ $json.action }}"), "rightValue": action, "operator": {"type": "string", "operation": "equals"}}],
+                "combinator": "and",
+            }, "options": {},
+        }, [{"action": action}])
+    c += make_node("updDelete", "node", "n8n-nodes-base.dataTable", 1.1, "Delete their row", {
+        "resource": "row", "operation": "deleteRows", "dataTableId": PEOPLE_TABLE, "matchType": "allConditions",
+        "filters": {"conditions": [{"keyName": "email", "condition": "eq", "keyValue": Expr("{{ $json.email }}")}]},
+    }, [{"id": 1}], extra={"alwaysOutputData": True})
+    c += people_upsert("updWrite", "Save the twin")
+    c += make_node("updReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the twin", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('Apply the changes').first().json.reply) }}"), "options": {},
+    }, [{}])
+    c += ("const about = sticky('## DryRun twin update\\nThe presenter\\'s changes to a twin, sent from the twin page as one batch (POST /webhook/dryrun/twin/update, "
+          "docs/CONTRACT.md 0.27): confirm or reject a suggestion, add a note, link another address, delete a fact, or forget the person.', [updTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-twin-update', 'DryRun twin update')
+  .add(about)
+  .add(updTrigger)
+  .to(updPeople)
+  .to(updApply)
+  .to(updForget
+    .onTrue(updDelete.to(updReply))
+    .onFalse(updSave
+      .onTrue(updWrite.to(updReply))
+      .onFalse(updReply)))
+  .group('Changes', [updPeople, updApply], { description: 'Applies the batch of confirmations, rejections, notes, links and deletions' })
+  .group('Save', [updForget, updSave, updDelete, updWrite, updReply], { description: 'Saves the twin, or forgets the person' });
+"""
+    return c
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-review.ts", deck_review())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-review.ts", deck_review()), ("twin.ts", twin()), ("twin-update.ts", twin_update())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")

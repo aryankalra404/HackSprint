@@ -396,3 +396,38 @@ DECK_REVIEW_SCHEMA = {"type": "object", "properties": {
         "required": ["slide_index", "claim", "pushback", "source", "who", "fix"]}},
     "summary": {"type": "string"}},
     "required": ["items", "summary"]}
+
+# DryRun twin (/twin, contract 0.27): a factual file on one real person, from real sources only, every fact quoted
+TWIN_PROMPT = """You keep a factual file on one real person the presenter works with: {person}.
+Below are the only sources you may use, each with an id. Emails are from the presenter's own inbox; a source marked SUGGESTION was
+found by their name only and may be someone else (the presenter will check it). Nothing here comes from a rehearsal.
+
+{sources}
+
+Already in the file (do not repeat these): {known}
+
+facts: what the sources say about THIS person, each:
+- kind: "raised" (something they asked for, objected to, worried about or raised), "promised" (something the presenter promised
+  them, only from the presenter's own emails or notes), "decision" (something they decided or agreed to), "preference" (how they
+  like to work or what they care about, as they put it), "role" (their job title or responsibility, as a source states it),
+  "context" (other professional facts: their team, region, projects, who they report to);
+- text: one short line in plain words, at most 12 words, e.g. "Asked for a pilot proposal on one lane";
+- source_id: the id of the source it comes from;
+- quote: copied word for word from that source, 5 to 30 words, that shows the fact. If you cannot quote it, leave the fact out.
+Professional only: nothing about their personal life, health, family, religion or politics. Do not guess; a fact must be stated.
+readings: at most 3 interpretations of how they behave in a meeting (e.g. "Pushes on cost", "Wants numbers on one page"), each with
+evidence: the ids of at least two facts that support it, existing ones by their id (f1, f2...) or your new facts as n0, n1... in
+the order you list them. No reading without two pieces of evidence.
+role: their current job title if a non-suggestion source states it, with its source_id; otherwise empty strings.
+Answer in JSON."""
+
+TWIN_SCHEMA = {"type": "object", "properties": {
+    "facts": {"type": "array", "items": {"type": "object", "properties": {
+        "kind": {"type": "string", "enum": ["raised", "promised", "decision", "preference", "role", "context"]},
+        "text": {"type": "string"}, "source_id": {"type": "string"}, "quote": {"type": "string"}},
+        "required": ["kind", "text", "source_id", "quote"]}},
+    "readings": {"type": "array", "items": {"type": "object", "properties": {
+        "text": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "string"}}},
+        "required": ["text", "evidence"]}},
+    "role": {"type": "object", "properties": {"text": {"type": "string"}, "source_id": {"type": "string"}}, "required": ["text", "source_id"]}},
+    "required": ["facts", "readings", "role"]}
