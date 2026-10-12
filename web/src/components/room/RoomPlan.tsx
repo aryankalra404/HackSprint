@@ -53,7 +53,8 @@ export function RoomPlan({ occupied, lines, children }: Props) {
     <div className="relative size-full min-h-[420px]" style={{ containerType: "size" }}>
       <div
         className="absolute inset-0 m-auto"
-        style={{ width: `min(100cqw, calc(100cqh * ${W / H}))`, aspectRatio: `${W} / ${H}`, containerType: "inline-size" }}
+        // Chrome reads 100cqh as 0 when the height comes from min-height (a short window), so it never goes below that
+        style={{ width: `min(100cqw, calc(max(100cqh, 420px) * ${W / H}))`, aspectRatio: `${W} / ${H}`, containerType: "inline-size" }}
       >
         <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 size-full" aria-hidden="true">
           {/* Slide screen on the wall behind the presenter */}
