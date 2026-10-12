@@ -1797,7 +1797,13 @@ const cleanMail = t => { const out = []; for (const l of String(t || '').split('
   return out.join('\n').split('\n\n\n').join('\n\n').trim().slice(0, 1800); };
 const mailDate = m => { const d = m.date ? new Date(m.date) : new Date(Number(m.internalDate) || Date.now()); return isNaN(d) ? '' : d.toISOString().slice(0, 10); };
 const gmailUrl = id => 'https://mail.google.com/mail/u/0/#all/' + id;
+// DryRun's own emails (the brief n8n wrote, the rehearsal report) are never a source: the brief is n8n's writing and the report is
+// about a practice run (twin rule 1)
+const ownMail = m => { const s = String(m.subject || m.Subject || ''); return (s.startsWith('Your brief for ') && s.endsWith(' is ready')) || s.startsWith('Your rehearsal for '); };
 """
+
+# Gmail search terms that leave out DryRun's own emails (brief, rehearsal report): never a source for a twin
+OWN_MAIL_Q = '-subject:(\\"Your brief for\\") -subject:(\\"Your rehearsal for\\")'
 
 PUBLIC_DOMAINS = ['gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com', 'rediffmail.com']
 
@@ -1861,7 +1867,7 @@ return [{ json: { twin, addresses, domain, start: Date.now(),
     # Rule 3: an email from or to one of their addresses is them, for sure
     c += make_node("twinEmails", "node", "n8n-nodes-base.gmail", 2.2, "Your emails with them", {
         "resource": "message", "operation": "getAll", "returnAll": False, "limit": 20, "simple": False,
-        "filters": {"readStatus": "both", "q": Expr("{{ '(' + $('Who they are').first().json.addresses.map(a => 'from:' + a + ' OR to:' + a).join(' OR ') + ')' }}")},
+        "filters": {"readStatus": "both", "q": Expr("{{ '(' + $('Who they are').first().json.addresses.map(a => 'from:' + a + ' OR to:' + a).join(' OR ') + ') " + OWN_MAIL_Q + "' }}")},
         "options": {},
     }, [{"id": "m1", "threadId": "t1", "subject": "Pilot proposal", "date": "2026-10-03T10:00:00.000Z", "from": {"text": "Rajiv Menon <rajiv.menon@kaverifreight.in>"}, "text": "Could you send a pilot proposal?"}],
         credentials={"gmailOAuth2": "Gmail"}, extra={"alwaysOutputData": True, "executeOnce": True, "onError": "continueRegularOutput"})
@@ -1876,7 +1882,7 @@ const texts = {};
 const found = [];
 for (const m of msgs) {
   const key = 'gmail:' + m.id;
-  if (rejected.has(key)) continue;
+  if (rejected.has(key) || ownMail(m)) continue;
   const from = addrText(m.from || m.From);
   const theirs = g.addresses.some(a => from.toLowerCase().includes(a));
   let src = sources.find(s => s.key === key);
@@ -1921,7 +1927,7 @@ return [{ json: { ...g, name, company, meetings, say: { step: 'meetings', text, 
         "resource": "message", "operation": "getAll", "returnAll": False, "limit": 8, "simple": False,
         "filters": {"readStatus": "both", "q": Expr("{{ (() => { const j = $('Find their meetings').first().json; const n = String(j.name || '').split('\"').join('').trim(); "
                                                     "if (n.split(' ').length < 2) return 'from:nobody@invalid.invalid'; "
-                                                    "return '\"' + n + '\" ' + j.addresses.map(a => '-from:' + a + ' -to:' + a).join(' ') + ' newer_than:365d'; })() }}")},
+                                                    "return '\"' + n + '\" ' + j.addresses.map(a => '-from:' + a + ' -to:' + a).join(' ') + ' newer_than:365d " + OWN_MAIL_Q + "'; })() }}")},
         "options": {},
     }, [{"id": "m9", "subject": "Kaveri intro", "from": {"text": "Priya Nair <priya.nair@kaverifreight.in>"}, "text": "Loop in Rajiv Menon from finance"}],
         credentials={"gmailOAuth2": "Gmail"}, extra={"alwaysOutputData": True, "executeOnce": True, "onError": "continueRegularOutput"})
@@ -1959,7 +1965,7 @@ const add = (src, text) => {
   texts[s.id] = text;
 };
 if (full.includes(' ')) {
-  for (const m of $('Their name in other emails').all().map(i => i.json).filter(m => m.id)) {
+  for (const m of $('Their name in other emails').all().map(i => i.json).filter(m => m.id && !ownMail(m))) {
     const body = cleanMail(m.text || m.snippet || '');
     const at = body.toLowerCase().indexOf(full);
     if (at < 0) continue;
