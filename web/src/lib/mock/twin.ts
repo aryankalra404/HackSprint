@@ -15,6 +15,17 @@ const SOURCES: TwinSource[] = [
   { id: "s7", type: "web", title: "kaverifreight.in/team", date: "2026-10-12", url: "https://kaverifreight.in/team", status: "suggested", why: "kaverifreight.in/team lists a Rajiv Menon", key: "sample:7" },
   { id: "s8", type: "news", title: "Freight Weekly: Rajiv Menon joins Deccan Cargo as CFO", date: "2025-06-02", status: "suggested", why: "A news story names a Rajiv Menon", key: "sample:8" },
   { id: "s9", type: "manual", title: "Your note", date: "2026-09-22", status: "connected", why: "You added this", key: "sample:9", text: "Prefers the numbers on one page, no appendix" },
+  // Your voice note after the intro call (DryRun after the meeting, 0.28): keyed like n8n keys it
+  {
+    id: "s10",
+    type: "meeting_note",
+    title: "Your notes from Intro call",
+    date: "2026-09-22",
+    status: "connected",
+    why: "Your own account of a real meeting with them",
+    key: "after:intro",
+    text: "Rajiv asked how long the payback takes on a fleet their size, whether drivers need a new app, and who else in freight uses us. He also asked what happens to Kaveri's data if the pilot ends. I promised to send the numbers before the next call.",
+  },
 ];
 
 const fact = (id: string, kind: TwinFact["kind"], text: string, source_id: string, quote: string, status: TwinFact["status"] = "connected"): TwinFact => ({
@@ -42,17 +53,22 @@ const FACTS: TwinFact[] = [
   fact("f12", "context", "Finance owns vendor decisions above the pilot", "s6", "Rajiv runs finance and owns every vendor decision above pilot size", "suggested"),
   fact("f13", "role", "Listed as Chief Financial Officer", "s7", "Rajiv Menon Chief Financial Officer", "suggested"),
   fact("f14", "role", "CFO at Deccan Cargo in 2025", "s8", "Rajiv Menon joins Deccan Cargo as CFO", "suggested"),
+  fact("f15", "raised", "Asked how long payback takes on a fleet their size", "s10", "asked how long the payback takes on a fleet their size"),
+  fact("f16", "raised", "Asked whether drivers need a new app", "s10", "whether drivers need a new app"),
+  fact("f17", "raised", "Asked who else in freight uses RouteIQ", "s10", "who else in freight uses us"),
+  fact("f18", "raised", "Asked what happens to Kaveri's data if the pilot ends", "s10", "what happens to Kaveri's data if the pilot ends"),
+  fact("f19", "promised", "The numbers before the next call", "s10", "I promised to send the numbers before the next call"),
 ];
 
 // The build as n8n streams it: what each step added, and when (ms from the start)
 const LOG: Twin["build_log"] = [
   { step: "load", text: "Started a twin of rajiv.menon@kaverifreight.in (Rajiv Menon)", t: 0, adds: { sources: [], facts: [], readings: [], meetings: [] } },
   { step: "emails", text: "Found 5 emails with rajiv.menon@kaverifreight.in", t: 1900, adds: { sources: ["s1", "s2", "s3", "s4", "s5", "s9"], facts: [], readings: [], meetings: [] } },
-  { step: "meetings", text: "Invited to 2 of your meetings: Intro call (2026-09-22), RouteIQ pitch (sample)", t: 3100, adds: { sources: [], facts: [], readings: [], meetings: ["intro", SAMPLE_ID] } },
+  { step: "meetings", text: "Invited to 2 of your meetings: Intro call (2026-09-22), with your notes from it, and RouteIQ pitch (sample)", t: 3100, adds: { sources: ["s10"], facts: [], readings: [], meetings: ["intro", SAMPLE_ID] } },
   { step: "mentions", text: "3 possible mentions by name: Priya Nair mentions a Rajiv Menon; kaverifreight.in/team lists a Rajiv Menon. Same person?", t: 5200, adds: { sources: ["s6", "s7", "s8"], facts: [], readings: [], meetings: [] } },
   {
     step: "extract",
-    text: "Pulled 14 new facts, each with its quote; 3 sources to check; 2 readings with evidence",
+    text: "Pulled 19 new facts, each with its quote; 3 sources to check; 2 readings with evidence",
     t: 9300,
     adds: { sources: [], facts: FACTS.map((f) => f.id), readings: ["r1", "r2"], meetings: [] },
   },
@@ -68,14 +84,15 @@ export function sampleTwin(): Twin {
     sources: SOURCES.map((s) => ({ ...s })),
     facts: FACTS.map((f) => ({ ...f })),
     readings: [
-      { id: "r1", text: "Pushes on cost and payback", evidence: ["f3", "f4", "f8"] },
+      { id: "r1", text: "Pushes on cost and payback", evidence: ["f3", "f4", "f8", "f15"] },
       { id: "r2", text: "Reads the numbers before he meets", evidence: ["f5", "f11"] },
     ],
     meetings: [
       { id: "intro", title: "Intro call", date: "2026-09-22" },
       { id: SAMPLE_ID, title: sampleMeeting.title, date: sampleMeeting.start.slice(0, 10) },
     ],
-    predictions: [],
+    // The rehearsal before the intro call asked 3 of the 4 things he raised there (sample)
+    predictions: [{ meeting_id: "intro", date: "2026-09-22", asked: 4, predicted: 3, matched: ["f15", "f16", "f18"] }],
     build_log: LOG,
     updated: "2026-10-12T09:00:00.000Z",
     sample: true,

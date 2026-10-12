@@ -1,15 +1,16 @@
 "use client";
 
-import type { TwinMeeting, TwinSource } from "@/lib/contract";
+import type { TwinMeeting, TwinPrediction, TwinSource } from "@/lib/contract";
 import { SOURCE_GLYPH, shortDate } from "@/lib/twinView";
 
-// A date ruler under the tree: a tick for every source, a diamond for every real meeting. Dragging the playhead back shows what the twin
+// A date ruler under the tree: a tick for every source, a diamond for every real meeting, with how much of it the rehearsal predicted. Dragging the playhead back shows what the twin
 // knew on that day (only facts whose source is dated on or before it), so the claim that it gets sharper is shown, not told.
 const DAY = 86_400_000;
 const toDay = (iso: string) => Math.floor(Date.parse(`${iso.slice(0, 10)}T12:00:00Z`) / DAY);
 const fromDay = (d: number) => new Date(d * DAY + DAY / 2).toISOString().slice(0, 10);
 
-export function TwinTimeline({ sources, meetings, cutoff, onCutoff }: { sources: TwinSource[]; meetings: TwinMeeting[]; cutoff: string | null; onCutoff: (d: string | null) => void }) {
+export function TwinTimeline(p: { sources: TwinSource[]; meetings: TwinMeeting[]; predictions: TwinPrediction[]; cutoff: string | null; onCutoff: (d: string | null) => void }) {
+  const { sources, meetings, cutoff, onCutoff } = p;
   const dated = sources.filter((s) => s.date && s.status !== "rejected");
   const days = [...dated.map((s) => toDay(s.date)), ...meetings.filter((m) => m.date).map((m) => toDay(m.date))].filter(Number.isFinite);
   const today = toDay(new Date().toISOString());
@@ -42,12 +43,23 @@ export function TwinTimeline({ sources, meetings, cutoff, onCutoff }: { sources:
             {s.type === "email" ? "●" : SOURCE_GLYPH[s.type]}
           </span>
         ))}
-        {meetings.map((m) => (
-          <span key={m.id} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: at(toDay(m.date)) }}>
-            <span className="max-w-32 truncate text-[11px] text-ink-2">{m.title}</span>
-            <span className={`text-sm leading-none ${past(toDay(m.date)) ? "text-ink" : "text-axis"}`} aria-hidden="true">◆</span>
-          </span>
-        ))}
+        {meetings.map((m) => {
+          const hit = p.predictions.find((x) => x.meeting_id === m.id);
+          return (
+            <span
+              key={m.id}
+              title={hit ? `${m.title}: your rehearsal predicted ${hit.predicted} of the ${hit.asked} things raised` : m.title}
+              className="absolute top-0 flex -translate-x-1/2 flex-col items-center"
+              style={{ left: at(toDay(m.date)) }}
+            >
+              <span className="max-w-40 truncate text-[11px] text-ink-2">
+                {hit && <span className="font-medium text-ink tabular-nums">{hit.predicted}/{hit.asked} predicted, </span>}
+                {m.title}
+              </span>
+              <span className={`text-sm leading-none ${past(toDay(m.date)) ? "text-ink" : "text-axis"}`} aria-hidden="true">◆</span>
+            </span>
+          );
+        })}
       </div>
       <label className="flex items-center gap-3 text-xs text-ink-2">
         <span className="shrink-0">What the twin knew on</span>

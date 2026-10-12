@@ -1,4 +1,4 @@
-import type { Twin, TwinChange, TwinFact, TwinFactKind, TwinLogStep, TwinSource, TwinSummary } from "./contract";
+import type { Twin, TwinChange, TwinFact, TwinFactKind, TwinLogStep, TwinMeeting, TwinSource, TwinSummary } from "./contract";
 
 // How the twin page reads a twin (contract 0.27). Safe on the client and the server. Nothing here decides what a twin knows: n8n
 // does (DryRun twin, DryRun twin update). The page only draws it.
@@ -71,6 +71,30 @@ export function fullness(t: Twin): { label: "Nothing yet" | "Thin" | "Growing" |
   if (s.meetings === 0 && s.facts < 6) return { label: "Thin", text: `${parts.join(", ")}. In rehearsal this seat still leans on their role.`, fill };
   if (s.meetings < 2 && s.facts < 15) return { label: "Growing", text: `${parts.join(", ")}.`, fill };
   return { label: "Solid", text: `${parts.join(", ")}.`, fill };
+}
+
+// The hit rate (0.28): per real meeting, how many of the things they raised the last rehearsal before it had asked. n8n counts it (DryRun
+// after the meeting); this only lays it out: the facts it matched, and the rest of what they raised in that meeting.
+export interface MeetingHits {
+  meeting: TwinMeeting;
+  asked: number;
+  predicted: number;
+  matched: TwinFact[];
+  missed: TwinFact[];
+}
+
+export function hitRate(t: Pick<Twin, "predictions" | "meetings" | "facts" | "sources">): { asked: number; predicted: number; meetings: MeetingHits[] } {
+  const meetings = t.predictions
+    .map((p) => {
+      const meeting = t.meetings.find((m) => m.id === p.meeting_id) ?? { id: p.meeting_id, title: "A meeting", date: p.date ?? "" };
+      const matched = (p.matched ?? []).map((id) => t.facts.find((f) => f.id === id)).filter((f): f is TwinFact => !!f);
+      // What they raised there that the rehearsal didn't ask: raised facts from that meeting's notes
+      const note = t.sources.find((s) => s.type === "meeting_note" && s.key === `after:${p.meeting_id}`);
+      const missed = note ? t.facts.filter((f) => f.source_id === note.id && f.kind === "raised" && !matched.includes(f)).slice(0, Math.max(0, p.asked - matched.length)) : [];
+      return { meeting, asked: p.asked, predicted: p.predicted, matched, missed };
+    })
+    .sort((a, b) => (a.meeting.date < b.meeting.date ? 1 : -1));
+  return { asked: meetings.reduce((n, m) => n + m.asked, 0), predicted: meetings.reduce((n, m) => n + m.predicted, 0), meetings };
 }
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

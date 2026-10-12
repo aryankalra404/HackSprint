@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinFactKind, TwinLogStep, TwinReading, TwinSource } from "@/lib/contract";
+import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinFactKind, TwinLogStep, TwinMeeting, TwinReading, TwinSource } from "@/lib/contract";
 import type { TwinRun } from "@/lib/twins";
 import { colorOf, portraitOf } from "@/lib/personas";
-import { KIND_LABEL, applyChanges, fullness, overdue, playableSteps, plural, shortDate, sourceLabel, summarize } from "@/lib/twinView";
+import { KIND_LABEL, type MeetingHits, applyChanges, fullness, hitRate, overdue, playableSteps, plural, shortDate, sourceLabel, summarize } from "@/lib/twinView";
 import { StatusIcon } from "../ui";
 import { Halftone } from "./Halftone";
 import { type Leaf, TwinTree, toLeaves } from "./TwinTree";
@@ -231,7 +231,10 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
             {building && <span className="animate-pulse">…</span>}
           </>
         ) : (
-          "Not built yet."
+          // A twin started from your notes after a real meeting (0.28) has facts but no build yet
+          shown.meetings.length && shown.sources.some((x) => x.type === "meeting_note")
+            ? "Started from your notes after a real meeting. Build it to add your emails with them."
+            : "Not built yet."
         )}
         {run?.n8n_url && (
           <a href={run.n8n_url} target="_blank" rel="noreferrer" className="ml-3 underline decoration-line hover:text-ink">
@@ -309,6 +312,7 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
           facts={view$.facts}
           readings={view$.readings}
           sources={view$.sources}
+          meetings={view$.meetings}
           footnote={footnote}
           hover={hover}
           onHover={setHover}
@@ -329,7 +333,7 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
       </div>
 
       <section className="flex flex-col gap-4 border-t border-line pt-4 print:hidden">
-        <TwinTimeline sources={view$.sources} meetings={view$.meetings} cutoff={cutoff} onCutoff={setCutoff} />
+        <TwinTimeline sources={view$.sources} meetings={view$.meetings} predictions={shown.predictions} cutoff={cutoff} onCutoff={setCutoff} />
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-ink-2">Show:</span>
           {TYPES.map((t) => (
@@ -381,6 +385,7 @@ function File(p: {
   facts: TwinFact[];
   readings: TwinReading[];
   sources: TwinSource[];
+  meetings: TwinMeeting[];
   footnote: Record<string, number>;
   hover: string | null;
   onHover: (id: string | null) => void;
@@ -399,6 +404,8 @@ function File(p: {
   const cited = sources.filter((s) => footnote[s.id] && s.status !== "rejected").sort((a, b) => footnote[a.id] - footnote[b.id]);
   const factById = new Map(facts.map((f) => [f.id, f]));
   const roleSource = twin.role ? sources.find((s) => s.id === twin.role!.source_id) : undefined;
+  // How well rehearsals predicted them (0.28), for the meetings on the page now (the timeline can rewind past them)
+  const hits = hitRate({ ...twin, meetings: p.meetings, predictions: twin.predictions.filter((x) => p.meetings.some((m) => m.id === x.meeting_id)) });
 
   const Fact = ({ f }: { f: TwinFact }) => (
     <li
@@ -441,7 +448,11 @@ function File(p: {
         <Num n={summary.meetings} label={summary.meetings === 1 ? "meeting" : "meetings"} />
         <Num n={summary.facts} label="facts" />
         <Num n={summary.to_check} label="to check" />
-        <Num n={null} label="predicted" note="After a real meeting" />
+        <Num
+          n={hits.meetings.length ? `${hits.predicted}/${hits.asked}` : null}
+          label="predicted"
+          note={hits.meetings.length > 1 ? `over ${hits.meetings.length} meetings` : hits.meetings.length ? hits.meetings[0].meeting.title : "After a real meeting"}
+        />
       </dl>
 
       <p className="text-sm">
@@ -471,6 +482,16 @@ function File(p: {
       <Section title="You promised">
         {promised.length ? <ul className="flex flex-col gap-1.5 text-sm">{promised.map((f) => <Fact key={f.id} f={f} />)}</ul> : <Empty>No promises found in your emails or notes.</Empty>}
       </Section>
+
+      {hits.meetings.length > 0 && (
+        <Section title="What rehearsal predicted" note="After each real meeting, n8n compares what they raised with what their practice seat asked in your last rehearsal. Only the count is kept, never the practice lines.">
+          <ul className="flex flex-col gap-4 text-sm">
+            {hits.meetings.map((m) => (
+              <Hits key={m.meeting.id} hits={m} first={twin.name.split(" ")[0] || "they"} link={!twin.sample} footnote={footnote} />
+            ))}
+          </ul>
+        </Section>
+      )}
 
       {toCheck.length > 0 && (
         <Section title="To check" note="Found by name only. n8n connects them only if you say it's the same person.">
@@ -523,6 +544,50 @@ function File(p: {
         </Section>
       )}
     </article>
+  );
+}
+
+// One real meeting's hit rate: what the rehearsal asked of what they raised, and what it missed
+function Hits({ hits: h, first, link, footnote }: { hits: MeetingHits; first: string; link: boolean; footnote: Record<string, number> }) {
+  return (
+    <li className="flex flex-col gap-1.5">
+      <span className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-display text-xl leading-none tabular-nums">
+          {h.predicted}/{h.asked}
+        </span>
+        {link ? (
+          <Link href={`/m/${encodeURIComponent(h.meeting.id)}`} className="font-medium hover:underline">{h.meeting.title}</Link>
+        ) : (
+          <span className="font-medium">{h.meeting.title}</span>
+        )}
+        <span className="text-xs text-ink-2">{shortDate(h.meeting.date)}</span>
+      </span>
+      <span className="text-ink-2">
+        Your rehearsal asked {h.predicted} of the {h.asked} {h.asked === 1 ? "thing" : "things"} {first} raised.
+      </span>
+      {(h.matched.length > 0 || h.missed.length > 0) && (
+        <ul className="flex flex-col gap-1">
+          {h.matched.map((f) => (
+            <li key={f.id} className="flex gap-2">
+              <span className="w-24 shrink-0 text-xs text-ink-2">✓ Predicted</span>
+              <span>
+                {f.text}
+                {footnote[f.source_id] && <sup className="ml-0.5 text-[10px] text-ink-2">{footnote[f.source_id]}</sup>}
+              </span>
+            </li>
+          ))}
+          {h.missed.map((f) => (
+            <li key={f.id} className="flex gap-2">
+              <span className="w-24 shrink-0 text-xs text-ink-2">○ Not asked</span>
+              <span>
+                {f.text}
+                {footnote[f.source_id] && <sup className="ml-0.5 text-[10px] text-ink-2">{footnote[f.source_id]}</sup>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
@@ -630,12 +695,12 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   );
 }
 
-function Num({ n, label, note }: { n: number | null; label: string; note?: string }) {
+function Num({ n, label, note }: { n: number | string | null; label: string; note?: string }) {
   return (
-    <div className="flex flex-col">
-      <dd className="font-display text-3xl leading-none">{n ?? "–"}</dd>
+    <div className="flex min-w-0 flex-col">
+      <dd className="font-display text-3xl leading-none tabular-nums">{n ?? "–"}</dd>
       <dt className="mt-1 text-xs text-ink-2">{label}</dt>
-      {note && <span className="text-[10px] text-muted">{note}</span>}
+      {note && <span className="truncate text-[10px] text-muted">{note}</span>}
     </div>
   );
 }
