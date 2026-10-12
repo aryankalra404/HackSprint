@@ -17,12 +17,14 @@ interface Props {
   wrapUp: number | null;
   time: TurnView["time"];
   onGo: (index: number) => void;
+  // During the pitch: end it now and take the questions
+  onTakeQuestions?: () => void;
 }
 
 // What the presenter sees while pitching, like the confidence monitor in VR: the slide, how long they've been on it (n8n's time for it
 // is only a guide), the pitch against its limit if there is one, the next slide, last time's talk track and, when they freeze, the
 // Rescue Agent's cue under the slide.
-export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, time, onGo }: Props) {
+export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, time, onGo, onTakeQuestions }: Props) {
   const planned = bundle.slides[slide];
   const image = deck?.slides[slide];
   const next = slide + 1 < count ? { image: deck?.slides[slide + 1], title: bundle.slides[slide + 1]?.title } : null;
@@ -36,9 +38,16 @@ export function SpeakerView({ bundle, deck, slide, count, live, cue, wrapUp, tim
           {count > 0 ? `Slide ${slide + 1} of ${count}` : "No deck"}
           {planned?.title && <span className="ml-2 font-normal text-ink-2">{planned.title}</span>}
         </h2>
-        <p className="shrink-0 text-xs whitespace-nowrap text-ink-2" aria-live="off">
-          {live ? `${clock(onSlide)} on this slide${target ? `, about ${clock(target)} planned` : ""}` : target ? `About ${clock(target)}` : null}
-        </p>
+        <div className="flex shrink-0 items-center gap-3">
+          <p className="text-xs whitespace-nowrap text-ink-2" aria-live="off">
+            {live ? `${clock(onSlide)} on this slide${target ? `, about ${clock(target)} planned` : ""}` : target ? `About ${clock(target)}` : null}
+          </p>
+          {onTakeQuestions && (
+            <button type="button" onClick={onTakeQuestions} className="rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium hover:border-ink">
+              Done? Take questions
+            </button>
+          )}
+        </div>
       </div>
       {time && <PitchClock time={time} />}
 

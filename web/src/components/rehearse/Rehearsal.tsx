@@ -81,7 +81,18 @@ export function Rehearsal({ room: initialRoom, meetingId, debug }: { room: Room;
           {done ? (
             <DebriefPanel room={room} feed={feed.filter((i) => i.phase === "After")} meetingId={meetingId} onRestart={r.restart} />
           ) : (
-            <SpeakerView bundle={bundle} deck={room.deck} slide={r.slide} count={r.slideCount} live={live} cue={view.cue} wrapUp={view.wrapUp} time={view.time} onGo={r.go} />
+            <SpeakerView
+              bundle={bundle}
+              deck={room.deck}
+              slide={r.slide}
+              count={r.slideCount}
+              live={live}
+              cue={view.cue}
+              wrapUp={view.wrapUp}
+              time={view.time}
+              onGo={r.go}
+              onTakeQuestions={view.active && (view.stage === "opening" || view.stage === "pitch") ? r.takeQuestions : undefined}
+            />
           )}
 
           {thinking && <AgentFeed items={feed} status={live ? `Live: ${stage ? STAGE[stage].toLowerCase() : ""}` : done ? "After the run" : undefined} />}

@@ -319,6 +319,7 @@ export function useRehearsal(initial: Room, debug: boolean) {
     end,
     ending: endingNow,
     restart: () => sendSession("restart"),
+    takeQuestions: () => turns.current?.takeQuestions(),
     // Read every frame by the meters, not through React
     micLevel: () => va.current?.level ?? 0,
     micThreshold: () => va.current?.threshold ?? 0,

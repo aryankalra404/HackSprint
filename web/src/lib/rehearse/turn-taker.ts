@@ -316,6 +316,21 @@ export class TurnTaker {
     this.endPitch(slideNow, false);
   }
 
+  // The presenter says the pitch is over (the speaker view's button), on any slide: without a deck there's no last slide to wrap up on,
+  // and before this a pitch that finished early sat in silence until its time ran out. Whoever was speaking stops; on to the questions.
+  takeQuestions(): void {
+    if (!this.active || (this.stage !== "opening" && this.stage !== "pitch")) return;
+    this.current?.stop?.();
+    this.current = null;
+    this.queue = [];
+    this.caption = null;
+    this.cue = null;
+    this.ears.unmuteAfter(0);
+    this.closeSilence(this.deps.now());
+    this.endPitch(this.deps.slide(), false);
+    this.publish();
+  }
+
   // The pitch is over (wrapped up, or stopped for time): the last slide goes with the pitch end, then the questions
   private endPitch(slideNow: number, timeUp: boolean): void {
     this.wrap = { spoke: false, countdownFrom: null };
