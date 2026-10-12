@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_REVIEW_PROMPT, DECK_REVIEW_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
-                     TURN_SCHEMA, TWIN_PROMPT, TWIN_SCHEMA, WEB_PROMPT)
+                     TURN_SCHEMA, TWIN_PROMPT, TWIN_SCHEMA, WEB_PROMPT, AFTER_PROMPT, AFTER_SCHEMA)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
 # One model for every Gemini step. Free-tier limits are per model (gemini-2.5-flash allows 20 requests a day).
@@ -29,6 +29,9 @@ MIN_NEWS = 3
 # fits their avatar; the lists follow Sarvam's speaker names for this model.
 SARVAM_TTS = "https://api.sarvam.ai/text-to-speech"
 SARVAM_MODEL = "bulbul:v3"
+# Speech to text for the voice note after a real meeting (0.28): clips under 30 s, language detected (Indian English, Hinglish)
+SARVAM_STT = "https://api.sarvam.ai/speech-to-text"
+SARVAM_STT_MODEL = "saaras:v4"
 VOICES = {"female": ["priya", "kavya", "neha", "ritu", "shreya", "simran"], "male": ["rahul", "aditya", "rohan", "amit", "kabir", "varun", "dev"]}
 # Lines that say nothing about the meeting (contract 0.26): voiced once per voice and cached by the laptop, so after a voice's first
 # rehearsal they cost nothing and play at once. Two sets, so two people at the table don't use the same words. n8n still decides
@@ -595,7 +598,9 @@ return [{ json: {
   meeting: { id: String(r.meeting_id), title: r.title, start: r.start, company: r.company, why: r.why, status: r.status, attendees,
              progress: parse(r.progress) || [], started_at: r.started_at || null,
              run: r.execution_id ? { workflow_id: r.workflow_id, execution_id: r.execution_id } : null,
-             practice: done.length ? { sessions: done.length, last: { session_id: done[0].session_id, at: done[0].at, overall: done[0].overall, headline: done[0].headline } } : null },
+             practice: done.length ? { sessions: done.length, last: { session_id: done[0].session_id, at: done[0].at, overall: done[0].overall, headline: done[0].headline } } : null,
+             // What happened in the real meeting (0.28), from the presenter's voice note
+             after: parse(r.after) },
   brief: brief ? { ...brief, since_last_time: since } : null, proposal: parse(r.proposal), sessions,
 } }];""", [{"meeting": {}, "brief": None, "proposal": None, "sessions": []}])
     # Twins (0.27): one, or everyone, from the DryRun people table. The laptop keeps copies, so these are read rarely.
@@ -1854,6 +1859,11 @@ const addresses = [twin.email].concat(twin.aliases.map(lower)).filter(Boolean);
 const PUBLIC = """ + json.dumps(PUBLIC_DOMAINS) + r""";
 const own = twin.email.split('@')[1] || '';
 const domain = lower(req.domain) || (PUBLIC.includes(own) ? '' : own);
+// A twin built before DryRun's own emails were left out may still carry them (rule 1): they go, with their facts
+const ownTitle = s => s.type === 'email' && ((String(s.title).startsWith('Your brief for ') && String(s.title).endsWith(' is ready')) || String(s.title).startsWith('Your rehearsal for '));
+const gone = new Set(twin.sources.filter(ownTitle).map(s => s.id));
+twin.sources = twin.sources.filter(s => !gone.has(s.id));
+twin.facts = twin.facts.filter(f => !gone.has(f.source_id));
 // What's there already is drawn first, so a replay starts from nothing
 const kept = twin.sources.filter(s => s.status !== 'rejected');
 const facts = twin.facts.filter(f => f.status !== 'rejected');
@@ -2212,8 +2222,291 @@ return [{ json: { action: 'save', row: { ...twinToRow(t), execution_id: String($
     return c
 
 
+
+# ---------------------------------------------------------------- DryRun after the meeting (/after-meeting, twins step 5)
+
+AFTER_REQUEST = {"body": {"meeting_id": "evt123", "owner_email": "you@example.com", "notes": "Rajiv asked about the diesel price again. I promised the case study by Friday.",
+                          "audio": [{"base64": "UklGRg==", "format": "m4a"}]}}
+
+
+def if_node(var, name, left, op_type, op, right=None, sample=None):
+    cond = {"leftValue": Expr(left), "operator": {"type": op_type, "operation": op}}
+    if right is None:
+        cond["rightValue"] = ""
+        cond["operator"]["singleValue"] = True
+    else:
+        cond["rightValue"] = right
+    return make_node(var, "ifElse", "n8n-nodes-base.if", 2.3, name, {
+        "conditions": {"options": {"caseSensitive": True, "leftValue": "", "typeValidation": "loose"}, "conditions": [cond], "combinator": "and"},
+        "options": {},
+    }, [sample or {}])
+
+
+def meeting_update(var, name, fields):
+    """Updates the meeting's row (by $json.meeting_id) with the given columns, each from $json."""
+    return make_node(var, "node", "n8n-nodes-base.dataTable", 1.1, name, {
+        "resource": "row", "operation": "update", "dataTableId": MEETINGS_TABLE, "matchType": "allConditions",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.meeting_id }}")}]},
+        "columns": {"mappingMode": "defineBelow", "value": {f: Expr("{{ $json." + f + " }}") for f in fields}, "matchingColumns": [],
+                    "schema": [{"id": f, "displayName": f, "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True} for f in fields]},
+    }, [{"id": 1}], extra={"onError": "continueRegularOutput", "alwaysOutputData": True})
+
+
+def audio_pieces(var, name):
+    return code_node(var, name, r"""
+// The voice note, piece by piece (the laptop cuts it into clips under 30 s, in order)
+return ($('A voice note came in (laptop)').first().json.body.audio || []).filter(a => a && a.base64).slice(0, 12)
+  .map((a, i) => ({ json: { i, audio_base64: a.base64, format: a.format === 'wav' ? 'wav' : 'm4a' } }));""", [{"i": 0, "audio_base64": "UklGRg==", "format": "m4a"}])
+
+
+def audio_file(var, name):
+    return make_node(var, "node", "n8n-nodes-base.convertToFile", 1.1, name, {
+        "operation": "toBinary", "sourceProperty": "audio_base64",
+        "options": {"fileName": Expr("{{ 'note-' + $json.i + '.' + $json.format }}"), "mimeType": Expr("{{ $json.format === 'wav' ? 'audio/wav' : 'audio/mp4' }}")},
+    }, [{}])
+
+
+def after_meeting():
+    c = IMPORTS
+    c += make_node("afterTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "A voice note came in (laptop)", {
+        # Answers as soon as the meeting is saved; the follow-up then waits for the presenter's approval in the same execution
+        "httpMethod": "POST", "path": "dryrun/after-meeting", "responseMode": "responseNode", "options": {},
+    }, [AFTER_REQUEST])
+    c += make_node("afterMeeting", "node", "n8n-nodes-base.dataTable", 1.1, "Find the meeting", {
+        "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.meeting_id || 'none' }}")}]},
+    }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "start": "2026-10-14T15:00:00+05:30", "company": "Kaveri Freight", "attendees": "[]", "proposal": "{}"}],
+        extra={"alwaysOutputData": True})
+    c += make_node("afterSessions", "node", "n8n-nodes-base.dataTable", 1.1, "Its rehearsals", {
+        "resource": "row", "operation": "get", "dataTableId": SESSIONS_TABLE, "matchType": "anyCondition",
+        "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $('A voice note came in (laptop)').first().json.body.meeting_id || 'none' }}")}]},
+        "returnAll": True,
+    }, [{"session_id": "s0", "meeting_id": "evt123", "status": "done", "at": "2026-10-13T19:00:00.000Z", "bundle": "{}", "telemetry": "{}"}],
+        extra={"alwaysOutputData": True, "executeOnce": True})
+    c += read_people("afterPeople", "Read the people table")
+    c += code_node("afterWhat", "What came in", TWIN_ROW_JS + r"""
+// The meeting from the invite, its attendees, and what each one's practice seat asked in the last debriefed rehearsal of it: only to
+// score how well the rehearsal predicted the real meeting (0.28). The practice lines are compared, never kept.
+const req = $('A voice note came in (laptop)').first().json.body || {};
+const row = $('Find the meeting').first().json || {};
+if (!row.meeting_id) throw new Error('DryRun has no meeting ' + req.meeting_id);
+const attendees = (parseJ(row.attendees, []) || []).filter(a => String(a.email || '').includes('@')).map(a => ({ name: a.name || a.email, email: lower(a.email) }));
+const done = $('Its rehearsals').all().map(i => i.json).filter(r => r.session_id && r.status === 'done').sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+const last = done[0];
+const bundle = last ? (typeof last.bundle === 'string' ? parseJ(last.bundle, {}) : last.bundle || {}) : {};
+const tel = last ? (typeof last.telemetry === 'string' ? parseJ(last.telemetry, {}) : last.telemetry || {}) : {};
+const asked = {};
+(tel.events || []).filter(e => e.type === 'turn').forEach(e => (e.reactions || []).filter(r => r.kind === 'question' || r.kind === 'follow_up')
+  .forEach(r => { (asked[r.persona_id] = asked[r.persona_id] || []).push(r.text); }));
+const practice = attendees.map(a => {
+  const p = (bundle.personas || []).find(x => lower(x.twin_email) === a.email || lower(x.display_name) === lower(a.name));
+  return p ? { email: a.email, name: a.name, questions: (asked[p.id] || []).slice(0, 8) } : null;
+}).filter(Boolean);
+const proposal = parseJ(row.proposal, {}) || {};
+return [{ json: { req, meeting: { id: String(row.meeting_id), title: row.title || '', date: String(row.start || '').slice(0, 10) || new Date().toISOString().slice(0, 10), company: row.company || '' },
+                  attendees, practice, session_id: last ? last.session_id : '', notes: String(req.notes || '').slice(0, 12000),
+                  pieces: (req.audio || []).filter(a => a && a.base64).length, owner: req.owner_email || row.owner_email || '',
+                  goal: (proposal.goal && proposal.goal.text) || '',
+                  keyterms: JSON.stringify([row.company].concat(attendees.map(a => a.name)).filter(Boolean).map(x => String(x).slice(0, 60)).slice(0, 20)) } }];""",
+                   [{"meeting": {}, "attendees": [], "practice": [], "notes": "", "pieces": 1, "owner": "you@example.com", "keyterms": "[]"}])
+    c += if_node("afterVoice", "A voice note?", "{{ $json.pieces }}", "number", "gt", 0, {"pieces": 1})
+    c += audio_pieces("afterPieces", "Each piece")
+    c += audio_file("afterFile", "The piece as a file")
+    c += make_node("afterSarvam", "node", "n8n-nodes-base.httpRequest", 4.5, "Transcribe (Sarvam)", {
+        "method": "POST", "url": SARVAM_STT, "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
+        "sendBody": True, "contentType": "multipart-form-data",
+        "bodyParameters": {"parameters": [
+            {"parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "data"},
+            {"name": "model", "value": SARVAM_STT_MODEL},
+            # Detected, so Indian English and Hinglish both come through; the names and the company as key terms
+            {"name": "language_code", "value": "unknown"},
+            {"name": "keyterms", "value": Expr("{{ $('What came in').first().json.keyterms }}")}]},
+        "options": {"timeout": 60000},
+    }, [{"request_id": "r1", "transcript": "Rajiv asked about the diesel price again.", "language_code": "en-IN"}], credentials={"httpHeaderAuth": "Sarvam"},
+        extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2, "waitBetweenTries": 1000})
+    c += code_node("afterHeard", "Heard every piece?", r"""
+// A piece Sarvam couldn't transcribe sends the whole note to Whisper instead, so the pieces stay in order
+const out = $input.all().map(i => i.json);
+return [{ json: { failed: out.filter(o => o.error || typeof o.transcript !== 'string').length, pieces: out.length } }];""", [{"failed": 0, "pieces": 1}])
+    c += if_node("afterGaps", "Any piece failed?", "{{ $json.failed }}", "number", "gt", 0, {"failed": 0})
+    c += audio_pieces("afterPieces2", "Every piece again")
+    c += audio_file("afterFile2", "The piece as a file again")
+    c += make_node("afterWhisper", "node", "n8n-nodes-base.httpRequest", 4.5, "Transcribe (Groq Whisper)", {
+        "method": "POST", "url": GROQ_WHISPER, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
+        "sendBody": True, "contentType": "multipart-form-data",
+        "bodyParameters": {"parameters": [
+            {"parameterType": "formBinaryData", "name": "file", "inputDataFieldName": "data"},
+            {"name": "model", "value": WHISPER_MODEL}, {"name": "response_format", "value": "json"},
+            {"name": "prompt", "value": Expr("{{ JSON.parse($('What came in').first().json.keyterms).join(', ') }}")}]},
+        "options": {"timeout": 60000},
+    }, [{"text": "Rajiv asked about the diesel price again."}], credentials={"groqApi": "Groq"}, extra={"onError": "continueRegularOutput"})
+    c += code_node("afterJoin", "The notes", r"""
+// The note as one text: what was said (Sarvam, Whisper where Sarvam failed), then anything typed
+const w = $('What came in').first().json;
+const ran = n => { try { return $(n).isExecuted; } catch (e) { return false; } };
+let pieces = ran('Transcribe (Sarvam)') ? $('Transcribe (Sarvam)').all().map(i => String(i.json.transcript || '').trim()) : [];
+let heard = pieces.length ? 'Sarvam' : '';
+if (ran('Transcribe (Groq Whisper)')) {
+  const wh = $('Transcribe (Groq Whisper)').all().map(i => String(i.json.text || '').trim());
+  pieces = (pieces.length ? pieces : wh).map((p, i) => p || wh[i] || '');
+  heard = 'Sarvam and Whisper';
+}
+const spoken = pieces.filter(Boolean).join(' ');
+const transcript = [spoken, w.notes].filter(Boolean).join('\n\n').trim();
+if (!transcript) throw new Error('Nothing to read: the voice note could not be transcribed and no notes were typed');
+const PROMPT = """ + json.dumps(AFTER_PROMPT) + r""";
+const parts = { meeting: w.meeting.title + (w.meeting.company ? ' with ' + w.meeting.company : '') + ', ' + w.meeting.date,
+                attendees: JSON.stringify(w.attendees), goal: w.goal || 'Not given.', notes: transcript,
+                practice: w.practice.length ? JSON.stringify(w.practice.map(p => ({ email: p.email, questions: p.questions }))) : 'No rehearsal of this meeting.' };
+const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
+return [{ json: { ...w, transcript, source: spoken ? 'voice' : 'notes', heard, prompt } }];""",
+                   [{"transcript": "", "source": "notes", "prompt": ""}])
+    c += llm_nodes("afterRead", "Work out what happened", "$json.prompt", GEMINI_REPLY, schema=AFTER_SCHEMA, source="$('The notes').first().json")
+    c += code_node("afterRules", "Hold to the rules", TWIN_ROW_JS + REPLY_JS + r"""
+// The twin rules after the model (docs/CONTRACT.md 0.28): only attendees from the invite, by email; every item quoted from the notes;
+// a prediction only for someone who had a practice seat, and only the number and the real facts it matched are kept. Then each person's
+// twin gets the notes as a source (connected: the presenter's own account of a real meeting with them), the facts, the meeting and the
+// prediction.
+const w = $('The notes').first().json;
+let d = {};
+try { d = JSON.parse(replyText($json) || '{}'); } catch (e) { d = {}; }
+const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const said = norm(w.transcript);
+const quoted = x => x && x.text && norm(x.quote).split(' ').length >= 3 && said.includes(norm(x.quote));
+const byEmail = Object.fromEntries(w.attendees.map(a => [a.email, a]));
+const people = (d.people || []).filter(p => byEmail[lower(p.email)]).map(p => ({
+  email: lower(p.email), name: byEmail[lower(p.email)].name,
+  raised: (p.raised || []).filter(quoted).slice(0, 8).map(x => ({ text: String(x.text).slice(0, 140), quote: String(x.quote).slice(0, 300) })),
+  promised: (p.promised || []).filter(quoted).slice(0, 6).map(x => ({ text: String(x.text).slice(0, 140), quote: String(x.quote).slice(0, 300) })),
+  decided: (p.decided || []).filter(quoted).slice(0, 6).map(x => ({ text: String(x.text).slice(0, 140), quote: String(x.quote).slice(0, 300) })),
+  next_step: String(p.next_step || '').slice(0, 140) }))
+  .filter(p => p.raised.length || p.promised.length || p.decided.length || p.next_step);
+// How well the last rehearsal predicted it: per person who had a seat, how many of the things they really raised it had asked
+const seat = Object.fromEntries(w.practice.map(p => [p.email, p]));
+const hits = {};
+(d.predicted || []).forEach(x => {
+  const e = lower(x.email);
+  const person = people.find(p => p.email === e);
+  if (!person || !seat[e] || !person.raised[x.raised] || !seat[e].questions[x.practice]) return;
+  (hits[e] = hits[e] || new Set()).add(x.raised);
+});
+const predictions = people.filter(p => seat[p.email] && p.raised.length).map(p => ({ email: p.email, name: p.name, asked: p.raised.length,
+  predicted: hits[p.email] ? hits[p.email].size : 0, practice_asked: seat[p.email].questions.length, matched_index: hits[p.email] ? Array.from(hits[p.email]) : [] }));
+const now = new Date().toISOString();
+const f = d.followup || {};
+const to = w.attendees.map(a => a.email);
+const followup = { to, subject: String(f.subject || '').slice(0, 160), body: String(f.body || '').slice(0, 3000), status: f.body && to.length && w.owner ? 'waiting' : 'none' };
+const run = { workflow_id: String($workflow.id), execution_id: String($execution.id) };
+// Each person's twin: started if DryRun didn't know them, never touching anything else in it
+const rows = $('Read the people table').all().map(i => i.json).filter(r => r.email);
+const key = 'after:' + w.meeting.id;
+const twinRows = people.map(p => {
+  const found = findRow(rows, p.email);
+  const t = found ? rowToTwin(found) : { email: p.email, aliases: [], name: p.name, company: w.meeting.company, role: null, sources: [], facts: [], readings: [], meetings: [], predictions: [], build_log: [], updated: '', sample: false };
+  let src = t.sources.find(s => s.key === key);
+  if (!src) { src = { id: 's' + (maxId(t.sources, 's') + 1), type: 'meeting_note', key }; t.sources.push(src); }
+  Object.assign(src, { title: 'Your notes from ' + (w.meeting.title || 'the meeting'), date: w.meeting.date, status: 'connected', why: 'Your own account of a real meeting with them', text: w.transcript.slice(0, 6000) });
+  let n = maxId(t.facts, 'f');
+  const have = new Set(t.facts.map(x => norm(x.text)));
+  const ids = [];
+  [['raised', p.raised], ['promised', p.promised], ['decision', p.decided]].forEach(([kind, list]) => list.forEach((x, i) => {
+    const existing = t.facts.find(y => norm(y.text) === norm(x.text));
+    if (existing) { if (kind === 'raised') ids[i] = existing.id; return; }
+    const fact = { id: 'f' + (++n), kind, text: x.text, source_id: src.id, quote: x.quote, status: 'connected', added: now };
+    t.facts.push(fact);
+    have.add(norm(x.text));
+    if (kind === 'raised') ids[i] = fact.id;
+  }));
+  if (!t.meetings.some(m => m.id === w.meeting.id)) t.meetings.push({ id: w.meeting.id, title: w.meeting.title, date: w.meeting.date });
+  const pr = predictions.find(x => x.email === p.email);
+  if (pr) t.predictions = t.predictions.filter(x => x.meeting_id !== w.meeting.id).concat([{ meeting_id: w.meeting.id, date: w.meeting.date, asked: pr.asked, predicted: pr.predicted, matched: pr.matched_index.map(i => ids[i]).filter(Boolean) }]);
+  t.name = t.name || p.name;
+  t.updated = now;
+  return { ...twinToRow(t), execution_id: run.execution_id, workflow_id: run.workflow_id };
+});
+const after = { at: now, source: w.source, transcript: w.transcript.slice(0, 12000), heard: w.heard || '', people,
+  predictions: predictions.map(({ matched_index, ...x }) => x), followup, run };
+return [{ json: { meeting_id: w.meeting.id, after: JSON.stringify(after), status: 'done', updated_at: now, result: after, rows: twinRows, owner: w.owner } }];""",
+                   [{"meeting_id": "evt123", "after": "{}", "status": "done", "result": {}, "rows": [], "owner": "you@example.com"}])
+    c += meeting_update("afterSave", "Save it on the meeting", ["after", "status", "updated_at"])
+    c += if_node("afterAnyone", "Any twins to update?", "{{ $('Hold to the rules').first().json.rows.length }}", "number", "gt", 0, {})
+    c += code_node("afterRows", "One row per person", r"""
+return $('Hold to the rules').first().json.rows.map(row => ({ json: { row } }));""", [{"row": {"email": "rajiv.menon@kaverifreight.in"}}])
+    c += people_upsert("afterUpsert", "Update their twins")
+    c += make_node("afterReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send what n8n found", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify({ after: $('Hold to the rules').first().json.result }) }}"), "options": {},
+    }, [{}], extra={"executeOnce": True})
+    c += if_node("afterToSend", "A follow-up to send?", "{{ $('Hold to the rules').first().json.result.followup.status }}", "string", "equals", "waiting", {})
+    # Human in the loop: nothing goes to the attendees until the presenter says so, from their own inbox
+    c += make_node("afterAsk", "node", "n8n-nodes-base.gmail", 2.2, "Ask before sending", {
+        "resource": "message", "operation": "sendAndWait",
+        "sendTo": Expr("{{ $('Hold to the rules').first().json.owner }}"),
+        "subject": Expr("{{ 'Send your follow-up for ' + ($('The notes').first().json.meeting.title || 'the meeting') + '?' }}"),
+        "message": Expr("{{ (() => { const f = $('Hold to the rules').first().json.result.followup; const esc = t => String(t || '').split('&').join('&amp;').split('<').join('&lt;'); "
+                        "return '<p>n8n drafted this follow-up from your notes on the meeting. <b>Send it</b> emails it to ' + esc(f.to.join(', ')) + ' from your Gmail; '"
+                        " + '<b>Don\\'t send</b> keeps it as a draft on the meeting page. Edit anything in [fill in: ...] first: answer Don\\'t send, then send it yourself.</p>'"
+                        " + '<p><b>Subject:</b> ' + esc(f.subject) + '</p><p>' + esc(f.body).split('\\n').join('<br>') + '</p>'; })() }}"),
+        "responseType": "approval",
+        "approvalOptions": {"values": {"approvalType": "double", "approveLabel": "Send it", "disapproveLabel": "Don't send"}},
+        "options": {"limitWaitTime": {"values": {"limitType": "afterTimeInterval", "resumeAmount": 2, "resumeUnit": "days"}}, "appendAttribution": False},
+    }, [{"data": {"approved": True}}], credentials={"gmailOAuth2": "Gmail"}, extra={"executeOnce": True})
+    c += if_node("afterApproved", "Approved?", "{{ $json.data && $json.data.approved }}", "boolean", "true", None, {"data": {"approved": True}})
+    c += make_node("afterSend", "node", "n8n-nodes-base.gmail", 2.2, "Send the follow-up", {
+        "resource": "message", "operation": "send",
+        "sendTo": Expr("{{ $('Hold to the rules').first().json.result.followup.to.join(',') }}"),
+        "subject": Expr("{{ $('Hold to the rules').first().json.result.followup.subject }}"),
+        "emailType": "text",
+        "message": Expr("{{ $('Hold to the rules').first().json.result.followup.body }}"),
+        "options": {"appendAttribution": False},
+    }, [{"id": "m1"}], credentials={"gmailOAuth2": "Gmail"}, extra={"onError": "continueRegularOutput"})
+    for var, name, status in [("afterSent", "It was sent", "sent"), ("afterDeclined", "It was not sent", "declined")]:
+        cond = "$input.first().json.id ? 'sent' : 'failed'" if status == "sent" else "'declined'"
+        c += code_node(var, name, r"""
+// The answer, on the meeting: the follow-up was sent (or failed to send), or the presenter kept it
+const r = $('Hold to the rules').first().json;
+const after = { ...r.result, followup: { ...r.result.followup, status: """ + cond + r""", answered_at: new Date().toISOString() } };
+return [{ json: { meeting_id: r.meeting_id, after: JSON.stringify(after) } }];""", [{"meeting_id": "evt123", "after": "{}"}])
+    c += meeting_update("afterSaveAnswer", "Save the answer", ["after"])
+    c += ("const about = sticky('## DryRun after the meeting\\nAfter a real meeting (POST /webhook/dryrun/after-meeting, docs/CONTRACT.md 0.28): Sarvam transcribes the "
+          "presenter\\'s voice note (Whisper if it fails), n8n works out what each attendee raised, what was promised and decided, updates their twins, scores "
+          "how well the last rehearsal predicted it, and drafts the follow-up, which goes out only after the presenter approves it from their inbox.', [afterTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-after-meeting', 'DryRun after the meeting')
+  .add(about)
+  .add(afterTrigger)
+  .to(afterMeeting)
+  .to(afterSessions)
+  .to(afterPeople)
+  .to(afterWhat)
+  .to(afterVoice
+    .onTrue(afterPieces.to(afterFile).to(afterSarvam).to(afterHeard).to(afterGaps
+      .onTrue(afterPieces2.to(afterFile2).to(afterWhisper).to(afterJoin))
+      .onFalse(afterJoin)))
+    .onFalse(afterJoin))
+  .add(afterJoin)
+  .to(afterRead)
+  .to(afterRules)
+  .add(afterRead.onError(afterReadGroq))
+  .add(afterReadGroq)
+  .to(afterRules)
+  .add(afterRules)
+  .to(afterSave)
+  .to(afterAnyone
+    .onTrue(afterRows.to(afterUpsert).to(afterReply))
+    .onFalse(afterReply))
+  .add(afterReply)
+  .to(afterToSend
+    .onTrue(afterAsk.to(afterApproved
+      .onTrue(afterSend.to(afterSent).to(afterSaveAnswer))
+      .onFalse(afterDeclined.to(afterSaveAnswer)))))
+  .group('Listen', [afterMeeting, afterSessions, afterPeople, afterWhat, afterVoice, afterPieces, afterFile, afterSarvam, afterHeard, afterGaps, afterPieces2, afterFile2, afterWhisper, afterJoin], { description: 'The meeting, its last rehearsal, and the voice note transcribed by Sarvam (Whisper if it fails)' })
+  .group('Understand', [afterRead, afterReadGroq, afterRules, afterSave, afterAnyone, afterRows, afterUpsert, afterReply], { description: 'Per person: raised, promised, decided, with quotes; their twins and the hit rate' })
+  .group('Follow up', [afterToSend, afterAsk, afterApproved, afterSend, afterSent, afterDeclined, afterSaveAnswer], { description: 'The follow-up, sent only after the presenter approves it' });
+"""
+    return c
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-review.ts", deck_review()), ("twin.ts", twin()), ("twin-update.ts", twin_update())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-review.ts", deck_review()), ("twin.ts", twin()), ("twin-update.ts", twin_update()), ("after-meeting.ts", after_meeting())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")

@@ -439,3 +439,41 @@ TWIN_SCHEMA = {"type": "object", "properties": {
         "required": ["text", "evidence"]}},
     "role": {"type": "object", "properties": {"text": {"type": "string"}, "source_id": {"type": "string"}}, "required": ["text", "source_id"]}},
     "required": ["facts", "readings", "role"]}
+
+# DryRun after the meeting (/after-meeting, contract 0.28): the presenter's own account of a real meeting, per person, with quotes
+AFTER_PROMPT = """The presenter has just come out of a real meeting and said (or typed) how it went, in their own words. Work out what
+happened, per person, using ONLY these notes.
+
+The meeting: {meeting}
+The people from the invite (only these can be named, by email): {attendees}
+What the presenter wanted from it: {goal}
+The presenter's notes (transcribed speech or typed; may be rough, or in Hinglish):
+{notes}
+
+What each person's practice seat asked in the last rehearsal of this meeting (only to compare below; never report it as something
+they said in the real meeting):
+{practice}
+
+people: one entry per attendee the notes say something about (email from the list above; leave out anyone the notes don't mention):
+- raised: what they asked for, objected to or worried about in the meeting;
+- promised: what the presenter promised them;
+- decided: what they decided or agreed to;
+  each item: text (plain, at most 14 words) and quote (copied word for word from the notes, 3 to 25 words, that shows it);
+- next_step: the next step agreed with them, in a few words, or "".
+predicted: for each raised item, only when a practice question above for the SAME person asked substantially the same thing:
+{ email, raised (the index of that raised item in their list, from 0), practice (the index of the practice question, from 0) }.
+followup: the email the presenter would send the attendees now: subject, and body (plain text, under 180 words, in the presenter's
+voice): thank them, answer or acknowledge each open point they raised, confirm what the presenter promised with any dates, and the next
+step. Never invent facts, figures or commitments that are not in the notes; where the presenter must add something, write
+[fill in: what]. Sign off as the presenter, without a name.
+Answer in JSON."""
+
+AFTER_ITEM = {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string"}, "quote": {"type": "string"}}, "required": ["text", "quote"]}}
+AFTER_SCHEMA = {"type": "object", "properties": {
+    "people": {"type": "array", "items": {"type": "object", "properties": {
+        "email": {"type": "string"}, "raised": AFTER_ITEM, "promised": AFTER_ITEM, "decided": AFTER_ITEM, "next_step": {"type": "string"}},
+        "required": ["email", "raised", "promised", "decided", "next_step"]}},
+    "predicted": {"type": "array", "items": {"type": "object", "properties": {
+        "email": {"type": "string"}, "raised": {"type": "integer"}, "practice": {"type": "integer"}}, "required": ["email", "raised", "practice"]}},
+    "followup": {"type": "object", "properties": {"subject": {"type": "string"}, "body": {"type": "string"}}, "required": ["subject", "body"]}},
+    "required": ["people", "predicted", "followup"]}

@@ -1,0 +1,1129 @@
+import { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, nextBatch, languageModel, memory, tool, outputParser, embedding, embeddings, vectorStore, retriever, documentLoader, textSplitter, fromAi, expr } from '@n8n/workflow-sdk';
+
+const afterTrigger = trigger({
+  type: "n8n-nodes-base.webhook",
+  version: 2.2,
+  config: {
+    "name": "A voice note came in (laptop)",
+    "parameters": {
+      "httpMethod": "POST",
+      "path": "dryrun/after-meeting",
+      "responseMode": "responseNode",
+      "options": {}
+    },
+    "output": [
+  {
+    "body": {
+      "meeting_id": "evt123",
+      "owner_email": "you@example.com",
+      "notes": "Rajiv asked about the diesel price again. I promised the case study by Friday.",
+      "audio": [
+        {
+          "base64": "UklGRg==",
+          "format": "m4a"
+        }
+      ]
+    }
+  }
+]
+  }
+});
+
+const afterMeeting = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Find the meeting",
+    "parameters": {
+      "resource": "row",
+      "operation": "get",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "wURCb4PjdZLpttns",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "anyCondition",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.body.meeting_id || 'none' }}")
+          }
+        ]
+      }
+    },
+    "alwaysOutputData": true,
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "title": "RouteIQ pitch",
+    "start": "2026-10-14T15:00:00+05:30",
+    "company": "Kaveri Freight",
+    "attendees": "[]",
+    "proposal": "{}"
+  }
+]
+  }
+});
+
+const afterSessions = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Its rehearsals",
+    "parameters": {
+      "resource": "row",
+      "operation": "get",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "xzUZexBbX6bcX18F",
+        "cachedResultName": "DryRun sessions"
+      },
+      "matchType": "anyCondition",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $('A voice note came in (laptop)').first().json.body.meeting_id || 'none' }}")
+          }
+        ]
+      },
+      "returnAll": true
+    },
+    "alwaysOutputData": true,
+    "executeOnce": true,
+    "output": [
+  {
+    "session_id": "s0",
+    "meeting_id": "evt123",
+    "status": "done",
+    "at": "2026-10-13T19:00:00.000Z",
+    "bundle": "{}",
+    "telemetry": "{}"
+  }
+]
+  }
+});
+
+const afterPeople = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Read the people table",
+    "parameters": {
+      "resource": "row",
+      "operation": "get",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "We8Agobm9SMWGc7E",
+        "cachedResultName": "DryRun people"
+      },
+      "returnAll": true
+    },
+    "alwaysOutputData": true,
+    "executeOnce": true,
+    "output": [
+  {
+    "email": "rajiv.menon@kaverifreight.in",
+    "facts": "[]",
+    "sources": "[]"
+  }
+]
+  }
+});
+
+const afterWhat = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "What came in",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "const parseJ = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };\nconst lower = e => String(e || '').trim().toLowerCase();\nconst KINDS = ['raised', 'promised', 'decision', 'preference', 'role', 'context'];\nconst rowToTwin = r => ({ email: lower(r.email), aliases: parseJ(r.aliases, []), name: r.name || '', company: r.company || '', role: parseJ(r.role, null),\n  sources: parseJ(r.sources, []), facts: parseJ(r.facts, []), readings: parseJ(r.readings, []), meetings: parseJ(r.meetings, []),\n  predictions: parseJ(r.predictions, []), build_log: parseJ(r.build_log, []), updated: r.updated || '', sample: false });\nconst twinToRow = t => ({ email: t.email, aliases: JSON.stringify(t.aliases || []), name: t.name || '', company: t.company || '', role: t.role ? JSON.stringify(t.role) : '',\n  sources: JSON.stringify(t.sources || []), facts: JSON.stringify(t.facts || []), readings: JSON.stringify(t.readings || []), meetings: JSON.stringify(t.meetings || []),\n  predictions: JSON.stringify(t.predictions || []), build_log: JSON.stringify(t.build_log || []), updated: t.updated || '' });\n// Any address of theirs finds the row: the key, or one the presenter linked\nconst findRow = (rows, email) => rows.find(r => r.email && (lower(r.email) === email || parseJ(r.aliases, []).map(lower).includes(email)));\nconst maxId = (list, prefix) => list.reduce((a, x) => Math.max(a, Number(String(x.id || '').replace(prefix, '')) || 0), 0);\n// Counts for the brief and the people list, honest: connected facts, real meetings already held, suggestions waiting\nconst twinSummary = t => { const today = new Date().toISOString().slice(0, 10); const past = (t.meetings || []).map(m => m.date).filter(d => d && d <= today).sort();\n  return { facts: (t.facts || []).filter(f => f.status === 'connected').length, meetings: past.length, to_check: (t.sources || []).filter(s => s.status === 'suggested').length,\n           last_met: past.length ? past[past.length - 1] : null }; };\n\n// The meeting from the invite, its attendees, and what each one's practice seat asked in the last debriefed rehearsal of it: only to\n// score how well the rehearsal predicted the real meeting (0.28). The practice lines are compared, never kept.\nconst req = $('A voice note came in (laptop)').first().json.body || {};\nconst row = $('Find the meeting').first().json || {};\nif (!row.meeting_id) throw new Error('DryRun has no meeting ' + req.meeting_id);\nconst attendees = (parseJ(row.attendees, []) || []).filter(a => String(a.email || '').includes('@')).map(a => ({ name: a.name || a.email, email: lower(a.email) }));\nconst done = $('Its rehearsals').all().map(i => i.json).filter(r => r.session_id && r.status === 'done').sort((a, b) => Date.parse(b.at) - Date.parse(a.at));\nconst last = done[0];\nconst bundle = last ? (typeof last.bundle === 'string' ? parseJ(last.bundle, {}) : last.bundle || {}) : {};\nconst tel = last ? (typeof last.telemetry === 'string' ? parseJ(last.telemetry, {}) : last.telemetry || {}) : {};\nconst asked = {};\n(tel.events || []).filter(e => e.type === 'turn').forEach(e => (e.reactions || []).filter(r => r.kind === 'question' || r.kind === 'follow_up')\n  .forEach(r => { (asked[r.persona_id] = asked[r.persona_id] || []).push(r.text); }));\nconst practice = attendees.map(a => {\n  const p = (bundle.personas || []).find(x => lower(x.twin_email) === a.email || lower(x.display_name) === lower(a.name));\n  return p ? { email: a.email, name: a.name, questions: (asked[p.id] || []).slice(0, 8) } : null;\n}).filter(Boolean);\nconst proposal = parseJ(row.proposal, {}) || {};\nreturn [{ json: { req, meeting: { id: String(row.meeting_id), title: row.title || '', date: String(row.start || '').slice(0, 10) || new Date().toISOString().slice(0, 10), company: row.company || '' },\n                  attendees, practice, session_id: last ? last.session_id : '', notes: String(req.notes || '').slice(0, 12000),\n                  pieces: (req.audio || []).filter(a => a && a.base64).length, owner: req.owner_email || row.owner_email || '',\n                  goal: (proposal.goal && proposal.goal.text) || '',\n                  keyterms: JSON.stringify([row.company].concat(attendees.map(a => a.name)).filter(Boolean).map(x => String(x).slice(0, 60)).slice(0, 20)) } }];"
+    },
+    "output": [
+  {
+    "meeting": {},
+    "attendees": [],
+    "practice": [],
+    "notes": "",
+    "pieces": 1,
+    "owner": "you@example.com",
+    "keyterms": "[]"
+  }
+]
+  }
+});
+
+const afterVoice = ifElse({
+  type: "n8n-nodes-base.if",
+  version: 2.3,
+  config: {
+    "name": "A voice note?",
+    "parameters": {
+      "conditions": {
+        "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose"
+        },
+        "conditions": [
+          {
+            "leftValue": expr("{{ $json.pieces }}"),
+            "operator": {
+              "type": "number",
+              "operation": "gt"
+            },
+            "rightValue": 0
+          }
+        ],
+        "combinator": "and"
+      },
+      "options": {}
+    },
+    "output": [
+  {
+    "pieces": 1
+  }
+]
+  }
+});
+
+const afterPieces = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Each piece",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// The voice note, piece by piece (the laptop cuts it into clips under 30 s, in order)\nreturn ($('A voice note came in (laptop)').first().json.body.audio || []).filter(a => a && a.base64).slice(0, 12)\n  .map((a, i) => ({ json: { i, audio_base64: a.base64, format: a.format === 'wav' ? 'wav' : 'm4a' } }));"
+    },
+    "output": [
+  {
+    "i": 0,
+    "audio_base64": "UklGRg==",
+    "format": "m4a"
+  }
+]
+  }
+});
+
+const afterFile = node({
+  type: "n8n-nodes-base.convertToFile",
+  version: 1.1,
+  config: {
+    "name": "The piece as a file",
+    "parameters": {
+      "operation": "toBinary",
+      "sourceProperty": "audio_base64",
+      "options": {
+        "fileName": expr("{{ 'note-' + $json.i + '.' + $json.format }}"),
+        "mimeType": expr("{{ $json.format === 'wav' ? 'audio/wav' : 'audio/mp4' }}")
+      }
+    },
+    "output": [
+  {}
+]
+  }
+});
+
+const afterSarvam = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Transcribe (Sarvam)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.sarvam.ai/speech-to-text",
+      "authentication": "genericCredentialType",
+      "genericAuthType": "httpHeaderAuth",
+      "sendBody": true,
+      "contentType": "multipart-form-data",
+      "bodyParameters": {
+        "parameters": [
+          {
+            "parameterType": "formBinaryData",
+            "name": "file",
+            "inputDataFieldName": "data"
+          },
+          {
+            "name": "model",
+            "value": "saaras:v4"
+          },
+          {
+            "name": "language_code",
+            "value": "unknown"
+          },
+          {
+            "name": "keyterms",
+            "value": expr("{{ $('What came in').first().json.keyterms }}")
+          }
+        ]
+      },
+      "options": {
+        "timeout": 60000
+      }
+    },
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1000,
+    "credentials": { "httpHeaderAuth": newCredential("Sarvam") },
+    "output": [
+  {
+    "request_id": "r1",
+    "transcript": "Rajiv asked about the diesel price again.",
+    "language_code": "en-IN"
+  }
+]
+  }
+});
+
+const afterHeard = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Heard every piece?",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// A piece Sarvam couldn't transcribe sends the whole note to Whisper instead, so the pieces stay in order\nconst out = $input.all().map(i => i.json);\nreturn [{ json: { failed: out.filter(o => o.error || typeof o.transcript !== 'string').length, pieces: out.length } }];"
+    },
+    "output": [
+  {
+    "failed": 0,
+    "pieces": 1
+  }
+]
+  }
+});
+
+const afterGaps = ifElse({
+  type: "n8n-nodes-base.if",
+  version: 2.3,
+  config: {
+    "name": "Any piece failed?",
+    "parameters": {
+      "conditions": {
+        "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose"
+        },
+        "conditions": [
+          {
+            "leftValue": expr("{{ $json.failed }}"),
+            "operator": {
+              "type": "number",
+              "operation": "gt"
+            },
+            "rightValue": 0
+          }
+        ],
+        "combinator": "and"
+      },
+      "options": {}
+    },
+    "output": [
+  {
+    "failed": 0
+  }
+]
+  }
+});
+
+const afterPieces2 = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Every piece again",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// The voice note, piece by piece (the laptop cuts it into clips under 30 s, in order)\nreturn ($('A voice note came in (laptop)').first().json.body.audio || []).filter(a => a && a.base64).slice(0, 12)\n  .map((a, i) => ({ json: { i, audio_base64: a.base64, format: a.format === 'wav' ? 'wav' : 'm4a' } }));"
+    },
+    "output": [
+  {
+    "i": 0,
+    "audio_base64": "UklGRg==",
+    "format": "m4a"
+  }
+]
+  }
+});
+
+const afterFile2 = node({
+  type: "n8n-nodes-base.convertToFile",
+  version: 1.1,
+  config: {
+    "name": "The piece as a file again",
+    "parameters": {
+      "operation": "toBinary",
+      "sourceProperty": "audio_base64",
+      "options": {
+        "fileName": expr("{{ 'note-' + $json.i + '.' + $json.format }}"),
+        "mimeType": expr("{{ $json.format === 'wav' ? 'audio/wav' : 'audio/mp4' }}")
+      }
+    },
+    "output": [
+  {}
+]
+  }
+});
+
+const afterWhisper = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Transcribe (Groq Whisper)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialType": "groqApi",
+      "sendBody": true,
+      "contentType": "multipart-form-data",
+      "bodyParameters": {
+        "parameters": [
+          {
+            "parameterType": "formBinaryData",
+            "name": "file",
+            "inputDataFieldName": "data"
+          },
+          {
+            "name": "model",
+            "value": "whisper-large-v3-turbo"
+          },
+          {
+            "name": "response_format",
+            "value": "json"
+          },
+          {
+            "name": "prompt",
+            "value": expr("{{ JSON.parse($('What came in').first().json.keyterms).join(', ') }}")
+          }
+        ]
+      },
+      "options": {
+        "timeout": 60000
+      }
+    },
+    "onError": "continueRegularOutput",
+    "credentials": { "groqApi": newCredential("Groq") },
+    "output": [
+  {
+    "text": "Rajiv asked about the diesel price again."
+  }
+]
+  }
+});
+
+const afterJoin = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "The notes",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// The note as one text: what was said (Sarvam, Whisper where Sarvam failed), then anything typed\nconst w = $('What came in').first().json;\nconst ran = n => { try { return $(n).isExecuted; } catch (e) { return false; } };\nlet pieces = ran('Transcribe (Sarvam)') ? $('Transcribe (Sarvam)').all().map(i => String(i.json.transcript || '').trim()) : [];\nlet heard = pieces.length ? 'Sarvam' : '';\nif (ran('Transcribe (Groq Whisper)')) {\n  const wh = $('Transcribe (Groq Whisper)').all().map(i => String(i.json.text || '').trim());\n  pieces = (pieces.length ? pieces : wh).map((p, i) => p || wh[i] || '');\n  heard = 'Sarvam and Whisper';\n}\nconst spoken = pieces.filter(Boolean).join(' ');\nconst transcript = [spoken, w.notes].filter(Boolean).join('\\n\\n').trim();\nif (!transcript) throw new Error('Nothing to read: the voice note could not be transcribed and no notes were typed');\nconst PROMPT = \"The presenter has just come out of a real meeting and said (or typed) how it went, in their own words. Work out what\\nhappened, per person, using ONLY these notes.\\n\\nThe meeting: {meeting}\\nThe people from the invite (only these can be named, by email): {attendees}\\nWhat the presenter wanted from it: {goal}\\nThe presenter's notes (transcribed speech or typed; may be rough, or in Hinglish):\\n{notes}\\n\\nWhat each person's practice seat asked in the last rehearsal of this meeting (only to compare below; never report it as something\\nthey said in the real meeting):\\n{practice}\\n\\npeople: one entry per attendee the notes say something about (email from the list above; leave out anyone the notes don't mention):\\n- raised: what they asked for, objected to or worried about in the meeting;\\n- promised: what the presenter promised them;\\n- decided: what they decided or agreed to;\\n  each item: text (plain, at most 14 words) and quote (copied word for word from the notes, 3 to 25 words, that shows it);\\n- next_step: the next step agreed with them, in a few words, or \\\"\\\".\\npredicted: for each raised item, only when a practice question above for the SAME person asked substantially the same thing:\\n{ email, raised (the index of that raised item in their list, from 0), practice (the index of the practice question, from 0) }.\\nfollowup: the email the presenter would send the attendees now: subject, and body (plain text, under 180 words, in the presenter's\\nvoice): thank them, answer or acknowledge each open point they raised, confirm what the presenter promised with any dates, and the next\\nstep. Never invent facts, figures or commitments that are not in the notes; where the presenter must add something, write\\n[fill in: what]. Sign off as the presenter, without a name.\\nAnswer in JSON.\";\nconst parts = { meeting: w.meeting.title + (w.meeting.company ? ' with ' + w.meeting.company : '') + ', ' + w.meeting.date,\n                attendees: JSON.stringify(w.attendees), goal: w.goal || 'Not given.', notes: transcript,\n                practice: w.practice.length ? JSON.stringify(w.practice.map(p => ({ email: p.email, questions: p.questions }))) : 'No rehearsal of this meeting.' };\nconst prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);\nreturn [{ json: { ...w, transcript, source: spoken ? 'voice' : 'notes', heard, prompt } }];"
+    },
+    "output": [
+  {
+    "transcript": "",
+    "source": "notes",
+    "prompt": ""
+  }
+]
+  }
+});
+
+const afterRead = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Work out what happened",
+    "parameters": {
+      "method": "POST",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialType": "googlePalmApi",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"people\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"email\": {\"type\": \"string\"}, \"raised\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"quote\": {\"type\": \"string\"} }, \"required\": [\"text\", \"quote\"]} }, \"promised\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"quote\": {\"type\": \"string\"} }, \"required\": [\"text\", \"quote\"]} }, \"decided\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"quote\": {\"type\": \"string\"} }, \"required\": [\"text\", \"quote\"]} }, \"next_step\": {\"type\": \"string\"} }, \"required\": [\"email\", \"raised\", \"promised\", \"decided\", \"next_step\"]} }, \"predicted\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"email\": {\"type\": \"string\"}, \"raised\": {\"type\": \"integer\"}, \"practice\": {\"type\": \"integer\"} }, \"required\": [\"email\", \"raised\", \"practice\"]} }, \"followup\": {\"type\": \"object\", \"properties\": {\"subject\": {\"type\": \"string\"}, \"body\": {\"type\": \"string\"} }, \"required\": [\"subject\", \"body\"]} }, \"required\": [\"people\", \"predicted\", \"followup\"]} } }) }}"),
+      "options": {
+        "timeout": 120000
+      }
+    },
+    "onError": "continueErrorOutput",
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
+    "credentials": { "googlePalmApi": newCredential("Gemini") },
+    "output": [
+  {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "text": "{}"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]
+  }
+});
+
+const afterReadGroq = node({
+  type: "n8n-nodes-base.httpRequest",
+  version: 4.5,
+  config: {
+    "name": "Work out what happened (Groq)",
+    "parameters": {
+      "method": "POST",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "authentication": "predefinedCredentialType",
+      "nodeCredentialType": "groqApi",
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": expr("{{ (() => { const j = $('The notes').first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (j.prompt) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"people\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"email\": {\"type\": \"string\"}, \"raised\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"quote\": {\"type\": \"string\"} }, \"required\": [\"text\", \"quote\"]} }, \"promised\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"quote\": {\"type\": \"string\"} }, \"required\": [\"text\", \"quote\"]} }, \"decided\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}, \"quote\": {\"type\": \"string\"} }, \"required\": [\"text\", \"quote\"]} }, \"next_step\": {\"type\": \"string\"} }, \"required\": [\"email\", \"raised\", \"promised\", \"decided\", \"next_step\"]} }, \"predicted\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"email\": {\"type\": \"string\"}, \"raised\": {\"type\": \"integer\"}, \"practice\": {\"type\": \"integer\"} }, \"required\": [\"email\", \"raised\", \"practice\"]} }, \"followup\": {\"type\": \"object\", \"properties\": {\"subject\": {\"type\": \"string\"}, \"body\": {\"type\": \"string\"} }, \"required\": [\"subject\", \"body\"]} }, \"required\": [\"people\", \"predicted\", \"followup\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
+      "options": {
+        "timeout": 120000
+      }
+    },
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 5000,
+    "credentials": { "groqApi": newCredential("Groq") },
+    "output": [
+  {
+    "choices": [
+      {
+        "message": {
+          "content": "{}"
+        }
+      }
+    ]
+  }
+]
+  }
+});
+
+const afterRules = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "Hold to the rules",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "const parseJ = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };\nconst lower = e => String(e || '').trim().toLowerCase();\nconst KINDS = ['raised', 'promised', 'decision', 'preference', 'role', 'context'];\nconst rowToTwin = r => ({ email: lower(r.email), aliases: parseJ(r.aliases, []), name: r.name || '', company: r.company || '', role: parseJ(r.role, null),\n  sources: parseJ(r.sources, []), facts: parseJ(r.facts, []), readings: parseJ(r.readings, []), meetings: parseJ(r.meetings, []),\n  predictions: parseJ(r.predictions, []), build_log: parseJ(r.build_log, []), updated: r.updated || '', sample: false });\nconst twinToRow = t => ({ email: t.email, aliases: JSON.stringify(t.aliases || []), name: t.name || '', company: t.company || '', role: t.role ? JSON.stringify(t.role) : '',\n  sources: JSON.stringify(t.sources || []), facts: JSON.stringify(t.facts || []), readings: JSON.stringify(t.readings || []), meetings: JSON.stringify(t.meetings || []),\n  predictions: JSON.stringify(t.predictions || []), build_log: JSON.stringify(t.build_log || []), updated: t.updated || '' });\n// Any address of theirs finds the row: the key, or one the presenter linked\nconst findRow = (rows, email) => rows.find(r => r.email && (lower(r.email) === email || parseJ(r.aliases, []).map(lower).includes(email)));\nconst maxId = (list, prefix) => list.reduce((a, x) => Math.max(a, Number(String(x.id || '').replace(prefix, '')) || 0), 0);\n// Counts for the brief and the people list, honest: connected facts, real meetings already held, suggestions waiting\nconst twinSummary = t => { const today = new Date().toISOString().slice(0, 10); const past = (t.meetings || []).map(m => m.date).filter(d => d && d <= today).sort();\n  return { facts: (t.facts || []).filter(f => f.status === 'connected').length, meetings: past.length, to_check: (t.sources || []).filter(s => s.status === 'suggested').length,\n           last_met: past.length ? past[past.length - 1] : null }; };\n\nconst replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// The twin rules after the model (docs/CONTRACT.md 0.28): only attendees from the invite, by email; every item quoted from the notes;\n// a prediction only for someone who had a practice seat, and only the number and the real facts it matched are kept. Then each person's\n// twin gets the notes as a source (connected: the presenter's own account of a real meeting with them), the facts, the meeting and the\n// prediction.\nconst w = $('The notes').first().json;\nlet d = {};\ntry { d = JSON.parse(replyText($json) || '{}'); } catch (e) { d = {}; }\nconst norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();\nconst said = norm(w.transcript);\nconst quoted = x => x && x.text && norm(x.quote).split(' ').length >= 3 && said.includes(norm(x.quote));\nconst byEmail = Object.fromEntries(w.attendees.map(a => [a.email, a]));\nconst people = (d.people || []).filter(p => byEmail[lower(p.email)]).map(p => ({\n  email: lower(p.email), name: byEmail[lower(p.email)].name,\n  raised: (p.raised || []).filter(quoted).slice(0, 8).map(x => ({ text: String(x.text).slice(0, 140), quote: String(x.quote).slice(0, 300) })),\n  promised: (p.promised || []).filter(quoted).slice(0, 6).map(x => ({ text: String(x.text).slice(0, 140), quote: String(x.quote).slice(0, 300) })),\n  decided: (p.decided || []).filter(quoted).slice(0, 6).map(x => ({ text: String(x.text).slice(0, 140), quote: String(x.quote).slice(0, 300) })),\n  next_step: String(p.next_step || '').slice(0, 140) }))\n  .filter(p => p.raised.length || p.promised.length || p.decided.length || p.next_step);\n// How well the last rehearsal predicted it: per person who had a seat, how many of the things they really raised it had asked\nconst seat = Object.fromEntries(w.practice.map(p => [p.email, p]));\nconst hits = {};\n(d.predicted || []).forEach(x => {\n  const e = lower(x.email);\n  const person = people.find(p => p.email === e);\n  if (!person || !seat[e] || !person.raised[x.raised] || !seat[e].questions[x.practice]) return;\n  (hits[e] = hits[e] || new Set()).add(x.raised);\n});\nconst predictions = people.filter(p => seat[p.email] && p.raised.length).map(p => ({ email: p.email, name: p.name, asked: p.raised.length,\n  predicted: hits[p.email] ? hits[p.email].size : 0, practice_asked: seat[p.email].questions.length, matched_index: hits[p.email] ? Array.from(hits[p.email]) : [] }));\nconst now = new Date().toISOString();\nconst f = d.followup || {};\nconst to = w.attendees.map(a => a.email);\nconst followup = { to, subject: String(f.subject || '').slice(0, 160), body: String(f.body || '').slice(0, 3000), status: f.body && to.length && w.owner ? 'waiting' : 'none' };\nconst run = { workflow_id: String($workflow.id), execution_id: String($execution.id) };\n// Each person's twin: started if DryRun didn't know them, never touching anything else in it\nconst rows = $('Read the people table').all().map(i => i.json).filter(r => r.email);\nconst key = 'after:' + w.meeting.id;\nconst twinRows = people.map(p => {\n  const found = findRow(rows, p.email);\n  const t = found ? rowToTwin(found) : { email: p.email, aliases: [], name: p.name, company: w.meeting.company, role: null, sources: [], facts: [], readings: [], meetings: [], predictions: [], build_log: [], updated: '', sample: false };\n  let src = t.sources.find(s => s.key === key);\n  if (!src) { src = { id: 's' + (maxId(t.sources, 's') + 1), type: 'meeting_note', key }; t.sources.push(src); }\n  Object.assign(src, { title: 'Your notes from ' + (w.meeting.title || 'the meeting'), date: w.meeting.date, status: 'connected', why: 'Your own account of a real meeting with them', text: w.transcript.slice(0, 6000) });\n  let n = maxId(t.facts, 'f');\n  const have = new Set(t.facts.map(x => norm(x.text)));\n  const ids = [];\n  [['raised', p.raised], ['promised', p.promised], ['decision', p.decided]].forEach(([kind, list]) => list.forEach((x, i) => {\n    const existing = t.facts.find(y => norm(y.text) === norm(x.text));\n    if (existing) { if (kind === 'raised') ids[i] = existing.id; return; }\n    const fact = { id: 'f' + (++n), kind, text: x.text, source_id: src.id, quote: x.quote, status: 'connected', added: now };\n    t.facts.push(fact);\n    have.add(norm(x.text));\n    if (kind === 'raised') ids[i] = fact.id;\n  }));\n  if (!t.meetings.some(m => m.id === w.meeting.id)) t.meetings.push({ id: w.meeting.id, title: w.meeting.title, date: w.meeting.date });\n  const pr = predictions.find(x => x.email === p.email);\n  if (pr) t.predictions = t.predictions.filter(x => x.meeting_id !== w.meeting.id).concat([{ meeting_id: w.meeting.id, date: w.meeting.date, asked: pr.asked, predicted: pr.predicted, matched: pr.matched_index.map(i => ids[i]).filter(Boolean) }]);\n  t.name = t.name || p.name;\n  t.updated = now;\n  return { ...twinToRow(t), execution_id: run.execution_id, workflow_id: run.workflow_id };\n});\nconst after = { at: now, source: w.source, transcript: w.transcript.slice(0, 12000), heard: w.heard || '', people,\n  predictions: predictions.map(({ matched_index, ...x }) => x), followup, run };\nreturn [{ json: { meeting_id: w.meeting.id, after: JSON.stringify(after), status: 'done', updated_at: now, result: after, rows: twinRows, owner: w.owner } }];"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "after": "{}",
+    "status": "done",
+    "result": {},
+    "rows": [],
+    "owner": "you@example.com"
+  }
+]
+  }
+});
+
+const afterSave = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Save it on the meeting",
+    "parameters": {
+      "resource": "row",
+      "operation": "update",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "wURCb4PjdZLpttns",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.meeting_id }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "defineBelow",
+        "value": {
+          "after": expr("{{ $json.after }}"),
+          "status": expr("{{ $json.status }}"),
+          "updated_at": expr("{{ $json.updated_at }}")
+        },
+        "matchingColumns": [],
+        "schema": [
+          {
+            "id": "after",
+            "displayName": "after",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "status",
+            "displayName": "status",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "updated_at",
+            "displayName": "updated_at",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          }
+        ]
+      }
+    },
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true,
+    "output": [
+  {
+    "id": 1
+  }
+]
+  }
+});
+
+const afterAnyone = ifElse({
+  type: "n8n-nodes-base.if",
+  version: 2.3,
+  config: {
+    "name": "Any twins to update?",
+    "parameters": {
+      "conditions": {
+        "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose"
+        },
+        "conditions": [
+          {
+            "leftValue": expr("{{ $('Hold to the rules').first().json.rows.length }}"),
+            "operator": {
+              "type": "number",
+              "operation": "gt"
+            },
+            "rightValue": 0
+          }
+        ],
+        "combinator": "and"
+      },
+      "options": {}
+    },
+    "output": [
+  {}
+]
+  }
+});
+
+const afterRows = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "One row per person",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "return $('Hold to the rules').first().json.rows.map(row => ({ json: { row } }));"
+    },
+    "output": [
+  {
+    "row": {
+      "email": "rajiv.menon@kaverifreight.in"
+    }
+  }
+]
+  }
+});
+
+const afterUpsert = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Update their twins",
+    "parameters": {
+      "resource": "row",
+      "operation": "upsert",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "We8Agobm9SMWGc7E",
+        "cachedResultName": "DryRun people"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "email",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.row.email }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "defineBelow",
+        "value": {
+          "email": expr("{{ $json.row.email }}"),
+          "aliases": expr("{{ $json.row.aliases }}"),
+          "name": expr("{{ $json.row.name }}"),
+          "company": expr("{{ $json.row.company }}"),
+          "role": expr("{{ $json.row.role }}"),
+          "sources": expr("{{ $json.row.sources }}"),
+          "facts": expr("{{ $json.row.facts }}"),
+          "readings": expr("{{ $json.row.readings }}"),
+          "meetings": expr("{{ $json.row.meetings }}"),
+          "predictions": expr("{{ $json.row.predictions }}"),
+          "build_log": expr("{{ $json.row.build_log }}"),
+          "updated": expr("{{ $json.row.updated }}"),
+          "execution_id": expr("{{ $json.row.execution_id }}"),
+          "workflow_id": expr("{{ $json.row.workflow_id }}")
+        },
+        "matchingColumns": [],
+        "schema": [
+          {
+            "id": "email",
+            "displayName": "email",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "aliases",
+            "displayName": "aliases",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "name",
+            "displayName": "name",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "company",
+            "displayName": "company",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "role",
+            "displayName": "role",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "sources",
+            "displayName": "sources",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "facts",
+            "displayName": "facts",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "readings",
+            "displayName": "readings",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "meetings",
+            "displayName": "meetings",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "predictions",
+            "displayName": "predictions",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "build_log",
+            "displayName": "build_log",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "updated",
+            "displayName": "updated",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "execution_id",
+            "displayName": "execution_id",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          },
+          {
+            "id": "workflow_id",
+            "displayName": "workflow_id",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          }
+        ]
+      }
+    },
+    "output": [
+  {
+    "id": 1
+  }
+]
+  }
+});
+
+const afterReply = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Send what n8n found",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ after: $('Hold to the rules').first().json.result }) }}"),
+      "options": {}
+    },
+    "executeOnce": true,
+    "output": [
+  {}
+]
+  }
+});
+
+const afterToSend = ifElse({
+  type: "n8n-nodes-base.if",
+  version: 2.3,
+  config: {
+    "name": "A follow-up to send?",
+    "parameters": {
+      "conditions": {
+        "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose"
+        },
+        "conditions": [
+          {
+            "leftValue": expr("{{ $('Hold to the rules').first().json.result.followup.status }}"),
+            "operator": {
+              "type": "string",
+              "operation": "equals"
+            },
+            "rightValue": "waiting"
+          }
+        ],
+        "combinator": "and"
+      },
+      "options": {}
+    },
+    "output": [
+  {}
+]
+  }
+});
+
+const afterAsk = node({
+  type: "n8n-nodes-base.gmail",
+  version: 2.2,
+  config: {
+    "name": "Ask before sending",
+    "parameters": {
+      "resource": "message",
+      "operation": "sendAndWait",
+      "sendTo": expr("{{ $('Hold to the rules').first().json.owner }}"),
+      "subject": expr("{{ 'Send your follow-up for ' + ($('The notes').first().json.meeting.title || 'the meeting') + '?' }}"),
+      "message": expr("{{ (() => { const f = $('Hold to the rules').first().json.result.followup; const esc = t => String(t || '').split('&').join('&amp;').split('<').join('&lt;'); return '<p>n8n drafted this follow-up from your notes on the meeting. <b>Send it</b> emails it to ' + esc(f.to.join(', ')) + ' from your Gmail; ' + '<b>Don\\'t send</b> keeps it as a draft on the meeting page. Edit anything in [fill in: ...] first: answer Don\\'t send, then send it yourself.</p>' + '<p><b>Subject:</b> ' + esc(f.subject) + '</p><p>' + esc(f.body).split('\\n').join('<br>') + '</p>'; })() }}"),
+      "responseType": "approval",
+      "approvalOptions": {
+        "values": {
+          "approvalType": "double",
+          "approveLabel": "Send it",
+          "disapproveLabel": "Don't send"
+        }
+      },
+      "options": {
+        "limitWaitTime": {
+          "values": {
+            "limitType": "afterTimeInterval",
+            "resumeAmount": 2,
+            "resumeUnit": "days"
+          }
+        },
+        "appendAttribution": false
+      }
+    },
+    "executeOnce": true,
+    "credentials": { "gmailOAuth2": newCredential("Gmail") },
+    "output": [
+  {
+    "data": {
+      "approved": true
+    }
+  }
+]
+  }
+});
+
+const afterApproved = ifElse({
+  type: "n8n-nodes-base.if",
+  version: 2.3,
+  config: {
+    "name": "Approved?",
+    "parameters": {
+      "conditions": {
+        "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "loose"
+        },
+        "conditions": [
+          {
+            "leftValue": expr("{{ $json.data && $json.data.approved }}"),
+            "operator": {
+              "type": "boolean",
+              "operation": "true",
+              "singleValue": true
+            },
+            "rightValue": ""
+          }
+        ],
+        "combinator": "and"
+      },
+      "options": {}
+    },
+    "output": [
+  {
+    "data": {
+      "approved": true
+    }
+  }
+]
+  }
+});
+
+const afterSend = node({
+  type: "n8n-nodes-base.gmail",
+  version: 2.2,
+  config: {
+    "name": "Send the follow-up",
+    "parameters": {
+      "resource": "message",
+      "operation": "send",
+      "sendTo": expr("{{ $('Hold to the rules').first().json.result.followup.to.join(',') }}"),
+      "subject": expr("{{ $('Hold to the rules').first().json.result.followup.subject }}"),
+      "emailType": "text",
+      "message": expr("{{ $('Hold to the rules').first().json.result.followup.body }}"),
+      "options": {
+        "appendAttribution": false
+      }
+    },
+    "onError": "continueRegularOutput",
+    "credentials": { "gmailOAuth2": newCredential("Gmail") },
+    "output": [
+  {
+    "id": "m1"
+  }
+]
+  }
+});
+
+const afterSent = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "It was sent",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// The answer, on the meeting: the follow-up was sent (or failed to send), or the presenter kept it\nconst r = $('Hold to the rules').first().json;\nconst after = { ...r.result, followup: { ...r.result.followup, status: $input.first().json.id ? 'sent' : 'failed', answered_at: new Date().toISOString() } };\nreturn [{ json: { meeting_id: r.meeting_id, after: JSON.stringify(after) } }];"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "after": "{}"
+  }
+]
+  }
+});
+
+const afterDeclined = node({
+  type: "n8n-nodes-base.code",
+  version: 2,
+  config: {
+    "name": "It was not sent",
+    "parameters": {
+      "mode": "runOnceForAllItems",
+      "language": "javaScript",
+      "jsCode": "// The answer, on the meeting: the follow-up was sent (or failed to send), or the presenter kept it\nconst r = $('Hold to the rules').first().json;\nconst after = { ...r.result, followup: { ...r.result.followup, status: 'declined', answered_at: new Date().toISOString() } };\nreturn [{ json: { meeting_id: r.meeting_id, after: JSON.stringify(after) } }];"
+    },
+    "output": [
+  {
+    "meeting_id": "evt123",
+    "after": "{}"
+  }
+]
+  }
+});
+
+const afterSaveAnswer = node({
+  type: "n8n-nodes-base.dataTable",
+  version: 1.1,
+  config: {
+    "name": "Save the answer",
+    "parameters": {
+      "resource": "row",
+      "operation": "update",
+      "dataTableId": {
+        "__rl": true,
+        "mode": "id",
+        "value": "wURCb4PjdZLpttns",
+        "cachedResultName": "DryRun meetings"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "meeting_id",
+            "condition": "eq",
+            "keyValue": expr("{{ $json.meeting_id }}")
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "defineBelow",
+        "value": {
+          "after": expr("{{ $json.after }}")
+        },
+        "matchingColumns": [],
+        "schema": [
+          {
+            "id": "after",
+            "displayName": "after",
+            "required": false,
+            "defaultMatch": false,
+            "display": true,
+            "type": "string",
+            "canBeUsedToMatch": true
+          }
+        ]
+      }
+    },
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true,
+    "output": [
+  {
+    "id": 1
+  }
+]
+  }
+});
+
+const about = sticky('## DryRun after the meeting\nAfter a real meeting (POST /webhook/dryrun/after-meeting, docs/CONTRACT.md 0.28): Sarvam transcribes the presenter\'s voice note (Whisper if it fails), n8n works out what each attendee raised, what was promised and decided, updates their twins, scores how well the last rehearsal predicted it, and drafts the follow-up, which goes out only after the presenter approves it from their inbox.', [afterTrigger], { color: 4 });
+
+export default workflow('dryrun-after-meeting', 'DryRun after the meeting')
+  .add(about)
+  .add(afterTrigger)
+  .to(afterMeeting)
+  .to(afterSessions)
+  .to(afterPeople)
+  .to(afterWhat)
+  .to(afterVoice
+    .onTrue(afterPieces.to(afterFile).to(afterSarvam).to(afterHeard).to(afterGaps
+      .onTrue(afterPieces2.to(afterFile2).to(afterWhisper).to(afterJoin))
+      .onFalse(afterJoin)))
+    .onFalse(afterJoin))
+  .add(afterJoin)
+  .to(afterRead)
+  .to(afterRules)
+  .add(afterRead.onError(afterReadGroq))
+  .add(afterReadGroq)
+  .to(afterRules)
+  .add(afterRules)
+  .to(afterSave)
+  .to(afterAnyone
+    .onTrue(afterRows.to(afterUpsert).to(afterReply))
+    .onFalse(afterReply))
+  .add(afterReply)
+  .to(afterToSend
+    .onTrue(afterAsk.to(afterApproved
+      .onTrue(afterSend.to(afterSent).to(afterSaveAnswer))
+      .onFalse(afterDeclined.to(afterSaveAnswer)))))
+  .group('Listen', [afterMeeting, afterSessions, afterPeople, afterWhat, afterVoice, afterPieces, afterFile, afterSarvam, afterHeard, afterGaps, afterPieces2, afterFile2, afterWhisper, afterJoin], { description: 'The meeting, its last rehearsal, and the voice note transcribed by Sarvam (Whisper if it fails)' })
+  .group('Understand', [afterRead, afterReadGroq, afterRules, afterSave, afterAnyone, afterRows, afterUpsert, afterReply], { description: 'Per person: raised, promised, decided, with quotes; their twins and the hit rate' })
+  .group('Follow up', [afterToSend, afterAsk, afterApproved, afterSend, afterSent, afterDeclined, afterSaveAnswer], { description: 'The follow-up, sent only after the presenter approves it' });

@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.27, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.28, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -38,6 +38,7 @@ Upcoming meetings n8n has picked up, soonest first. The web app's home page and 
 Field notes:
 - `progress` is where n8n is in preparing the meeting, saved by the workflow after each stage with real details (emails read, news stories found, questions written). The web app shows it live; `run` links to that n8n execution. If a run fails, the step it was on gets `state: "error"` with a plain reason, and `status` becomes `failed`.
 - Research reads Google News headlines and the company's website; the model doesn't search the web itself, so every news item has a source link.
+- `after` *(0.28)*: what happened in the real meeting, from the presenter's voice note or notes (see `POST /after-meeting`); `null` before. A meeting with one is `done`.
 - `practice` *(0.20)*: the rehearsals of this meeting that have been debriefed (from the DryRun sessions table), with the latest; `null` before the first. A meeting that has one is `practised`.
 - `id` is the calendar event id. `why` is n8n's reason for its decision: for a prepared meeting, who is coming and what is at stake; for a skipped one, why it isn't worth preparing (e.g. "Internal weekly sync, no one from outside").
 - `skipped`: n8n decided the meeting isn't worth preparing. It's still listed, with no brief and empty `progress`, so the presenter can see every decision and overrule it: "Prepare anyway" sends it to `POST /add-meeting` with the same `id`, and meetings added that way are always prepared.
@@ -96,7 +97,7 @@ For every real person the presenter meets for work, n8n keeps a **twin** in the 
   ],
   "readings": [{ "id": "r1", "text": "Pushes on cost", "evidence": ["f1", "f4"] }],
   "meetings": [{ "id": "string", "title": "string", "date": "2026-10-14" }],
-  "predictions": [],
+  "predictions": [{ "meeting_id": "string", "date": "2026-10-14", "asked": 4, "predicted": 3, "matched": ["f21", "f22", "f24"] }],
   "build_log": [{ "step": "emails", "text": "Found 7 emails with rajiv.menon@kaverifreight.in", "t": 1200, "adds": { "sources": ["s1", "s2"], "facts": [], "readings": [] } }],
   "updated": "2026-10-12T10:00:00.000Z",
   "sample": false
@@ -106,7 +107,7 @@ Field notes:
 - `sources` are the cards on the twin page's evidence map. `status` follows rule 3: `connected` only for an email from or to the twin's address or an alias, a `manual` note, or a source the presenter confirmed; `suggested` for anything found by name; `rejected` stays in the list (faded on the page) so the same source is never suggested again (`key`: the message id or the URL). `why` says why a suggestion might be them ("kaveri.in/team lists a Rajiv Menon, CFO").
 - `facts` take their source's status: confirming a suggested source connects its facts; rejecting it rejects them. `promised` is something the presenter promised this person. Only connected facts reach the brief (`since_last_time`) and the practice panel.
 - `role` is set only when a connected source states it.
-- `meetings` are the real meetings they were in (from the DryRun meetings table, by attendee email). `predictions` *(later, WF4)*: per real meeting, how many of their real questions the last rehearsal predicted. Empty until then.
+- `meetings` are the real meetings they were in (from the DryRun meetings table, by attendee email). `predictions` *(0.28, WF4)*: per real meeting, how many of the things they really raised (`asked`) the practice seat's questions in the last rehearsal of that meeting had asked (`predicted`), and which of their facts those were (`matched`, fact ids). Only for someone who had a practice seat in that rehearsal. Nothing the practice seat said is kept: only the number and the real facts it matched.
 - `build_log` is the last build's steps with the time each arrived (`t`, ms from the start) and the ids of the sources, facts and readings it added, so the page can replay the build with no n8n call. The twin page plays one list of steps whether it comes live from the stream, from `build_log` (Replay) or from its timeline (rewinding to a date shows only facts whose source is dated on or before it).
 - `sources[].url` for an email is its Gmail link (`https://mail.google.com/mail/u/0/#all/<message id>`), so the page can open it.
 - `sample` is `true` only for the sample twin (Rajiv Menon of the sample meeting), which lives on the laptop and never reaches n8n.
@@ -135,6 +136,33 @@ The presenter's changes, queued on the twin page and sent as one batch (one exec
 - `note` adds a `manual` source ("you added this") and, if it's short (under 300 characters), one connected fact of that `kind` (default `context`). Longer pasted text (their profile, notes from a meeting DryRun didn't see) is kept as a source and its facts are extracted, with quotes, on the next build.
 - `alias` links another address: connected from then on, searched on the next build.
 - `delete` removes a fact for good; `forget` deletes the row.
+
+### POST `/after-meeting` *(0.28)*
+After a real meeting, the presenter says (or types) how it went, on the meeting page. One execution: n8n works out what each person raised, what the presenter promised and what was decided, updates their twins, scores how well the last rehearsal predicted it, drafts the follow-up email and asks the presenter to approve it before anything is sent.
+```json
+{ "meeting_id": "string", "owner_email": "string", "notes": "string", "audio": [{ "base64": "string", "format": "m4a | wav" }] }
+```
+- `audio`: the voice note, cut by the laptop into pieces under 30 seconds (Sarvam's speech-to-text takes short clips), in order. Either `audio` or `notes` (pasted text), or both.
+- n8n transcribes each piece with Sarvam (`saaras:v4`, language detected, so Indian English and Hinglish work, with the attendees' names and the company as key terms); if any piece fails, all of them go to Groq Whisper instead.
+- The people are the meeting's attendees from the invite: a fact goes to a twin only for someone on it (by email), with a quote from the notes. The notes become a `meeting_note` source on each of their twins (connected: the presenter's own account of a real meeting with them), and the meeting is added to their `meetings`.
+- The hit rate compares what each person really raised with the questions their practice seat asked in the last debriefed rehearsal of this meeting (matched by `twin_email` or name). Practice lines are only compared, never kept.
+- The follow-up goes to the attendees only after the presenter approves it: n8n emails the draft to the owner with Approve and Decline (Gmail send-and-wait, in the same execution, waiting up to 2 days), then sends it or not.
+
+Response (as soon as the meeting row is saved, before the approval):
+```json
+{
+  "after": {
+    "at": "2026-10-14T18:00:00.000Z",
+    "source": "voice | notes",
+    "transcript": "string",
+    "people": [{ "email": "string", "name": "string", "raised": [{ "text": "string", "quote": "string" }], "promised": [], "decided": [], "next_step": "string" }],
+    "predictions": [{ "email": "string", "name": "string", "asked": 4, "predicted": 3, "practice_asked": 5 }],
+    "followup": { "to": ["string"], "subject": "string", "body": "string", "status": "waiting | sent | declined | none" },
+    "run": { "workflow_id": "string", "execution_id": "string" }
+  }
+}
+```
+The meeting's row keeps it (the DryRun meetings table's `after`), `status` becomes `done`, and `GET /meeting` returns it as `meeting.after`; `followup.status` changes to `sent` or `declined` when the presenter answers.
 
 ### GET `/twin?email=` and GET `/twins`
 Read the DryRun people table: one twin (`{ "twin": twin | null }`, any alias works) or everyone (`{ "twins": [{ "email", "name", "company", "role", "facts", "meetings", "to_check", "last_met", "updated" }] }`). The laptop keeps a copy of every twin it has seen (`web/.twins/`), updated from `/twin` and `/twin/update` answers, so viewing a twin or the people list costs no execution; it reads these only when it has no copy, through `readOnce`.
@@ -713,3 +741,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.25 (11 Oct): time no longer decides when the panel hears the presenter. A slide is sent whole when they move on, and mid-slide only at the interruption points n8n plans (`plan.interrupts`; `/turn` gains `mid_slide`). The pitch length can be `null` (no time limit). With a limit, n8n decides how the chair keeps time (`time`: nudge, and maybe stop the pitch for questions) and voices the chair's `time_nudge` and `time_up` lines, which the client plays itself; `pitch_end` gains `time_up`.
 - 0.26 (12 Oct): a panel that feels real. `/turn` keeps every question's life in `threads` (in the context and in the response, with `thread_id` on reactions): at most one follow-up, then answered, parked or dodged, never asked again. Reactions gain `park`, `move_on` and `hand_back`. n8n enforces the rules after the model in a Code node. Generic lines (`generic`, `voice`; fillers, park, move-on, hand-back, the chair's thanks and "Take your time") are voiced once per voice and cached by the laptop (`/prep` takes `cached_voices`); the client plays a filler the moment it sends an answer. Lines gain `rescue_question` per slide; at a freeze the chair says "Take your time", then asks it. The debrief is fair: slide time counts only the pitch, `trouble` lists the system's mistakes for the model to discount, a run too short to judge isn't scored (`pitch.scored`, `overall` and scores `null`), and `owed` drafts an answer, with sources, to each question the presenter couldn't answer. Know your side: the meeting prep guesses the presenter's goal (`proposal.goal`), the presenter can set what they offer (`presenter.offer`, also on `/add-meeting`) and confirm the goal, and `/prep` takes both (`goal`); the bundle carries them for `/turn` and `/debrief`. The next `/prep` asks the last run's owed questions again, early. New `POST /deck-review`: n8n checks an uploaded deck against the brief's research and says where it will get pushback, with sources; the next `/prep` reads it. The debrief streams its progress; the turn skips the model where no question is possible; every voiced line is cached by voice and text.
 - 0.27 (12 Oct): twins of the people you meet. New **DryRun people** data table (keyed by email) and `POST /twin` (streamed: each step with the sources, facts and readings it added, then the twin), `POST /twin/update` (a batch of confirm, reject, note, alias, delete, forget), `GET /twin` and `GET /twins`. A twin learns only from real sources, connects only on the same email address and suggests the rest. `/meeting` attendees gain `twin` (counts) and the brief gains `since_last_time` (facts only). `/prep` panel members gain `twin_email`; objections gain `source: "twin"` with `date` and `from`.
+- 0.28 (12 Oct): after the real meeting (twins step 5, WF4). New `POST /after-meeting` (a voice note in pieces under 30 s, or notes): Sarvam transcribes it, n8n works out per attendee what they raised, what was promised and decided, writes it to their twins (a `meeting_note` source), scores the last rehearsal's predictions (`predictions` on the twin: asked, predicted, matched fact ids) and drafts the follow-up, sent to the attendees only after the presenter approves it (Gmail send-and-wait). Meetings gain `after`.
