@@ -467,6 +467,32 @@ export interface Meeting {
   run?: { workflow_id: string; execution_id: string } | null;
   // The rehearsals debriefed so far, with the latest (0.20); null before the first
   practice?: { sessions: number; last: Pick<SessionSummary, "session_id" | "at" | "overall" | "headline"> } | null;
+  // What happened in the real meeting (0.28), from the presenter's voice note or notes; null before. A meeting with one is done.
+  after?: MeetingAfter | null;
+}
+
+// POST /after-meeting (0.28): what each person raised, promised and decided, the hit rate and the follow-up
+export interface MeetingAfter {
+  at: string;
+  source: "voice" | "notes";
+  transcript: string;
+  // Who transcribed the voice note: "Sarvam", or "Sarvam and Whisper" when a piece fell back to Groq Whisper
+  heard?: string;
+  people: AfterPerson[];
+  // Per person who had a practice seat in the last rehearsal: how many of the things they raised it had asked
+  predictions: { email: string; name: string; asked: number; predicted: number; practice_asked: number }[];
+  // waiting: in the presenter's inbox for approval; failed: approved but Gmail didn't send it
+  followup: { to: string[]; subject: string; body: string; status: "waiting" | "sent" | "declined" | "failed" | "none"; answered_at?: string };
+  run: { workflow_id: string; execution_id: string } | null;
+}
+
+export interface AfterPerson {
+  email: string;
+  name: string;
+  raised: { text: string; quote: string }[];
+  promised: { text: string; quote: string }[];
+  decided: { text: string; quote: string }[];
+  next_step: string;
 }
 
 // Only facts: real attendees, sourced news. Hypothetical roles live in the proposal's practice panel.
@@ -680,11 +706,20 @@ export interface Twin {
   facts: TwinFact[];
   readings: TwinReading[];
   meetings: TwinMeeting[];
-  // Per real meeting, how much of what they asked the rehearsal predicted (WF4, later)
-  predictions: { meeting_id: string; asked: number; predicted: number }[];
+  // Per real meeting (0.28): how many of the things they raised (asked) the last rehearsal's practice seat had asked (predicted), and
+  // which of their facts those were (matched)
+  predictions: TwinPrediction[];
   build_log: TwinLogStep[];
   updated: string;
   sample: boolean;
+}
+
+export interface TwinPrediction {
+  meeting_id: string;
+  date?: string;
+  asked: number;
+  predicted: number;
+  matched?: string[];
 }
 
 export interface TwinSummary {

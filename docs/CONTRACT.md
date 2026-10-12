@@ -155,14 +155,15 @@ Response (as soon as the meeting row is saved, before the approval):
     "at": "2026-10-14T18:00:00.000Z",
     "source": "voice | notes",
     "transcript": "string",
+    "heard": "Sarvam | Sarvam and Whisper | ",
     "people": [{ "email": "string", "name": "string", "raised": [{ "text": "string", "quote": "string" }], "promised": [], "decided": [], "next_step": "string" }],
     "predictions": [{ "email": "string", "name": "string", "asked": 4, "predicted": 3, "practice_asked": 5 }],
-    "followup": { "to": ["string"], "subject": "string", "body": "string", "status": "waiting | sent | declined | none" },
+    "followup": { "to": ["string"], "subject": "string", "body": "string", "status": "waiting | sent | declined | failed | none", "answered_at": "string" },
     "run": { "workflow_id": "string", "execution_id": "string" }
   }
 }
 ```
-The meeting's row keeps it (the DryRun meetings table's `after`), `status` becomes `done`, and `GET /meeting` returns it as `meeting.after`; `followup.status` changes to `sent` or `declined` when the presenter answers.
+The meeting's row keeps it (the DryRun meetings table's `after`), `status` becomes `done`, and `GET /meeting` returns it as `meeting.after`; `followup.status` changes to `sent` or `declined` when the presenter answers (`failed` if they approved it and Gmail couldn't send it; `none` when there was nothing to send: no draft, no attendees or no owner address), with `answered_at`. `heard` says who transcribed the voice note (empty for typed notes).
 
 ### GET `/twin?email=` and GET `/twins`
 Read the DryRun people table: one twin (`{ "twin": twin | null }`, any alias works) or everyone (`{ "twins": [{ "email", "name", "company", "role", "facts", "meetings", "to_check", "last_met", "updated" }] }`). The laptop keeps a copy of every twin it has seen (`web/.twins/`), updated from `/twin` and `/twin/update` answers, so viewing a twin or the people list costs no execution; it reads these only when it has no copy, through `readOnce`.

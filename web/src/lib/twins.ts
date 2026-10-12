@@ -18,6 +18,8 @@ export interface Look {
 interface Stored {
   twin: Twin;
   look?: Look;
+  // n8n changed the twin since this copy (after a real meeting, 0.28): read it again once, keeping the look
+  stale?: boolean;
 }
 
 const DIR = path.join(process.cwd(), ".twins");
@@ -42,20 +44,28 @@ async function writeStored(email: string, stored: Stored): Promise<void> {
 export async function getTwin(email: string): Promise<Stored | null> {
   const e = norm(email);
   const local = await readStored(e);
-  if (local) return local;
+  if (local && !local.stale) return local;
   if (isSampleTwin(e)) return { twin: sampleTwin(), look: { avatar: "business_male_01", color: 1 } };
-  if (!N8N_URL) return null;
+  if (!N8N_URL) return local;
   try {
     const twin = await readOnce(`twin:${e}`, () => 30_000, async () => {
       const res = await fetch(`${N8N_URL}/twin?email=${encodeURIComponent(e)}`, { cache: "no-store" });
       if (!res.ok) return null;
       return ((await res.json()) as { twin?: Twin | null }).twin ?? null;
     });
-    if (!twin) return null;
-    await writeStored(e, { twin });
-    return { twin };
+    if (!twin) return local;
+    await writeStored(e, { twin, look: local?.look });
+    return { twin, look: local?.look };
   } catch {
-    return null;
+    return local;
+  }
+}
+
+// After a real meeting n8n updated these people's twins (or started them): each copy is read again the next time it's opened
+export async function markTwinsStale(emails: string[]): Promise<void> {
+  for (const email of emails) {
+    const stored = await readStored(email);
+    if (stored && !stored.twin.sample) await writeStored(email, { ...stored, stale: true });
   }
 }
 
@@ -91,7 +101,9 @@ export async function listTwins(): Promise<TwinListItem[]> {
   }
   for (const n of names) {
     try {
-      add((JSON.parse(await readFile(path.join(DIR, n), "utf8")) as Stored).twin);
+      const stored = JSON.parse(await readFile(path.join(DIR, n), "utf8")) as Stored;
+      // A copy n8n has changed since gives way to n8n's list
+      if (!stored.stale || !items.has(stored.twin.email)) add(stored.twin);
     } catch {
       // A half-written copy: skip it
     }
