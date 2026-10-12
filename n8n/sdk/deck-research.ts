@@ -80,7 +80,7 @@ const deckRead = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// The deck's slide text, the meeting and what the presenter wants from it (docs/CONTRACT.md, POST /deck-research)\nconst req = $('A deck was uploaded (laptop)').first().json.body;\nconst row = $input.first().json || {};\nconst parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };\nconst proposal = parse(row.proposal) || {};\nconst goal = req.goal || (proposal.goal && proposal.goal.text) || '';\nconst offer = (req.presenter && req.presenter.offer) || '';\nconst slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1200) })).filter(s => s.text);\nconst meeting = (row.title || 'A meeting') + (row.company ? ' with ' + row.company : '');\nconst side = (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.';\nconst parts = { meeting, side, deck: JSON.stringify(slides) };\nconst PROMPT = \"You are preparing a presenter for a real meeting. Read their deck and decide which of its claims the people\\nthey pitch to would check, and how to search the news for each.\\n\\nThe meeting: {meeting}\\nWhat the presenter offers and wants from it: {side}\\nThe deck, slide by slide (index from 0):\\n{deck}\\n\\nabout: one sentence on what the deck pitches and to whom, in plain words.\\nchecks: 2 to 5 claims worth checking, the most decisive first. Pick claims about the world that the news could confirm or\\n  contradict: the size of the problem (failures, costs, accidents, demand), the market and who buys, who else already does this\\n  (competitors, existing government schemes, platforms or programmes), numbers the deck gives (savings, growth, accuracy), and how\\n  mature the technology is. Never pick claims only the presenter could know or that no newspaper would report: their team, IDs and\\n  reference numbers, reviews or approvals of their own project, their roadmap, their own results or which dataset they used. Each:\\n- slide_index: the slide the claim is on;\\n- claim: the claim, copied or closely paraphrased from the slide (e.g. \\\"30% lower fuel cost\\\");\\n- query: a Google News search on the claim's subject, 3 to 5 words, the way a journalist would headline it (e.g. \\\"UAV engine\\n  failures India\\\", \\\"route optimisation fuel savings\\\"), not the claim's wording. Spell out acronyms the way the deck means them\\n  (\\\"Smart India Hackathon\\\", not \\\"SIH\\\"); no names of the presenter's product, no quotes or operators;\\n- broad: a broader search, 2 or 3 words, for when the first finds nothing (e.g. \\\"drone predictive maintenance\\\").\\nAnswer in JSON.\";\nconst prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);\nreturn [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), brief: row.brief || '', prompt } }];"
+      "jsCode": "// The deck's slide text, the meeting and what the presenter wants from it (docs/CONTRACT.md, POST /deck-research)\nconst req = $('A deck was uploaded (laptop)').first().json.body;\nconst row = $input.first().json || {};\nconst parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };\nconst proposal = parse(row.proposal) || {};\nconst goal = req.goal || (proposal.goal && proposal.goal.text) || '';\nconst offer = (req.presenter && req.presenter.offer) || '';\nconst slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1200) })).filter(s => s.text);\nconst meeting = (row.title || 'A meeting') + (row.company ? ' with ' + row.company : '');\nconst side = (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.';\nconst parts = { meeting, side, deck: JSON.stringify(slides) };\nconst PROMPT = \"You are preparing a presenter for a real meeting. Read their deck and plan how to find who else already does what\\nit pitches: competitors, big companies with a similar product, startups, government or defence programmes, research labs.\\n\\nThe meeting: {meeting}\\nWhat the presenter offers and wants from it: {side}\\nThe deck, slide by slide (index from 0):\\n{deck}\\n\\nabout: one sentence on what the deck pitches and to whom, in plain words.\\nsearches: 2 or 3 Google News searches that would surface others doing the same thing, the most specific first. Each:\\n- query: 3 to 5 words naming the kind of product or solution the way a journalist would (e.g. \\\"engine health monitoring drones\\\",\\n  \\\"AI route optimisation logistics\\\"), never the presenter's own product name, project title or team; spell out acronyms the way the\\n  deck means them; no quotes or operators;\\n- broad: a broader search, 2 or 3 words, for when the first finds nothing (e.g. \\\"predictive maintenance aircraft\\\");\\n- slide_index: the slide where a panel would bring the competition up: the slide that says what is new or different, or the solution\\n  slide (never the title slide unless the deck has nothing else).\\nAnswer in JSON.\";\nconst prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);\n// Each slide's first line, so the model can place who it finds on a slide\nconst titles = slides.map(s => s.index + ': ' + s.text.split('\\n')[0].trim().slice(0, 90)).join('; ');\nreturn [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), titles, prompt } }];"
     },
     "output": [
   {
@@ -90,7 +90,7 @@ const deckRead = node({
     "indexes": [
       0
     ],
-    "brief": "",
+    "titles": "",
     "prompt": ""
   }
 ]
@@ -101,7 +101,7 @@ const deckClaims = node({
   type: "n8n-nodes-base.httpRequest",
   version: 4.5,
   config: {
-    "name": "Pick the claims to check",
+    "name": "Plan the searches",
     "parameters": {
       "method": "POST",
       "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
@@ -109,7 +109,7 @@ const deckClaims = node({
       "nodeCredentialType": "googlePalmApi",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"about\": {\"type\": \"string\"}, \"checks\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"slide_index\": {\"type\": \"integer\"}, \"claim\": {\"type\": \"string\"}, \"query\": {\"type\": \"string\"}, \"broad\": {\"type\": \"string\"} }, \"required\": [\"slide_index\", \"claim\", \"query\", \"broad\"]} } }, \"required\": [\"about\", \"checks\"]} } }) }}"),
+      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"about\": {\"type\": \"string\"}, \"searches\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"broad\": {\"type\": \"string\"}, \"slide_index\": {\"type\": \"integer\"} }, \"required\": [\"query\", \"broad\", \"slide_index\"]} } }, \"required\": [\"about\", \"searches\"]} } }) }}"),
       "options": {
         "timeout": 120000
       }
@@ -141,7 +141,7 @@ const deckClaimsGroq = node({
   type: "n8n-nodes-base.httpRequest",
   version: 4.5,
   config: {
-    "name": "Pick the claims to check (Groq)",
+    "name": "Plan the searches (Groq)",
     "parameters": {
       "method": "POST",
       "url": "https://api.groq.com/openai/v1/chat/completions",
@@ -149,7 +149,7 @@ const deckClaimsGroq = node({
       "nodeCredentialType": "groqApi",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ (() => { const j = $('Read the deck').first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (j.prompt) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"about\": {\"type\": \"string\"}, \"checks\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"slide_index\": {\"type\": \"integer\"}, \"claim\": {\"type\": \"string\"}, \"query\": {\"type\": \"string\"}, \"broad\": {\"type\": \"string\"} }, \"required\": [\"slide_index\", \"claim\", \"query\", \"broad\"]} } }, \"required\": [\"about\", \"checks\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
+      "jsonBody": expr("{{ (() => { const j = $('Read the deck').first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (j.prompt) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"about\": {\"type\": \"string\"}, \"searches\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}, \"broad\": {\"type\": \"string\"}, \"slide_index\": {\"type\": \"integer\"} }, \"required\": [\"query\", \"broad\", \"slide_index\"]} } }, \"required\": [\"about\", \"searches\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
       "options": {
         "timeout": 120000
       }
@@ -180,16 +180,12 @@ const deckSearches = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// Two Google News searches per claim (its subject, then broader), on a real slide, at most five claims\nconst g = $('Read the deck').first().json;\nconst d = JSON.parse(replyText($input.first().json) || '{}');\nconst clean = q => String(q || '').split('\"').join('').trim();\nconst seen = new Set();\nconst checks = (d.checks || []).filter(x => g.indexes.includes(x.slide_index) && x.claim && clean(x.query))\n  .map(x => ({ slide_index: x.slide_index, claim: String(x.claim), query: clean(x.query), broad: clean(x.broad) }))\n  .filter(x => !seen.has(x.query.toLowerCase()) && seen.add(x.query.toLowerCase())).slice(0, 5);\n// Nothing worth checking still goes on (one empty search that fails quietly), so the laptop always gets an answer\nif (!checks.length) return [{ json: { none: true, about: d.about || '', url: '' } }];\nconst url = q => 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=en-IN&gl=IN&ceid=IN:en';\nreturn checks.flatMap((x, i) => [x.query].concat(x.broad && x.broad.toLowerCase() !== x.query.toLowerCase() ? [x.broad] : [])\n  .map(q => ({ json: { ...x, i, q, about: d.about || '', url: url(q) } })));"
+      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// Each planned search on Google News, then its broader one: at most six, no repeats\nconst g = $('Read the deck').first().json;\nconst d = JSON.parse(replyText($input.first().json) || '{}');\nconst clean = q => String(q || '').split('\"').join('').trim();\nconst seen = new Set();\nconst fallback = g.indexes.length > 1 ? g.indexes[1] : (g.indexes[0] || 0);\nconst qs = (d.searches || []).flatMap(x => [clean(x.query), clean(x.broad)].filter(Boolean)\n  .map(q => ({ q, slide_index: g.indexes.includes(x.slide_index) ? x.slide_index : fallback })))\n  .filter(x => !seen.has(x.q.toLowerCase()) && seen.add(x.q.toLowerCase())).slice(0, 6);\n// Nothing to search still goes on (one empty search that fails quietly), so the laptop always gets an answer\nif (!qs.length) return [{ json: { none: true, about: d.about || '', url: '' } }];\nconst url = q => 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=en-IN&gl=IN&ceid=IN:en';\nreturn qs.map(x => ({ json: { ...x, about: d.about || '', url: url(x.q) } }));"
     },
     "output": [
   {
-    "i": 0,
-    "slide_index": 0,
-    "claim": "30% lower fuel cost",
-    "query": "route optimisation fuel savings",
-    "broad": "fleet fuel costs",
-    "q": "route optimisation fuel savings",
+    "q": "route optimisation logistics",
+    "slide_index": 1,
     "about": "",
     "url": ""
   }
@@ -233,13 +229,12 @@ const deckGather = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// Each claim with its headlines (date, publisher, link), numbered across all searches, then the brief's own sources after them\nconst g = $('Read the deck').first().json;\nconst all = $('The searches').all().map(i => i.json);\nconst results = $input.all().map(i => String(i.json.data || ''));\nconst unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\");\nconst tag = (xml, t) => { const m = xml.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };\nconst headlines = xml => xml.split('<item>').slice(1).map(it => {\n  const src = it.match(/<source url=\"([^\"]*)\">([^]*?)<\\/source>/);\n  const date = new Date(tag(it, 'pubDate'));\n  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };\n}).filter(h => h.title && h.url);\n// Per claim: the subject search first, topped up from the broad one, without repeats\nconst byClaim = {};\nall.forEach((x, k) => { if (x.none) return; (byClaim[x.i] = byClaim[x.i] || { ...x, items: [] }).items.push(...headlines(results[k] || '')); });\nconst sources = [];\nconst searched = Object.values(byClaim).sort((a, b) => a.i - b.i).map(x => {\n  const seen = new Set();\n  const items = x.items.filter(h => !seen.has(h.title.toLowerCase()) && seen.add(h.title.toLowerCase())).slice(0, 6);\n  const numbered = items.map(h => { sources.push(h); return sources.length; });\n  return { slide_index: x.slide_index, claim: x.claim, query: x.query, found: items.length, numbered };\n});\nconst parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };\nconst brief = parse(g.brief) || {};\nconst own = (brief.sources || []).slice(0, 8).map(x => ({ title: x.title, url: x.url, publisher: '', date: '' }));\nconst research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']\n  .concat(own.map(x => { sources.push(x); return '[' + sources.length + '] ' + x.title; })).filter(Boolean).join('\\n') || 'None.';\nconst text = searched.map((x, k) => (k + 1) + '. Slide ' + (x.slide_index + 1) + ': \"' + x.claim + '\" (searched: ' + x.query + ')\\n'\n  + (x.numbered.length ? x.numbered.map(n => '   [' + n + '] ' + sources[n - 1].title + (sources[n - 1].publisher ? ' (' + sources[n - 1].publisher + (sources[n - 1].date ? ', ' + sources[n - 1].date : '') + ')' : '')).join('\\n') : '   No headlines found.')).join('\\n');\nconst parts = { meeting: g.meeting, about: (all[0] && all[0].about) || 'Not given.', checks: text || 'No claims to check.', research };\nconst PROMPT = \"You check a presenter's claims against the news before a real meeting. Say what the sources say; give no\\nadvice on the slides.\\n\\nThe meeting: {meeting}\\nWhat the deck pitches: {about}\\n\\nThe claims, each with the headlines found for it (numbered sources; a headline may be about something else that shares a word or an\\nacronym: ignore any that is not about the same subject):\\n{checks}\\n\\nWhat n8n already found about the company for the brief (numbered sources continue):\\n{research}\\n\\nfindings: one per claim above, in the same order, each:\\n- check: the claim's number;\\n- verdict: \\\"backed\\\" if the relevant sources support it, \\\"challenged\\\" if they contradict it or show a competitor, an existing scheme or\\n  platform, or a smaller number, \\\"unproven\\\" if no relevant source speaks to it;\\n- fact: what the relevant sources say about it, in one or two plain sentences, with dates or numbers where the headlines give them.\\n  Only what the sources say; for \\\"unproven\\\", say plainly that n8n found nothing that backs or contradicts it;\\n- question: how someone on the panel would put it to the presenter, in one short sentence (e.g. \\\"Where does 30% come from, when the\\n  industry reports half that?\\\");\\n- sources: the numbers of the relevant sources it rests on (empty for \\\"unproven\\\").\\nNever state facts that are not in the sources, and never invent facts about the presenter's own product. Answer in JSON.\";\nconst prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);\nreturn [{ json: { searched: searched.map(x => ({ query: x.query, slide_index: x.slide_index, claim: x.claim, found: x.found })), about: parts.about,\n                  headlines: searched.reduce((a, x) => a + x.found, 0), sources, prompt } }];"
+      "jsCode": "// Every headline found (date, publisher, link), without repeats, numbered for the model to cite\nconst g = $('Read the deck').first().json;\nconst all = $('The searches').all().map(i => i.json);\nconst results = $input.all().map(i => String(i.json.data || ''));\nconst unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\");\nconst tag = (xml, t) => { const m = xml.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };\nconst headlines = xml => xml.split('<item>').slice(1).map(it => {\n  const src = it.match(/<source url=\"([^\"]*)\">([^]*?)<\\/source>/);\n  const date = new Date(tag(it, 'pubDate'));\n  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };\n}).filter(h => h.title && h.url);\n// Six from each search in turn, so one broad search can't crowd out the specific ones\nconst seen = new Set();\nconst sources = [];\nconst per = all.map((x, k) => x.none ? [] : headlines(results[k] || '').slice(0, 6));\nfor (let round = 0; round < 6; round++) per.forEach(list => {\n  const h = list[round];\n  if (h && sources.length < 16 && !seen.has(h.title.toLowerCase())) { seen.add(h.title.toLowerCase()); sources.push(h); }\n});\nconst text = sources.map((h, i) => '[' + (i + 1) + '] ' + h.title + (h.publisher ? ' (' + h.publisher + (h.date ? ', ' + h.date : '') + ')' : '')).join('\\n');\nconst about = (all[0] && all[0].about) || 'Not given.';\nconst parts = { meeting: g.meeting, about, slides: g.titles || 'None.', headlines: text || 'No headlines found.' };\nconst PROMPT = \"You find who else already does what a presenter pitches, before a real meeting, so the panel can ask how they\\nare different. Say only what the sources say.\\n\\nThe meeting: {meeting}\\nWhat the deck pitches: {about}\\nThe deck's slides (index, title line): {slides}\\n\\nHeadlines found (numbered sources; many will share a word or an acronym but be about something else):\\n{headlines}\\n\\nothers: up to 4 companies, products, programmes or labs that the headlines show already building or running the same or nearly the\\nsame thing as the deck (the same problem for the same kind of user, or the same technology for the same use). Leave out: a headline\\nabout the wider field (e.g. \\\"AI in defence\\\", \\\"drones in agriculture\\\"), a trend piece, explainer or opinion, a company only investing,\\nhiring or seeking partners, and a hobby project. Most decks have 0 to 2; an empty list is a fine answer. Each:\\n- name: who does the work, as the headline names them (e.g. \\\"HAL\\\", \\\"an IIT Delhi startup\\\"); never the publisher, the outlet or a\\n  think tank writing about it (if the headline doesn't say who, name the programme, e.g. \\\"the Su-30 MKI health index\\\");\\n- what: what the source says they do, in one plain sentence, with the date where the headline gives one; nothing beyond the headline;\\n- close: \\\"same\\\" if they do what the deck pitches, \\\"near\\\" if it overlaps (the same technology on the same kind of machine or user, or\\n  the same problem for the same user solved another way); the same technology in an unrelated field (railways for an aircraft deck)\\n  is neither: leave it out;\\n- slide_index: the slide where the panel would bring them up (from the slides above);\\n- question: how someone on the panel would put it, naming them, in one short sentence (e.g. \\\"HAL already monitors these engines.\\n  What does yours do that theirs doesn't?\\\");\\n- sources: the numbers of the headlines it rests on (at least one).\\nAnswer in JSON.\";\nconst prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);\nconst counts = {};\nall.forEach((x, k) => { if (!x.none) counts[x.q] = { query: x.q, slide_index: x.slide_index, found: headlines(results[k] || '').length }; });\nreturn [{ json: { searched: Object.values(counts), about, sources, prompt } }];"
     },
     "output": [
   {
     "searched": [],
     "about": "",
-    "headlines": 0,
     "sources": [],
     "prompt": ""
   }
@@ -251,7 +246,7 @@ const deckWeigh = node({
   type: "n8n-nodes-base.httpRequest",
   version: 4.5,
   config: {
-    "name": "Weigh the evidence",
+    "name": "Who else does this?",
     "parameters": {
       "method": "POST",
       "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
@@ -259,7 +254,7 @@ const deckWeigh = node({
       "nodeCredentialType": "googlePalmApi",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"findings\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"check\": {\"type\": \"integer\"}, \"verdict\": {\"type\": \"string\", \"enum\": [\"backed\", \"challenged\", \"unproven\"]}, \"fact\": {\"type\": \"string\"}, \"question\": {\"type\": \"string\"}, \"sources\": {\"type\": \"array\", \"items\": {\"type\": \"integer\"} } }, \"required\": [\"check\", \"verdict\", \"fact\", \"question\", \"sources\"]} } }, \"required\": [\"findings\"]} } }) }}"),
+      "jsonBody": expr("{{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: {\"type\": \"object\", \"properties\": {\"others\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"what\": {\"type\": \"string\"}, \"close\": {\"type\": \"string\", \"enum\": [\"same\", \"near\"]}, \"slide_index\": {\"type\": \"integer\"}, \"question\": {\"type\": \"string\"}, \"sources\": {\"type\": \"array\", \"items\": {\"type\": \"integer\"} } }, \"required\": [\"name\", \"what\", \"close\", \"slide_index\", \"question\", \"sources\"]} } }, \"required\": [\"others\"]} } }) }}"),
       "options": {
         "timeout": 120000
       }
@@ -291,7 +286,7 @@ const deckWeighGroq = node({
   type: "n8n-nodes-base.httpRequest",
   version: 4.5,
   config: {
-    "name": "Weigh the evidence (Groq)",
+    "name": "Who else does this? (Groq)",
     "parameters": {
       "method": "POST",
       "url": "https://api.groq.com/openai/v1/chat/completions",
@@ -299,7 +294,7 @@ const deckWeighGroq = node({
       "nodeCredentialType": "groqApi",
       "sendBody": true,
       "specifyBody": "json",
-      "jsonBody": expr("{{ (() => { const j = $('Gather what it found').first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (j.prompt) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"findings\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"check\": {\"type\": \"integer\"}, \"verdict\": {\"type\": \"string\", \"enum\": [\"backed\", \"challenged\", \"unproven\"]}, \"fact\": {\"type\": \"string\"}, \"question\": {\"type\": \"string\"}, \"sources\": {\"type\": \"array\", \"items\": {\"type\": \"integer\"} } }, \"required\": [\"check\", \"verdict\", \"fact\", \"question\", \"sources\"]} } }, \"required\": [\"findings\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
+      "jsonBody": expr("{{ (() => { const j = $('Gather what it found').first().json; return JSON.stringify({ model: 'openai/gpt-oss-120b', reasoning_effort: 'low', max_completion_tokens: 8192, messages: [{ role: 'user', content: (j.prompt) + \"\\n\\nReply with only a JSON object that follows this JSON schema:\\n\" + JSON.stringify({\"type\": \"object\", \"properties\": {\"others\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"name\": {\"type\": \"string\"}, \"what\": {\"type\": \"string\"}, \"close\": {\"type\": \"string\", \"enum\": [\"same\", \"near\"]}, \"slide_index\": {\"type\": \"integer\"}, \"question\": {\"type\": \"string\"}, \"sources\": {\"type\": \"array\", \"items\": {\"type\": \"integer\"} } }, \"required\": [\"name\", \"what\", \"close\", \"slide_index\", \"question\", \"sources\"]} } }, \"required\": [\"others\"]}) }], response_format: { type: 'json_object' } }); })() }}"),
       "options": {
         "timeout": 120000
       }
@@ -326,18 +321,18 @@ const deckBuild = node({
   type: "n8n-nodes-base.code",
   version: 2,
   config: {
-    "name": "The findings",
+    "name": "Hold to the sources",
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// Held to the sources: each finding on a claim that was searched, citing only sources n8n found; a finding with no source can only be\n// \"unproven\". Challenged first, then backed, then unproven.\nconst r = $('Read the deck').first().json;\nconst g = $('Gather what it found').first().json;\nconst d = JSON.parse(replyText($json) || '{}');\nconst order = { challenged: 0, backed: 1, unproven: 2 };\nconst used = new Set();\nconst findings = (d.findings || []).map(f => {\n  const x = g.searched[f.check - 1];\n  if (!x || used.has(f.check) || !f.fact) return null;\n  used.add(f.check);\n  const sources = [...new Set(f.sources || [])].map(n => g.sources[n - 1]).filter(Boolean).slice(0, 3);\n  const verdict = sources.length && order[f.verdict] != null ? f.verdict : 'unproven';\n  return { slide_index: x.slide_index, claim: x.claim, verdict, fact: String(f.fact), question: String(f.question || ''), sources };\n}).filter(Boolean).sort((a, b) => order[a.verdict] - order[b.verdict]);\nconst research = { about: g.about === 'Not given.' ? '' : g.about, searched: g.searched.map(x => ({ query: x.query, slide_index: x.slide_index, found: x.found })),\n                   findings, at: new Date().toISOString() };\nreturn [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_research: JSON.stringify(research), updated_at: research.at } }];"
+      "jsCode": "const replyText = j => j.choices\n  ? ((j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')\n  : ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('');\n\n// Held to the sources: each one cites at least one headline n8n found, on a real slide, no one twice; the same thing first\nconst r = $('Read the deck').first().json;\nconst g = $('Gather what it found').first().json;\nconst d = JSON.parse(replyText($json) || '{}');\nconst fallback = r.indexes.length > 1 ? r.indexes[1] : (r.indexes[0] || 0);\nconst named = new Set();\nconst others = (d.others || []).map(o => {\n  const sources = [...new Set(o.sources || [])].map(n => g.sources[n - 1]).filter(Boolean).slice(0, 3);\n  const name = String(o.name || '').trim();\n  // A publisher reporting on someone isn't the someone\n  const publisher = sources.some(x => x.publisher && (x.publisher.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(x.publisher.toLowerCase())));\n  if (!sources.length || !name || !o.what || publisher || named.has(name.toLowerCase())) return null;\n  named.add(name.toLowerCase());\n  return { name, what: String(o.what), close: o.close === 'same' ? 'same' : 'near', slide_index: r.indexes.includes(o.slide_index) ? o.slide_index : fallback,\n           question: String(o.question || ''), sources };\n}).filter(Boolean).sort((a, b) => (a.close === 'same' ? 0 : 1) - (b.close === 'same' ? 0 : 1)).slice(0, 4);\nconst research = { about: g.about === 'Not given.' ? '' : g.about, searched: g.searched, others, at: new Date().toISOString() };\nreturn [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_research: JSON.stringify(research), updated_at: research.at } }];"
     },
     "output": [
   {
     "meeting_id": "evt123",
     "found": true,
     "research": {
-      "findings": []
+      "others": []
     },
     "deck_research": "{}"
   }
@@ -447,10 +442,10 @@ const deckReply = node({
   type: "n8n-nodes-base.respondToWebhook",
   version: 1.5,
   config: {
-    "name": "Send the findings",
+    "name": "Send what it found",
     "parameters": {
       "respondWith": "json",
-      "responseBody": expr("{{ JSON.stringify($('The findings').first().json.research) }}"),
+      "responseBody": expr("{{ JSON.stringify($('Hold to the sources').first().json.research) }}"),
       "options": {}
     },
     "output": [
@@ -459,7 +454,7 @@ const deckReply = node({
   }
 });
 
-const about = sticky('## DryRun deck research\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-research, docs/CONTRACT.md): the deck is a source, not something to mark. n8n picks the claims an outsider could check, searches Google News for each in the deck\'s own words, and weighs what it found: backed, challenged or unproven, with the sources. Saved on the meeting: the next rehearsal asks about them, and the debrief checks what the presenter said against them.', [deckTrigger], { color: 4 });
+const about = sticky('## DryRun deck research\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-research, docs/CONTRACT.md): who else already does what it pitches? n8n plans news searches from the deck, then keeps only the companies, products and programmes the headlines show doing the same thing, each with its source. Saved on the meeting: in the next rehearsal the panel asks how the pitch is different from them, by name. It never checks the presenter\'s own claims.', [deckTrigger], { color: 4 });
 
 export default workflow('dryrun-deck-research', 'DryRun deck research')
   .add(about)
@@ -481,5 +476,5 @@ export default workflow('dryrun-deck-research', 'DryRun deck research')
   .add(deckWeigh.onError(deckWeighGroq))
   .add(deckWeighGroq)
   .to(deckBuild)
-  .group('Read the deck', [deckMeeting, deckRead, deckClaims, deckClaimsGroq, deckSearches], { description: 'Picks the claims an outsider could check and a news search for each' })
-  .group('Research', [deckNews, deckGather, deckWeigh, deckWeighGroq, deckBuild], { description: 'Searches the news per claim and weighs what it found, held to the sources' });
+  .group('Read the deck', [deckMeeting, deckRead, deckClaims, deckClaimsGroq, deckSearches], { description: 'Plans news searches for who else already does what the deck pitches' })
+  .group('Research', [deckNews, deckGather, deckWeigh, deckWeighGroq, deckBuild], { description: 'Searches the news and keeps who the headlines show doing the same thing, held to the sources' });

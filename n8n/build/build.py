@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_CLAIMS_PROMPT, DECK_CLAIMS_SCHEMA, DECK_FINDINGS_PROMPT, DECK_FINDINGS_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_OTHERS_PROMPT, DECK_OTHERS_SCHEMA, DECK_SEARCH_PROMPT, DECK_SEARCH_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
                      TURN_SCHEMA, TWIN_PROMPT, TWIN_SCHEMA, WEB_PROMPT, AFTER_PROMPT, AFTER_SCHEMA)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
@@ -705,6 +705,8 @@ const last = lastDebrief ? { overall: lastDebrief.overall, headline: lastDebrief
 // Know your side (0.26): what the presenter offers, and what they want from this meeting
 const side = { offer: (req.presenter && req.presenter.offer) || '', goal: (req.goal && req.goal.text) || '' };
 const brief = parse(row.brief) || {};
+// Who else already does what the deck pitches (0.31), from DryRun deck research
+const others = ((parse(row.deck_research) || {}).others || []).slice(0, 4);
 // No pitch length (null, contract 0.25) means no time limit: n8n paces the slides naturally and nobody keeps time
 const limited = req.pitch_minutes !== null;
 const minutes = limited ? Math.max(1, Math.min(60, Math.round(Number(req.pitch_minutes) || 5))) : null;
@@ -735,15 +737,16 @@ return [{ json: { req, minutes, timing, twins, twins_text: twins.length ? JSON.s
                   history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title, owed: last.owed }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
                            company: brief.company || {},
-                           // What n8n found checking the deck's claims against the news (0.30, DryRun deck research): the panel asks about them
-                           deck_research: ((parse(row.deck_research) || {}).findings || []).map(x => ({ slide_index: x.slide_index, claim: x.claim, verdict: x.verdict, fact: x.fact,
-                             question: x.question, sources: (x.sources || []).map(y => y.title + (y.publisher ? ' (' + y.publisher + ')' : '')) })) } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
+                           // Who n8n found already doing what the deck pitches (0.31, DryRun deck research): the panel asks how this is different
+                           others_doing_this: others.map(x => ({ slide_index: x.slide_index, name: x.name, what: x.what, close: x.close, question: x.question,
+                             sources: (x.sources || []).map(y => y.title + (y.publisher ? ' (' + y.publisher + ')' : '')) })) }, others } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
     c += progress_chunk("saidGather", "Report: gathered", "gather",
                         "[$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', "
                         "$json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', "
                         "$json.slides.length ? $json.slides.length + ' slides' : 'no deck', $json.minutes ? $json.minutes + ' min pitch' : 'no time limit', "
                         "$json.last ? 'last rehearsal ' + $json.last.overall + '/100 with ' + $json.last.weak_spots.length + ' weak spots to press on' : 'the first rehearsal', "
-                        "$json.twins.length ? $json.twins.length + (($json.twins.length === 1) ? ' twin' : ' twins') + ' of real attendees: what they raised before' : ''].filter(Boolean).join(', ')",
+                        "$json.twins.length ? $json.twins.length + (($json.twins.length === 1) ? ' twin' : ' twins') + ' of real attendees: what they raised before' : '', "
+                        "$json.others.length ? 'already doing this: ' + $json.others.map(x => x.name).join(', ') : ''].filter(Boolean).join(', ')",
                         with_run=True)
     c += llm_nodes("plan", "Plan the rehearsal", json.dumps(REHEARSAL_PROMPT) +
                    ".split('{length}').join($json.timing.length).split('{pace}').join($json.timing.pace).split('{time_rule}').join($json.timing.time_rule)"
@@ -1448,10 +1451,12 @@ const sources = (brief.sources || []).slice(0, 12);
 const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
   .concat(((brief.company && brief.company.recent_news) || []).map(n => 'News' + (n.date ? ' (' + n.date + ')' : '') + ': ' + n.text))
   .concat(sources.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' ' + x.url)).filter(Boolean).join('\\n') || 'No research saved for this meeting.';
-// What n8n found checking the deck's claims against the news (0.30): the debrief checks what was said against each
-const findings = ((parse(briefRow.deck_research) || {}).findings || []).slice(0, 5);
-const deckResearch = findings.map((f, i) => (i + 1) + '. Slide ' + (f.slide_index + 1) + ', the deck claims "' + f.claim + '": ' + f.verdict + '. ' + f.fact
-  + (f.sources && f.sources.length ? ' (' + f.sources.map(x => x.title).join('; ') + ')' : '')).join('\\n') || 'None.';
+// Who n8n found already doing what the deck pitches (0.31), their sources numbered after the brief's, so a drafted answer to
+// "how are you different from them?" can cite them
+const others = ((parse(briefRow.deck_research) || {}).others || []).slice(0, 4).map(o => {
+  const nums = (o.sources || []).map(x => { sources.push({ title: x.title, url: x.url }); return '[' + sources.length + '] ' + x.title; });
+  return o.name + ' (slide ' + (o.slide_index + 1) + '): ' + o.what + (nums.length ? ' ' + nums.join('; ') : '');
+}).join('\\n') || 'None.';
 const totalWords = slides.reduce((a, s) => a + words(s.transcript), 0) + exchanges.reduce((a, x) => a + words(x.answer), 0);
 const answered = exchanges.filter(x => x.answer).length;
 const summary = totalWords + ' words over ' + slides.filter(s => s.transcript).length + ' slide' + (slides.length === 1 ? '' : 's')
@@ -1475,14 +1480,14 @@ const parts = {
     : 'Only ' + clock(pitchSeconds) + ' of pitch (' + pitchWords + ' words): too little to score. Give scores of 0; they will not be shown. Still write the talk tracks, weak spots and drill.',
   owed: owed.length ? owed.map(o => o.thread_id + ': ' + name(o.persona_id) + ' asked "' + o.question + '"; the presenter said "' + (o.said || '(nothing)') + '" (' + o.status + ')').join('\\n') : 'None.',
   research,
-  deck_research: deckResearch,
+  others,
 };
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
 const telemetry = { session_id: b.session_id, client: b.client || 'web', duration_s: duration, events, ...(b.gaze_dwell_s ? { gaze_dwell_s: b.gaze_dwell_s } : {}),
                     ...(b.facing_slides_s != null ? { facing_slides_s: b.facing_slides_s } : {}) };
 return [{ json: { session_id: b.session_id, meeting_id: b.meeting_id || '', owner_email: b.owner_email || (b.presenter && b.presenter.email) || '',
                   bundle, telemetry, slides, exchanges, pacing, history, weak_before: weakBefore, summary, prompt,
-                  trouble, garbled, owed, sources, findings, pitch: { seconds: pitchSeconds, words: pitchWords, scored } } }];""",
+                  trouble, garbled, owed, sources, pitch: { seconds: pitchSeconds, words: pitchWords, scored } } }];""",
                    [{"session_id": "s1", "meeting_id": "evt123", "summary": "", "prompt": "", "slides": [], "exchanges": [], "history": []}])
     c += code_node("rowStart", "Row: debriefing", DEBRIEF_PROGRESS_JS + """
 // The session in the DryRun sessions table while n8n debriefs it
@@ -1558,19 +1563,8 @@ const owed = r.owed.map(o => {
   return { thread_id: o.thread_id, persona_id: o.persona_id, question: o.question, said: o.said, status: o.status, suggested: x.suggested || '', confirm: x.confirm || '',
            sources: (x.sources || []).map(n => r.sources[n - 1]).filter(Boolean).map(x => ({ title: x.title, url: x.url })) };
 }).filter(o => o.suggested);
-// The deck's findings against what was said (0.30): a quote that isn't in the transcript, or came from a mis-heard one, isn't used,
-// so that check becomes "not_said"
-const said = r.slides.map(s => s.transcript).concat(r.exchanges.map(x => x.answer || '')).join(' ');
-const VERDICTS = ['held', 'contradicted', 'unbacked', 'not_said'];
-const checks = (r.findings || []).map((f, i) => {
-  const x = (d.checks || []).find(c => c.finding === i + 1) || {};
-  const quote = x.verdict !== 'not_said' && !misheard(x.quote) ? find(said, x.quote) : null;
-  const verdict = quote && VERDICTS.includes(x.verdict) ? x.verdict : 'not_said';
-  return { slide_index: f.slide_index, claim: f.claim, verdict, quote: quote || '', note: x.note || '',
-           sources: (f.sources || []).map(y => ({ title: y.title, url: y.url })) };
-});
 const debrief = { headline, overall, previous_overall: r.history.length ? r.history[r.history.length - 1].overall : null,
-                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), owed, trouble: r.trouble, pitch: r.pitch, checks,
+                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), owed, trouble: r.trouble, pitch: r.pitch,
                   actions_taken: (owed.length ? ['answers_drafted'] : []).concat(['weak_spots_saved']) };
 return [{ json: { session_id: r.session_id, debrief, marks, backs: stakeholders.filter(s => s.stance === 'backs').length } }];""",
                    [{"session_id": "s1", "debrief": {"metrics": [], "stakeholders": [], "drill": {"title": ""}, "weak_spots": []}, "marks": 0, "backs": 0}])
@@ -1697,13 +1691,14 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
 
 DECK_REQUEST = {"body": {"meeting_id": "evt123", "deck": {"name": "RouteIQ.pdf", "slides": [{"index": 0, "text": "RouteIQ cuts fuel cost by 30%"}]},
                          "presenter": {"offer": "RouteIQ: route optimisation"}, "goal": "a paid pilot"}}
-# Headlines kept per search: enough to find the relevant ones among stories that only share a word
-DECK_HEADLINES = 6
+# Headlines kept in all: enough to find the relevant ones among stories that only share a word
+DECK_HEADLINES = 16
 
 
 def deck_research():
-    """The deck is a source (contract 0.30): n8n picks the claims worth checking, searches the news for each in the deck's own words,
-    weighs what it found, and saves the findings on the meeting for /prep and /debrief. No advice on the slides."""
+    """Who else already does what the deck pitches (contract 0.31): n8n plans news searches from the deck, keeps only the companies,
+    products and programmes the headlines show doing the same thing, and saves them on the meeting so /prep's panel asks how this is
+    different, by name. It never checks the presenter's own claims or advises on the slides."""
     c = IMPORTS
     c += make_node("deckTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "A deck was uploaded (laptop)", {
         "httpMethod": "POST", "path": "dryrun/deck-research", "responseMode": "responseNode", "options": {},
@@ -1724,33 +1719,35 @@ const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index,
 const meeting = (row.title || 'A meeting') + (row.company ? ' with ' + row.company : '');
 const side = (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.';
 const parts = { meeting, side, deck: JSON.stringify(slides) };
-const PROMPT = """ + json.dumps(DECK_CLAIMS_PROMPT) + """;
+const PROMPT = """ + json.dumps(DECK_SEARCH_PROMPT) + """;
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), brief: row.brief || '', prompt } }];""",
-                   [{"meeting_id": "evt123", "found": True, "meeting": "RouteIQ pitch with Delhivery", "indexes": [0], "brief": "", "prompt": ""}])
-    c += llm_nodes("deckClaims", "Pick the claims to check", "$json.prompt", GEMINI_REPLY, schema=DECK_CLAIMS_SCHEMA,
+// Each slide's first line, so the model can place who it finds on a slide
+const titles = slides.map(s => s.index + ': ' + s.text.split('\\n')[0].trim().slice(0, 90)).join('; ');
+return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), titles, prompt } }];""",
+                   [{"meeting_id": "evt123", "found": True, "meeting": "RouteIQ pitch with Delhivery", "indexes": [0], "titles": "", "prompt": ""}])
+    c += llm_nodes("deckClaims", "Plan the searches", "$json.prompt", GEMINI_REPLY, schema=DECK_SEARCH_SCHEMA,
                    source="$('Read the deck').first().json")
     c += code_node("deckSearches", "The searches", REPLY_JS + """
-// Two Google News searches per claim (its subject, then broader), on a real slide, at most five claims
+// Each planned search on Google News, then its broader one: at most six, no repeats
 const g = $('Read the deck').first().json;
 const d = JSON.parse(replyText($input.first().json) || '{}');
 const clean = q => String(q || '').split('"').join('').trim();
 const seen = new Set();
-const checks = (d.checks || []).filter(x => g.indexes.includes(x.slide_index) && x.claim && clean(x.query))
-  .map(x => ({ slide_index: x.slide_index, claim: String(x.claim), query: clean(x.query), broad: clean(x.broad) }))
-  .filter(x => !seen.has(x.query.toLowerCase()) && seen.add(x.query.toLowerCase())).slice(0, 5);
-// Nothing worth checking still goes on (one empty search that fails quietly), so the laptop always gets an answer
-if (!checks.length) return [{ json: { none: true, about: d.about || '', url: '' } }];
+const fallback = g.indexes.length > 1 ? g.indexes[1] : (g.indexes[0] || 0);
+const qs = (d.searches || []).flatMap(x => [clean(x.query), clean(x.broad)].filter(Boolean)
+  .map(q => ({ q, slide_index: g.indexes.includes(x.slide_index) ? x.slide_index : fallback })))
+  .filter(x => !seen.has(x.q.toLowerCase()) && seen.add(x.q.toLowerCase())).slice(0, 6);
+// Nothing to search still goes on (one empty search that fails quietly), so the laptop always gets an answer
+if (!qs.length) return [{ json: { none: true, about: d.about || '', url: '' } }];
 const url = q => 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=en-IN&gl=IN&ceid=IN:en';
-return checks.flatMap((x, i) => [x.query].concat(x.broad && x.broad.toLowerCase() !== x.query.toLowerCase() ? [x.broad] : [])
-  .map(q => ({ json: { ...x, i, q, about: d.about || '', url: url(q) } })));""",
-                   [{"i": 0, "slide_index": 0, "claim": "30% lower fuel cost", "query": "route optimisation fuel savings", "broad": "fleet fuel costs", "q": "route optimisation fuel savings", "about": "", "url": ""}])
+return qs.map(x => ({ json: { ...x, about: d.about || '', url: url(x.q) } }));""",
+                   [{"q": "route optimisation logistics", "slide_index": 1, "about": "", "url": ""}])
     c += make_node("deckNews", "node", "n8n-nodes-base.httpRequest", 4.5, "Search the news", {
         "method": "GET", "url": Expr("{{ $json.url }}"),
         "options": {"timeout": 20000, "response": {"response": {"responseFormat": "text"}}},
     }, [{"data": "<rss></rss>"}], extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2})
     c += code_node("deckGather", "Gather what it found", """
-// Each claim with its headlines (date, publisher, link), numbered across all searches, then the brief's own sources after them
+// Every headline found (date, publisher, link), without repeats, numbered for the model to cite
 const g = $('Read the deck').first().json;
 const all = $('The searches').all().map(i => i.json);
 const results = $input.all().map(i => String(i.json.data || ''));
@@ -1761,51 +1758,45 @@ const headlines = xml => xml.split('<item>').slice(1).map(it => {
   const date = new Date(tag(it, 'pubDate'));
   return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };
 }).filter(h => h.title && h.url);
-// Per claim: the subject search first, topped up from the broad one, without repeats
-const byClaim = {};
-all.forEach((x, k) => { if (x.none) return; (byClaim[x.i] = byClaim[x.i] || { ...x, items: [] }).items.push(...headlines(results[k] || '')); });
+// Six from each search in turn, so one broad search can't crowd out the specific ones
+const seen = new Set();
 const sources = [];
-const searched = Object.values(byClaim).sort((a, b) => a.i - b.i).map(x => {
-  const seen = new Set();
-  const items = x.items.filter(h => !seen.has(h.title.toLowerCase()) && seen.add(h.title.toLowerCase())).slice(0, """ + str(DECK_HEADLINES) + """);
-  const numbered = items.map(h => { sources.push(h); return sources.length; });
-  return { slide_index: x.slide_index, claim: x.claim, query: x.query, found: items.length, numbered };
+const per = all.map((x, k) => x.none ? [] : headlines(results[k] || '').slice(0, 6));
+for (let round = 0; round < 6; round++) per.forEach(list => {
+  const h = list[round];
+  if (h && sources.length < """ + str(DECK_HEADLINES) + """ && !seen.has(h.title.toLowerCase())) { seen.add(h.title.toLowerCase()); sources.push(h); }
 });
-const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
-const brief = parse(g.brief) || {};
-const own = (brief.sources || []).slice(0, 8).map(x => ({ title: x.title, url: x.url, publisher: '', date: '' }));
-const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
-  .concat(own.map(x => { sources.push(x); return '[' + sources.length + '] ' + x.title; })).filter(Boolean).join('\\n') || 'None.';
-const text = searched.map((x, k) => (k + 1) + '. Slide ' + (x.slide_index + 1) + ': "' + x.claim + '" (searched: ' + x.query + ')\\n'
-  + (x.numbered.length ? x.numbered.map(n => '   [' + n + '] ' + sources[n - 1].title + (sources[n - 1].publisher ? ' (' + sources[n - 1].publisher + (sources[n - 1].date ? ', ' + sources[n - 1].date : '') + ')' : '')).join('\\n') : '   No headlines found.')).join('\\n');
-const parts = { meeting: g.meeting, about: (all[0] && all[0].about) || 'Not given.', checks: text || 'No claims to check.', research };
-const PROMPT = """ + json.dumps(DECK_FINDINGS_PROMPT) + """;
+const text = sources.map((h, i) => '[' + (i + 1) + '] ' + h.title + (h.publisher ? ' (' + h.publisher + (h.date ? ', ' + h.date : '') + ')' : '')).join('\\n');
+const about = (all[0] && all[0].about) || 'Not given.';
+const parts = { meeting: g.meeting, about, slides: g.titles || 'None.', headlines: text || 'No headlines found.' };
+const PROMPT = """ + json.dumps(DECK_OTHERS_PROMPT) + """;
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-return [{ json: { searched: searched.map(x => ({ query: x.query, slide_index: x.slide_index, claim: x.claim, found: x.found })), about: parts.about,
-                  headlines: searched.reduce((a, x) => a + x.found, 0), sources, prompt } }];""",
-                   [{"searched": [], "about": "", "headlines": 0, "sources": [], "prompt": ""}])
-    c += llm_nodes("deckWeigh", "Weigh the evidence", "$json.prompt", GEMINI_REPLY, schema=DECK_FINDINGS_SCHEMA,
+const counts = {};
+all.forEach((x, k) => { if (!x.none) counts[x.q] = { query: x.q, slide_index: x.slide_index, found: headlines(results[k] || '').length }; });
+return [{ json: { searched: Object.values(counts), about, sources, prompt } }];""",
+                   [{"searched": [], "about": "", "sources": [], "prompt": ""}])
+    c += llm_nodes("deckWeigh", "Who else does this?", "$json.prompt", GEMINI_REPLY, schema=DECK_OTHERS_SCHEMA,
                    source="$('Gather what it found').first().json")
-    c += code_node("deckBuild", "The findings", REPLY_JS + """
-// Held to the sources: each finding on a claim that was searched, citing only sources n8n found; a finding with no source can only be
-// "unproven". Challenged first, then backed, then unproven.
+    c += code_node("deckBuild", "Hold to the sources", REPLY_JS + """
+// Held to the sources: each one cites at least one headline n8n found, on a real slide, no one twice; the same thing first
 const r = $('Read the deck').first().json;
 const g = $('Gather what it found').first().json;
 const d = JSON.parse(replyText($json) || '{}');
-const order = { challenged: 0, backed: 1, unproven: 2 };
-const used = new Set();
-const findings = (d.findings || []).map(f => {
-  const x = g.searched[f.check - 1];
-  if (!x || used.has(f.check) || !f.fact) return null;
-  used.add(f.check);
-  const sources = [...new Set(f.sources || [])].map(n => g.sources[n - 1]).filter(Boolean).slice(0, 3);
-  const verdict = sources.length && order[f.verdict] != null ? f.verdict : 'unproven';
-  return { slide_index: x.slide_index, claim: x.claim, verdict, fact: String(f.fact), question: String(f.question || ''), sources };
-}).filter(Boolean).sort((a, b) => order[a.verdict] - order[b.verdict]);
-const research = { about: g.about === 'Not given.' ? '' : g.about, searched: g.searched.map(x => ({ query: x.query, slide_index: x.slide_index, found: x.found })),
-                   findings, at: new Date().toISOString() };
+const fallback = r.indexes.length > 1 ? r.indexes[1] : (r.indexes[0] || 0);
+const named = new Set();
+const others = (d.others || []).map(o => {
+  const sources = [...new Set(o.sources || [])].map(n => g.sources[n - 1]).filter(Boolean).slice(0, 3);
+  const name = String(o.name || '').trim();
+  // A publisher reporting on someone isn't the someone
+  const publisher = sources.some(x => x.publisher && (x.publisher.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(x.publisher.toLowerCase())));
+  if (!sources.length || !name || !o.what || publisher || named.has(name.toLowerCase())) return null;
+  named.add(name.toLowerCase());
+  return { name, what: String(o.what), close: o.close === 'same' ? 'same' : 'near', slide_index: r.indexes.includes(o.slide_index) ? o.slide_index : fallback,
+           question: String(o.question || ''), sources };
+}).filter(Boolean).sort((a, b) => (a.close === 'same' ? 0 : 1) - (b.close === 'same' ? 0 : 1)).slice(0, 4);
+const research = { about: g.about === 'Not given.' ? '' : g.about, searched: g.searched, others, at: new Date().toISOString() };
 return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_research: JSON.stringify(research), updated_at: research.at } }];""",
-                   [{"meeting_id": "evt123", "found": True, "research": {"findings": []}, "deck_research": "{}"}])
+                   [{"meeting_id": "evt123", "found": True, "research": {"others": []}, "deck_research": "{}"}])
     c += make_node("deckKnown", "ifElse", "n8n-nodes-base.if", 2.3, "A known meeting?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
@@ -1813,7 +1804,7 @@ return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_resea
             "combinator": "and",
         }, "options": {},
     }, [{"found": True}])
-    # Saved on the meeting: the next /prep asks about the findings, and /debrief checks what was said against them
+    # Saved on the meeting: the next /prep's panel asks how this is different from each of them
     c += make_node("deckSave", "node", "n8n-nodes-base.dataTable", 1.1, "Save it on the meeting", {
         "resource": "row", "operation": "update", "dataTableId": MEETINGS_TABLE, "matchType": "allConditions",
         "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.meeting_id }}")}]},
@@ -1822,13 +1813,13 @@ return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_resea
                         {"id": "deck_research", "displayName": "deck_research", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True},
                         {"id": "updated_at", "displayName": "updated_at", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True}]},
     }, [{"id": 1}], extra={"onError": "continueRegularOutput", "alwaysOutputData": True})
-    c += make_node("deckReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the findings", {
-        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('The findings').first().json.research) }}"), "options": {},
+    c += make_node("deckReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send what it found", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('Hold to the sources').first().json.research) }}"), "options": {},
     }, [{}])
     c += ("const about = sticky('## DryRun deck research\\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-research, docs/CONTRACT.md): "
-          "the deck is a source, not something to mark. n8n picks the claims an outsider could check, searches Google News for each in the deck\\'s "
-          "own words, and weighs what it found: backed, challenged or unproven, with the sources. Saved on the meeting: the next rehearsal asks "
-          "about them, and the debrief checks what the presenter said against them.', [deckTrigger], { color: 4 });\n\n")
+          "who else already does what it pitches? n8n plans news searches from the deck, then keeps only the companies, products and "
+          "programmes the headlines show doing the same thing, each with its source. Saved on the meeting: in the next rehearsal the panel "
+          "asks how the pitch is different from them, by name. It never checks the presenter\\'s own claims.', [deckTrigger], { color: 4 });\n\n")
     c += """export default workflow('dryrun-deck-research', 'DryRun deck research')
   .add(about)
   .add(deckTrigger)
@@ -1849,8 +1840,8 @@ return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_resea
   .add(deckWeigh.onError(deckWeighGroq))
   .add(deckWeighGroq)
   .to(deckBuild)
-  .group('Read the deck', [deckMeeting, deckRead, deckClaims, deckClaimsGroq, deckSearches], { description: 'Picks the claims an outsider could check and a news search for each' })
-  .group('Research', [deckNews, deckGather, deckWeigh, deckWeighGroq, deckBuild], { description: 'Searches the news per claim and weighs what it found, held to the sources' });
+  .group('Read the deck', [deckMeeting, deckRead, deckClaims, deckClaimsGroq, deckSearches], { description: 'Plans news searches for who else already does what the deck pitches' })
+  .group('Research', [deckNews, deckGather, deckWeigh, deckWeighGroq, deckBuild], { description: 'Searches the news and keeps who the headlines show doing the same thing, held to the sources' });
 """
     return c
 

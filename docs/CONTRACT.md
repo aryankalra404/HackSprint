@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.30, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.31, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -228,8 +228,8 @@ Field notes:
 - `source: email` means a real attendee named in `prospect.context`; their real name and title are used.
 - `suggestions` are ranked roles not seated yet, offered when the presenter clicks an empty seat.
 
-## POST `/deck-research` *(0.30; was `/deck-review`, 0.26)*
-Sent by the laptop when the presenter uploads a deck for a meeting (once per upload, in the background after the slides are converted). The deck is a source, not something to mark: n8n reads it, picks the claims worth checking, searches the news for each one (Google News, by the deck's own words, so "SIH" means what the deck means by it), and says what the sources say about each claim. The findings feed the panel's questions (`/prep`) and the judgement of what the presenter said (`/debrief`). There is no advice on the slides.
+## POST `/deck-research` *(0.31; 0.30 checked the deck's claims; was `/deck-review`, 0.26)*
+Sent by the laptop when the presenter uploads a deck for a meeting (once per upload, in the background after the slides are converted). A deck is mostly about the presenter's own product, which no outside source has written about; what a well-read panel knows is the competition. So n8n reads the deck, plans 2 or 3 Google News searches (each with a broader one) for who else already does what it pitches, and keeps only the companies, products, programmes or labs the headlines show doing the same or nearly the same thing. The panel asks how the pitch is different from them, by name (`/prep`). Nothing about it is shown on a page; the dashboard's agent feed names them. It never checks the presenter's own claims or advises on the slides.
 ```json
 { "meeting_id": "string", "deck": { "name": "RouteIQ.pdf", "slides": [{ "index": 0, "text": "string" }] }, "presenter": { "offer": "string" }, "goal": "string" }
 ```
@@ -237,14 +237,14 @@ Response:
 ```json
 {
   "about": "Route optimisation for mid-size fleets, pitched for a paid pilot.",
-  "searched": [{ "query": "route optimisation fuel savings India fleets", "slide_index": 2, "found": 6 }],
-  "findings": [
+  "searched": [{ "query": "AI route optimisation logistics", "slide_index": 2, "found": 64 }],
+  "others": [
     {
+      "name": "string (who does the work, as the headline names them)",
+      "what": "string (what the headline says they do)",
+      "close": "same | near",
       "slide_index": 2,
-      "claim": "30% lower fuel cost",
-      "verdict": "backed | challenged | unproven",
-      "fact": "Two 2025 reports put savings from route optimisation at 8 to 15% for Indian fleets.",
-      "question": "Where does 30% come from, when the industry reports half that?",
+      "question": "They already optimise routes for fleets like ours. What does yours do that theirs doesn't?",
       "sources": [{ "title": "string", "url": "string", "publisher": "Economic Times", "date": "2025-08-14" }]
     }
   ],
@@ -252,9 +252,9 @@ Response:
 }
 ```
 Field notes:
-- 2 to 5 `searched` queries, one per claim worth checking (numbers, market size, competitors, who already does it, the problem it solves); a claim about the presenter's own product that no outside source could speak to isn't searched.
-- `findings`: one per claim searched, the strongest first. `backed`: the sources support it; `challenged`: they contradict it or show a competitor, an existing scheme or a smaller number; `unproven`: nothing found either way, so `fact` says so plainly and `sources` is empty. `fact` states only what the cited headlines and the brief's research say. A Code node drops any source that isn't one n8n found, and any finding citing none unless it is `unproven`. `question` is how a panel would put it; it is practice, never shown as a fact.
-- n8n saves it on the meeting (the DryRun meetings table's `deck_research`). The next `/prep` turns findings into objections on their slides (`source: "research"`), and `/debrief` checks what was said against them (`checks`). The laptop keeps a copy: the practice page shows one line (n8n's progress, then how many claims it checked), the brief shows the findings as facts ("Checked from your deck"). Reading it costs no execution.
+- `searched`: each Google News search n8n ran (at most six), on the slide where a panel would bring the competition up, with how many headlines it returned.
+- `others`: at most 4, those doing the same thing (`same`) first; usually 0 to 2, and an empty list is a normal answer. `near`: the same technology on the same kind of machine or user, or the same problem for the same user solved another way. Left out: the wider field, trend pieces and opinion, companies only investing or seeking partners, hobby projects, and the same technology in an unrelated field. `name` is who does the work, never the publisher: a Code node drops any whose name is its source's publisher, any citing no headline n8n found, and repeats. `what` says only what the headline says. `question` is how a panel would put it; it is practice, never shown as a fact.
+- n8n saves it on the meeting (the DryRun meetings table's `deck_research`). The next `/prep` gives each to the panel member who would care most, as a `research` objection on its slide; `/debrief` numbers their sources after the brief's, so a suggested answer in `owed` can cite them. The laptop keeps a copy per meeting (`web/.deck-research/`, never committed) to skip a deck it has already researched (the slides' text, hashed) and to name them in the agent feed. Reading it costs no execution.
 
 ## POST `/prep`
 Sent by the laptop when the presenter confirms the panel ("Start the rehearsal"). n8n briefs the panel for this pitch: what each person cares about and will push on, how they behave, how the questions are spread over the time, and the lines it can voice ahead of time.
@@ -543,16 +543,6 @@ n8n works through the debrief, saving its progress and the result to the **DryRu
       "sources": [{ "title": "string", "url": "string" }]
     }
   ],
-  "checks": [
-    {
-      "slide_index": 2,
-      "claim": "30% lower fuel cost",
-      "verdict": "held | contradicted | unbacked | not_said",
-      "quote": "string",
-      "note": "string",
-      "sources": [{ "title": "string", "url": "string" }]
-    }
-  ],
   "trouble": [{ "t": 19.2, "kind": "garbled | cut_short | turn_failed", "note": "string" }],
   "pitch": { "seconds": 92, "words": 210, "scored": true },
   "actions_taken": ["report_emailed", "drill_scheduled", "weak_spots_saved", "answers_drafted"]
@@ -565,7 +555,6 @@ Field notes:
 - `weak_spots` *(0.20)*: what to press on next time, in a few words each; the next `/prep` for the meeting raises those topics.
 - *(0.26)* **A fair report.** `seconds` and `words_per_minute` count only the presenter's pitch: each exchange during the pitch (from the question to the end of its answer) is taken out of the slide it happened on. `pitch` is the pitch time and words counted that way. Under about 45 s of pitch or 60 words, `scored` is `false`: `overall` and every metric's `score` are `null`, the headline says so ("Too short to score: 0:19 of pitch. Try a 2-minute run."), and the talk tracks and weak spots are still given. `trouble` lists what went wrong on the system's side, found by a Code node and given to the model to discount, never to judge: a transcript that looks mis-heard (`garbled`: short and sharing no words with the slide, the question or the deck), the panel cutting the pitch short (`cut_short`: a question or the floor opened before the presenter said about 30 words) and turns that failed (`turn_failed`, from the laptop). The model never marks a quote from a garbled transcript, at most one `landed` mark per slide, and only for a specific claim, number or answer.
 - `owed` *(0.26)*: the questions the presenter couldn't answer (threads `parked` or `dodged`, and answers judged `partial`), each with what they said, a suggested answer in their voice (3 to 5 sentences) drafted from the deck, the research in the brief and their own words, what they must `confirm` themselves (n8n never invents facts about their product), and the brief's sources it used. The report shows them as "Questions you owe them", the email leads with them, and the next `/prep` asks them again, early (as `history` objections).
-- `checks` *(0.30)*: what the presenter said against each finding of `/deck-research`. `held`: said in a way the sources back (or, for a challenged claim, they addressed what the sources say); `contradicted`: said something the sources contradict; `unbacked`: claimed it with no evidence where the panel will want some; `not_said`: it didn't come up. `quote` is copied exactly from the transcript (empty for `not_said`; a check whose quote isn't there becomes `not_said`). Empty without a deck research. The report shows them as "Your claims against the research".
 - `facing` *(VR)* is `null` without `gaze_dwell_s`. A person's share of the presenter's attention can count towards their stance, and the `reason` then says so.
 
 ## GET `/status?session_id=`
@@ -759,3 +748,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.28 (12 Oct): after the real meeting (twins step 5, WF4). New `POST /after-meeting` (a voice note in pieces under 30 s, or notes): Sarvam transcribes it, n8n works out per attendee what they raised, what was promised and decided, writes it to their twins (a `meeting_note` source), scores the last rehearsal's predictions (`predictions` on the twin: asked, predicted, matched fact ids) and drafts the follow-up, sent to the attendees only after the presenter approves it (Gmail send-and-wait). Meetings gain `after`.
 - 0.29 (12 Oct): `followup.status` gains `draft`, for a follow-up that still has a `[fill in: …]` gap. n8n no longer asks to send those: one click on "Send it" would have emailed the attendees the gaps.
 - 0.30 (12 Oct): the deck is researched, not reviewed. `POST /deck-review` becomes `POST /deck-research`: n8n picks the deck's claims worth checking, searches the news for each in the deck's own words, and answers with `findings` (backed, challenged or unproven, with sources) instead of pushback and a fix for the slides. Saved as `deck_research` on the meeting; `/prep` turns findings into objections, and `/debrief` gains `checks`: what was said against each finding.
+- 0.31 (12 Oct): the deck research looks for who else already does what the deck pitches, instead of checking the deck's claims (a deck is mostly about the presenter's own product, which the news can't speak to). `findings` becomes `others` (name, what, `same` or `near`, slide, question, sources). `/prep` gives each to the panel as a `research` objection that names them; `/debrief` drops `checks` and numbers their sources for `owed`. Nothing of it is shown on a page any more: the brief's "Checked from your deck", the practice page's line and the report's "Your claims against the research" are gone; the dashboard's agent feed names who was found.
