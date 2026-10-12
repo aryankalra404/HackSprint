@@ -481,8 +481,9 @@ export interface MeetingAfter {
   people: AfterPerson[];
   // Per person who had a practice seat in the last rehearsal: how many of the things they raised it had asked
   predictions: { email: string; name: string; asked: number; predicted: number; practice_asked: number }[];
-  // waiting: in the presenter's inbox for approval; failed: approved but Gmail didn't send it
-  followup: { to: string[]; subject: string; body: string; status: "waiting" | "sent" | "declined" | "failed" | "none"; answered_at?: string };
+  // waiting: in the presenter's inbox for approval; draft: it still has a [fill in: …] gap, so it's never offered for sending (0.29);
+  // failed: approved but Gmail didn't send it
+  followup: { to: string[]; subject: string; body: string; status: "waiting" | "draft" | "sent" | "declined" | "failed" | "none"; answered_at?: string };
   run: { workflow_id: string; execution_id: string } | null;
 }
 

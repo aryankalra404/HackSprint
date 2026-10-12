@@ -2395,7 +2395,10 @@ const predictions = people.filter(p => seat[p.email] && p.raised.length).map(p =
 const now = new Date().toISOString();
 const f = d.followup || {};
 const to = w.attendees.map(a => a.email);
-const followup = { to, subject: String(f.subject || '').slice(0, 160), body: String(f.body || '').slice(0, 3000), status: f.body && to.length && w.owner ? 'waiting' : 'none' };
+// A draft with a gap left to fill ([fill in: ...]) is never offered for one-click sending: "Send it" would email the attendees the gap (0.29)
+const followupBody = String(f.body || '').slice(0, 3000);
+const followup = { to, subject: String(f.subject || '').slice(0, 160), body: followupBody,
+                   status: !followupBody || !to.length || !w.owner ? 'none' : followupBody.toLowerCase().includes('[fill in') ? 'draft' : 'waiting' };
 const run = { workflow_id: String($workflow.id), execution_id: String($execution.id) };
 // Each person's twin: started if DryRun didn't know them, never touching anything else in it
 const rows = $('Read the people table').all().map(i => i.json).filter(r => r.email);
@@ -2403,10 +2406,15 @@ const key = 'after:' + w.meeting.id;
 const twinRows = people.map(p => {
   const found = findRow(rows, p.email);
   const t = found ? rowToTwin(found) : { email: p.email, aliases: [], name: p.name, company: w.meeting.company, role: null, sources: [], facts: [], readings: [], meetings: [], predictions: [], build_log: [], updated: '', sample: false };
+  // Counted before any fact is dropped, so a dropped fact's id is never given to a new one
+  let n = maxId(t.facts, 'f');
   let src = t.sources.find(s => s.key === key);
   if (!src) { src = { id: 's' + (maxId(t.sources, 's') + 1), type: 'meeting_note', key }; t.sources.push(src); }
+  // Notes sent again for the same meeting replace its text, so the facts the earlier notes gave go too: their quotes may not be in the
+  // new text (rule 2). Only this source's connected facts, which only this workflow writes; a fact the presenter rejected stays, so the
+  // same words aren't brought back below.
+  else t.facts = t.facts.filter(x => !(x.source_id === src.id && x.status === 'connected'));
   Object.assign(src, { title: 'Your notes from ' + (w.meeting.title || 'the meeting'), date: w.meeting.date, status: 'connected', why: 'Your own account of a real meeting with them', text: w.transcript.slice(0, 6000) });
-  let n = maxId(t.facts, 'f');
   const have = new Set(t.facts.map(x => norm(x.text)));
   const ids = [];
   [['raised', p.raised], ['promised', p.promised], ['decision', p.decided]].forEach(([kind, list]) => list.forEach((x, i) => {
@@ -2444,7 +2452,7 @@ return $('Hold to the rules').first().json.rows.map(row => ({ json: { row } }));
         "subject": Expr("{{ 'Send your follow-up for ' + ($('The notes').first().json.meeting.title || 'the meeting') + '?' }}"),
         "message": Expr("{{ (() => { const f = $('Hold to the rules').first().json.result.followup; const esc = t => String(t || '').split('&').join('&amp;').split('<').join('&lt;'); "
                         "return '<p>n8n drafted this follow-up from your notes on the meeting. <b>Send it</b> emails it to ' + esc(f.to.join(', ')) + ' from your Gmail; '"
-                        " + '<b>Don\\'t send</b> keeps it as a draft on the meeting page. Edit anything in [fill in: ...] first: answer Don\\'t send, then send it yourself.</p>'"
+                        " + '<b>Don\\'t send</b> keeps it as a draft on the meeting page. To change anything first, answer Don\\'t send, then send it yourself.</p>'"
                         " + '<p><b>Subject:</b> ' + esc(f.subject) + '</p><p>' + esc(f.body).split('\\n').join('<br>') + '</p>'; })() }}"),
         "responseType": "approval",
         "approvalOptions": {"values": {"approvalType": "double", "approveLabel": "Send it", "disapproveLabel": "Don't send"}},

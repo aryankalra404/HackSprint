@@ -133,6 +133,13 @@ function FollowupStatus({ followup: f }: { followup: MeetingAfter["followup"] })
         <StatusIcon tone="bad" className="size-4 shrink-0" /> You approved it, but Gmail couldn&apos;t send it. Copy the draft below and send it yourself.
       </p>
     );
+  // 0.29: a draft with a [fill in: …] gap is never offered for sending
+  if (f.status === "draft")
+    return (
+      <p className="flex items-center gap-2 text-sm text-warn-ink">
+        <StatusIcon tone="warn" className="size-4 shrink-0" /> Not sent: it still has a gap to fill in. Finish the draft below and send it yourself.
+      </p>
+    );
   if (f.status === "declined") return <p className="text-sm text-ink-2">Not sent: you kept it as a draft. It&apos;s below to edit and send yourself.</p>;
   return <p className="text-sm text-ink-2">No follow-up was drafted.</p>;
 }
