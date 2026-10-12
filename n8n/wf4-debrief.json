@@ -25,7 +25,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "dryrun/debrief",
-        "responseMode": "responseNode",
+        "responseMode": "streaming",
         "options": {}
       }
     },
@@ -495,6 +495,51 @@
       },
       "executeOnce": true,
       "alwaysOutputData": true
+    },
+    {
+      "name": "Report: read",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1056,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ debrief_status: JSON.parse($('Row: debriefing').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "Report: judged",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1808,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ debrief_status: JSON.parse($('Row: judged').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "Report: emailed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1888,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ debrief_status: JSON.parse($('Row: done').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -525,17 +570,6 @@
         [
           {
             "node": "Save: debriefing",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save: debriefing": {
-      "main": [
-        [
-          {
-            "node": "Judge the pitch",
             "type": "main",
             "index": 0
           }
@@ -582,17 +616,6 @@
         ]
       ]
     },
-    "Save progress: judged": {
-      "main": [
-        [
-          {
-            "node": "Email the report",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Email the report": {
       "main": [
         [
@@ -609,17 +632,6 @@
         [
           {
             "node": "Save: debriefed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save: debriefed": {
-      "main": [
-        [
-          {
-            "node": "Mark the meeting practised",
             "type": "main",
             "index": 0
           }
@@ -719,6 +731,72 @@
         [
           {
             "node": "Read the session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save: debriefing": {
+      "main": [
+        [
+          {
+            "node": "Report: read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report: read": {
+      "main": [
+        [
+          {
+            "node": "Judge the pitch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save progress: judged": {
+      "main": [
+        [
+          {
+            "node": "Report: judged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report: judged": {
+      "main": [
+        [
+          {
+            "node": "Email the report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save: debriefed": {
+      "main": [
+        [
+          {
+            "node": "Report: emailed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report: emailed": {
+      "main": [
+        [
+          {
+            "node": "Mark the meeting practised",
             "type": "main",
             "index": 0
           }
