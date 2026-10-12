@@ -6,6 +6,7 @@ import { getBrief, getRoom } from "@/lib/room";
 import { Practice } from "@/components/brief/Practice";
 import { getDeckReview } from "@/lib/deckReview";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
+import { twinSummaries } from "@/lib/twins";
 
 export const metadata = { title: "DryRun practice" };
 
@@ -46,6 +47,7 @@ async function PracticeFromRoom({ id }: { id: string }) {
       nameCards={room.name_cards}
       room={room}
       review={await getDeckReview(id)}
+      twins={await twinSummaries(detail?.meeting.attendees ?? [])}
     />
   );
 }

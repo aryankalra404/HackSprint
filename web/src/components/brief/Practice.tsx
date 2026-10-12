@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat } from "@/lib/contract";
+import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat, TwinSummary } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { briefPanelAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
@@ -33,11 +33,13 @@ interface Props {
   room: Room;
   // n8n's review of the deck (0.26), followed while it works
   review: StoredReview | null;
+  // What DryRun knows of each real attendee, by address (0.27): their seat says "From their twin"
+  twins?: Record<string, TwinSummary>;
 }
 
 // Practise a meeting: its panel (real attendees plus practice roles) on the table, editable, then briefed.
 // Every edit is saved to the room on the laptop, and the headset seats the panel as it changes.
-export function Practice({ meeting, input, draft, pitch, panel, nameCards, room: initialRoom, review }: Props) {
+export function Practice({ meeting, input, draft, pitch, panel, nameCards, room: initialRoom, review, twins = {} }: Props) {
   const proposal = draft;
   const room = useRoom(initialRoom);
   const [members, setMembers] = useState<DraftMember[]>(panel);
@@ -161,7 +163,7 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
         <div className="flex min-h-0 flex-col gap-4">
           <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-line bg-surface p-4" aria-label="The table">
             <div className="hidden min-h-0 flex-1 md:block">
-              <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} />
+              <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} twins={twins} />
             </div>
           </section>
           <DeckPanel room={room} />
@@ -171,6 +173,7 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             <PanelEditor
               company={meeting.company}
+              twins={twins}
               members={members}
               suggestions={proposal.suggestions}
               selection={selection}

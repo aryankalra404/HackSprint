@@ -15,6 +15,11 @@ import { YourSide } from "@/components/brief/YourSide";
 import { getProfile } from "@/lib/profile";
 import { getDeckReview } from "@/lib/deckReview";
 import { DeckReview } from "@/components/brief/DeckReview";
+import { twinSummaries } from "@/lib/twins";
+import { sampleTwin } from "@/lib/mock/twin";
+import { SAMPLE_ID } from "@/lib/mock/sample";
+import { sinceFromTwin, shortDate } from "@/lib/twinView";
+import type { SinceLastTime, TwinSummary } from "@/lib/contract";
 
 export const metadata = { title: "DryRun brief" };
 
@@ -46,7 +51,7 @@ async function Meeting({ id }: { id: string }) {
   if (!detail && id.startsWith("web-")) return <JustAdded />;
   if (!detail) notFound();
   const { meeting, brief, proposal } = detail;
-  const [profile, review] = await Promise.all([getProfile(), getDeckReview(id)]);
+  const [profile, review, twins] = await Promise.all([getProfile(), getDeckReview(id), twinSummaries(meeting.attendees)]);
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-6 sm:px-8 sm:py-10">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -101,7 +106,7 @@ async function Meeting({ id }: { id: string }) {
           <Researching company={meeting.company} />
         )
       ) : (
-        <BriefBody detail={{ ...detail, brief }} />
+        <BriefBody detail={{ ...detail, brief }} twins={twins} />
       )}
 
       {brief && proposal && (
@@ -180,9 +185,13 @@ function Researching({ company }: { company: string }) {
   );
 }
 
-function BriefBody({ detail }: { detail: MeetingDetail & { brief: NonNullable<MeetingDetail["brief"]> } }) {
+function BriefBody({ detail, twins }: { detail: MeetingDetail & { brief: NonNullable<MeetingDetail["brief"]> }; twins: Record<string, TwinSummary> }) {
   const { brief, meeting } = detail;
   const attendeeNames = brief.attendees.map((a) => a.name);
+  // How each attendee sits at the practice table, so their twin's portrait matches
+  const seatOf = (name: string) => detail.proposal?.members.find((m) => m.source === "email" && m.display_name === name);
+  // The sample's brief comes from its sample twin; a real one from n8n (GET /meeting joins the twins)
+  const since: SinceLastTime[] = brief.since_last_time ?? (meeting.id === SAMPLE_ID ? [sinceFromTwin(sampleTwin())].filter((x): x is SinceLastTime => !!x) : []);
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="flex flex-col gap-8">
@@ -202,11 +211,14 @@ function BriefBody({ detail }: { detail: MeetingDetail & { brief: NonNullable<Me
                     {a.email && <span className="text-xs text-muted">{a.email}</span>}
                   </span>
                   {a.likely_focus && <span className="text-sm text-ink-2">Likely focus: {a.likely_focus}</span>}
+                  {a.email.includes("@") && <TwinButton email={a.email} name={a.name} company={meeting.company} summary={twins[a.email.toLowerCase()]} seat={seatOf(a.name)} />}
                 </li>
               ))}
             </ul>
           )}
         </section>
+
+        {since.length > 0 && <SinceLastTimeSection since={since} />}
 
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-ink">Questions likely to come up</h2>
@@ -275,5 +287,63 @@ function BriefBody({ detail }: { detail: MeetingDetail & { brief: NonNullable<Me
         )}
       </aside>
     </div>
+  );
+}
+
+// Each real attendee's twin (0.27), with an honest status from counts
+function TwinButton({ email, name, company, summary, seat }: { email: string; name: string; company: string; summary?: TwinSummary; seat?: { avatar: string; color: number } }) {
+  const q = new URLSearchParams({ name, company, ...(seat ? { avatar: seat.avatar, color: String(seat.color) } : {}) });
+  const status = !summary
+    ? "New: build it from your emails"
+    : summary.to_check > 0
+      ? `${summary.facts} ${summary.facts === 1 ? "fact" : "facts"}, ${summary.to_check} to check`
+      : `${summary.meetings ? `${summary.meetings} ${summary.meetings === 1 ? "meeting" : "meetings"}, ` : ""}${summary.facts} ${summary.facts === 1 ? "fact" : "facts"}`;
+  return (
+    <Link href={`/people/${encodeURIComponent(email.toLowerCase())}?${q}`} className="mt-1 inline-flex w-fit items-center gap-2 rounded-full border border-line px-3 py-1 text-xs hover:border-ink">
+      <span className="font-medium">Twin</span>
+      <span className="text-ink-2">{status}</span>
+    </Link>
+  );
+}
+
+// "Email of 3 Oct", "Your note of 22 Sept": the source without its subject, with a short date
+const fromLabel = (f: { source: string; date: string }) => {
+  const head = f.source.split(":")[0].replace(/\d{4}-\d{2}-\d{2}/, shortDate(f.date));
+  return head.charAt(0).toUpperCase() + head.slice(1);
+};
+
+// What each person you've met before raised, and what you promised them: facts from their twin, with dates and sources
+function SinceLastTimeSection({ since }: { since: SinceLastTime[] }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-ink">Since last time</h2>
+      <ul className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-4">
+        {since.map((s) => (
+          <li key={s.email} className="flex flex-col gap-2">
+            <Link href={`/people/${encodeURIComponent(s.email)}`} className="w-fit font-medium hover:underline">{s.name}</Link>
+            {s.raised.length > 0 && (
+              <div className="flex flex-col gap-1 text-sm">
+                <span className="text-xs text-ink-2">Raised</span>
+                {s.raised.map((f) => (
+                  <span key={f.text}>
+                    {f.text} <span className="text-xs text-muted">({fromLabel(f)})</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {s.promised.length > 0 && (
+              <div className="flex flex-col gap-1 text-sm">
+                <span className="text-xs text-ink-2">You promised</span>
+                {s.promised.map((f) => (
+                  <span key={f.text}>
+                    {f.text} <span className="text-xs text-muted">({fromLabel(f)})</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

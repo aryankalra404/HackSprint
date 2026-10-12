@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import type { DraftMember, PanelProposal, PanelSuggestion, Seat } from "@/lib/contract";
+import type { DraftMember, PanelProposal, PanelSuggestion, Seat, TwinSummary } from "@/lib/contract";
 import { ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
 import { PersonaAvatar, StatusIcon } from "../ui";
 import { SOURCE_LABEL, seatLabel, type Selection } from "./PanelTable";
@@ -37,6 +37,8 @@ interface Props {
   onMove: (id: string, seat: Seat) => void;
   onRemove: (id: string) => void;
   onAdd: (person: PanelSuggestion) => void;
+  // Real attendees DryRun keeps a twin of (0.27), by address
+  twins?: Record<string, TwinSummary>;
 }
 
 // The side column of the Brief screen: the panel overview, or an editor for whatever is selected on the table
@@ -175,7 +177,7 @@ function AddToSeat({ suggestions, members, onAdd, onSelect, seat }: Props & { se
   );
 }
 
-function PersonEditor({ member, members, onChange, onMove, onRemove, onSelect }: Props & { member: DraftMember }) {
+function PersonEditor({ member, members, onChange, onMove, onRemove, onSelect, twins }: Props & { member: DraftMember }) {
   const taken = new Set(members.filter((m) => m.id !== member.id).map((m) => m.avatar));
   const faces = AVATARS.filter((a) => a.portrait);
   return (
@@ -188,6 +190,10 @@ function PersonEditor({ member, members, onChange, onMove, onRemove, onSelect }:
           <p className="truncate text-sm text-muted">{member.role}</p>
         </div>
       </div>
+
+      {member.twin_email && (
+        <TwinNote email={member.twin_email} name={member.display_name} summary={twins?.[member.twin_email]} />
+      )}
 
       {member.why && (
         <div className="rounded-xl bg-paper p-3">
@@ -297,5 +303,24 @@ function BackLink({ onSelect }: Pick<Props, "onSelect">) {
     <button type="button" onClick={() => onSelect(null)} className="self-start text-sm text-ink-2 hover:text-ink">
       ← The whole panel
     </button>
+  );
+}
+
+// A real attendee's seat and their twin (0.27): what DryRun knows of them, and the way to it. The practice roles never have one.
+function TwinNote({ email, name, summary }: { email: string; name: string; summary?: TwinSummary }) {
+  const first = name.split(" ")[0] || "them";
+  const known = summary && summary.facts > 0;
+  return (
+    <div className="rounded-xl border border-line p-3 text-sm">
+      <p className="text-xs font-semibold text-ink-2">{known ? "From their twin" : "Their twin"}</p>
+      <p className="mt-1">
+        {known
+          ? `${summary.facts} ${summary.facts === 1 ? "fact" : "facts"} from your real emails and notes${summary.meetings ? `, ${summary.meetings} ${summary.meetings === 1 ? "meeting" : "meetings"}` : ""}. In the rehearsal ${first} opens with what they actually raised before.`
+          : `DryRun doesn't know ${first} yet, so this seat leans on their role. Build their twin from your emails first.`}
+      </p>
+      <a href={`/people/${encodeURIComponent(email)}`} className="mt-1 inline-block text-xs text-ink-2 underline decoration-line hover:text-ink">
+        {known ? "Open the twin ↗" : "Build the twin ↗"}
+      </a>
+    </div>
   );
 }

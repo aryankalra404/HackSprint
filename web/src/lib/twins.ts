@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinListItem, TwinLogStep, TwinMeeting, TwinReading, TwinSource } from "./contract";
+import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinListItem, TwinLogStep, TwinMeeting, TwinReading, TwinSource, TwinSummary } from "./contract";
 import { N8N_URL, forgetMeetingReads, jsonObjects, n8nRunUrl, parseOrNull, postToN8n, readOnce } from "./api";
 import { SAMPLE_TWIN_EMAIL, sampleTwin } from "./mock/twin";
 import { applyChanges, summarize } from "./twinView";
@@ -239,4 +239,19 @@ export async function updateTwin(email: string, changes: TwinChange[]): Promise<
   if (!answer.twin) throw new Error(answer.error ?? "n8n didn't send the twin back");
   await writeStored(e, { ...stored, twin: answer.twin });
   return answer.twin;
+}
+// What DryRun knows of each address, for the brief's Twin buttons and the practice table: n8n's counts from GET /meeting first, then
+// the laptop's own copies (and the sample). Never reads n8n itself.
+export async function twinSummaries(attendees: { email: string; twin?: TwinSummary | null }[]): Promise<Record<string, TwinSummary>> {
+  const out: Record<string, TwinSummary> = {};
+  for (const a of attendees) {
+    const e = norm(a.email || "");
+    if (!e.includes("@")) continue;
+    if (a.twin) out[e] = a.twin;
+    else {
+      const local = (await readStored(e))?.twin ?? (isSampleTwin(e) ? sampleTwin() : null);
+      if (local) out[e] = summarize(local);
+    }
+  }
+  return out;
 }

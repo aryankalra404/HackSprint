@@ -17,7 +17,12 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
   const detail = await getMeeting(meetingId);
   if (!detail?.proposal) return { ok: false, error: "This meeting's brief isn't ready yet." };
   const { meeting, proposal } = detail;
-  const panel: DraftMember[] = proposal.members.map((m) => ({ ...m, difficulty: 2 }));
+  // A real attendee's address (0.27), so /prep can seat them from their twin: from the brief's attendees, by name
+  const emailOf = (name: string) => detail.brief?.attendees.find((a) => a.email.includes("@") && a.name.trim().toLowerCase() === name.trim().toLowerCase())?.email;
+  const panel: DraftMember[] = proposal.members.map((m) => {
+    const email = m.source === "email" ? emailOf(m.display_name) : undefined;
+    return { ...m, difficulty: 2, ...(email ? { twin_email: email.toLowerCase() } : {}) };
+  });
   const input: BriefInput = {
     presenter: { name: process.env.DRYRUN_PRESENTER_NAME ?? "", email: process.env.DRYRUN_OWNER_EMAIL ?? "" },
     deck: null,
@@ -98,7 +103,7 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
     rehearse_in: rehearseIn,
     // A real brief ends the sample's scripted run
     scripted: false,
-    panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty })),
+    panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty, twin_email }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty, ...(twin_email ? { twin_email } : {}) })),
   });
   prepDone(runId, prepSteps(bundle));
   return bundle.session_id;

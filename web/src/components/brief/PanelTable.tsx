@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { DraftMember, PanelMember, Seat } from "@/lib/contract";
+import type { DraftMember, PanelMember, Seat, TwinSummary } from "@/lib/contract";
 import { ALL_SEATS, MAX_PANEL } from "@/lib/personas";
 import { PersonaAvatar } from "../ui";
 import { CARD_W, H, RoomPlan, TABLE_CENTRE, W, cardPlacement, pct, seatPoint } from "../room/RoomPlan";
@@ -29,10 +29,16 @@ interface Props {
   onSelect: (s: Selection) => void;
   // Move someone to a seat; if it's taken, the two swap
   onMove: (id: string, seat: Seat) => void;
+  // Real attendees DryRun keeps a twin of (0.27), by address
+  twins?: Record<string, TwinSummary>;
 }
 
+// A real attendee with a twin that knows something sits as themselves: what they raised before opens the rehearsal
+export const fromTwin = (m: Pick<DraftMember, "twin_email">, twins: Record<string, TwinSummary> = {}) =>
+  !!m.twin_email && (twins[m.twin_email]?.facts ?? 0) > 0;
+
 // The Brief screen's table: every chair is a seat. Click a person to edit them, + to add someone, drag to move.
-export function PanelTable({ members, selection, onSelect, onMove }: Props) {
+export function PanelTable({ members, selection, onSelect, onMove, twins }: Props) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<Seat | null>(null);
   const full = members.length >= MAX_PANEL;
@@ -114,7 +120,11 @@ export function PanelTable({ members, selection, onSelect, onMove }: Props) {
                 {m.display_name || "Named by n8n"}
               </span>
               <span className="truncate text-[0.9cqw] leading-tight text-muted">{m.role || "No role yet"}</span>
-              {m.source && <span className="mt-[0.2cqw] truncate text-[0.9cqw] leading-tight text-ink-2">{SOURCE_LABEL[m.source]}</span>}
+              {fromTwin(m, twins) ? (
+                <span className="mt-[0.2cqw] truncate text-[0.9cqw] leading-tight text-ink">From their twin</span>
+              ) : (
+                m.source && <span className="mt-[0.2cqw] truncate text-[0.9cqw] leading-tight text-ink-2">{SOURCE_LABEL[m.source]}</span>
+              )}
             </button>
           </div>
         );
