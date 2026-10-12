@@ -199,7 +199,7 @@ async function streamPrep(body: unknown, onProgress?: (p: N8nProgress, n8nUrl: s
   return bundle;
 }
 
-function parseOrNull(text: string): unknown {
+export function parseOrNull(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
@@ -208,7 +208,7 @@ function parseOrNull(text: string): unknown {
 }
 
 // Splits a stream of JSON objects (one per line or run together) into each object's text, however the chunks are cut
-function jsonObjects() {
+export function jsonObjects() {
   let buf = "";
   let depth = 0;
   let inString = false;

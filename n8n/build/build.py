@@ -762,13 +762,14 @@ return [{ json: { session_id: 's' + Date.now().toString(36), prospect: { company
     c += progress_chunk("saidFallback", "Report: Groq instead", "fallback", "'Gemini did not answer, so Groq plans it instead'")
     c += code_node("eachLine", "One item per line", """
 // Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).
-// Generic lines the laptop already has in that voice (cached_voices, 0.26) aren't voiced again.
+// Lines the laptop already has in that voice with the same words (cached_voices, 0.26) aren't voiced again: the generic ones after a
+// voice's first rehearsal, and on "Run it again" every line whose words didn't change.
 const b = $input.first().json;
 const req = $('Start a rehearsal (web app)').first().json.body;
 if (req.voices === false) return [];
 const voice = Object.fromEntries(b.personas.map(p => [p.id, p.voice]));
 const cached = req.cached_voices || {};
-return b.lines.filter(l => !(l.generic && (cached[l.voice] || []).includes(l.text)))
+return b.lines.filter(l => !(cached[voice[l.persona_id]] || []).includes(l.text))
   .map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));""", [{"id": "l1", "text": "Welcome, Aryan.", "speaker": "priya"}], extra={"alwaysOutputData": True})
     c += make_node("voice", "node", "n8n-nodes-base.httpRequest", 4.5, "Voice the line (Sarvam)", {
         "method": "POST",
@@ -792,9 +793,8 @@ const audio = {};
 lines.forEach((l, i) => { const a = out[i] && out[i].audios && out[i].audios[0]; if (l.id && a) audio[l.id] = a; });
 return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_base64: audio[l.id] } : l)) } }];""", [{"session_id": "s1", "lines": []}])
     c += progress_chunk("saidVoices", "Report: voiced", "voices",
-                        "(() => { const own = $json.lines.filter(l => !l.generic); const v = own.filter(l => l.audio_base64).length; const g = $json.lines.filter(l => l.generic); const gv = g.filter(l => l.audio_base64).length; "
-                        "return (own.length ? v + ' of ' + own.length + ' lines for this meeting voiced, each in the voice of whoever says it' : 'No lines to voice') + "
-                        "(g.length ? (gv ? ', and ' + gv + ' everyday lines for new voices' : ', and the everyday lines came from the laptop') : ''); })()")
+                        "(() => { const n = $json.lines.length; const v = $json.lines.filter(l => l.audio_base64).length; "
+                        "return !n ? 'No lines to voice' : v + ' new line' + (v === 1 ? '' : 's') + ' voiced, each in the voice of whoever says it' + (n > v ? '; ' + (n - v) + ' already on the laptop' : ''); })()")
     c += make_node("reply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the bundle", {"respondWith": "firstIncomingItem", "options": {}}, [{}])
     c += ("const about = sticky('## DryRun rehearsal prep\\nBriefs the practice panel for one rehearsal (POST /webhook/dryrun/prep, docs/CONTRACT.md): "
           "plans each slide and the rescue cues, what each person will push on, who interrupts and who chairs, how many questions to ask "
@@ -1096,7 +1096,26 @@ const parts = {
 };
 // Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-return { ...r, transcript, prompt };""", [{"room": {"mode": "segment", "transcript": "", "prompt": ""}}])
+// No question is possible on this slide (0.26): "Check the reactions" would drop any, so the model is skipped
+const said = transcript.toLowerCase().split(/[^a-z0-9%]+/).filter(Boolean).length;
+const interrupters = (b.personas || []).filter(p => p.manner !== 'waits');
+const skip = r.mode === 'segment' && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide));
+const skip_note = !skip ? '' : !said ? 'Nothing came through on this slide, so the panel just listened.'
+  : !interrupters.length ? 'Nobody on this panel interrupts a pitch, so they held their questions.'
+  : r.slide_index === 0 && !r.mid_slide ? 'Your opening slide: the panel let you get going.' : 'Only a few words on this slide, so nobody cut in.';
+return { ...r, transcript, prompt, skip, skip_note };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
+    c += make_node("couldAsk", "ifElse", "n8n-nodes-base.if", 2.3, "Could anyone ask?", {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"leftValue": Expr("{{ !$json.room.skip }}"), "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": True}}],
+            "combinator": "and",
+        }, "options": {},
+    }, [{"room": {"skip": False}}])
+    c += expr_node("nobody", "Nobody reacts", "reply", "object", """
+// Nobody could have asked here: no model call, just the transcript and why nobody spoke
+const r = $('What the room knows').first().json.room;
+return { transcript: r.transcript, note: r.skip_note, reactions: [], answer_verdict: null, threads: [], end_session: false };""",
+                   [{"reply": {"transcript": "", "note": "", "reactions": []}}])
     c += groq_first_nodes("decide", "Decide who reacts", prompt, [{"choices": [{"message": {"content": "{}"}}]}], TURN_SCHEMA, "$('What the room knows').first().json.room")
     c += expr_node("check", "Check the reactions", "out", "object", REPLY_JS + CHECK_JS, [{"out": {"reply": {"reactions": [], "threads": []}, "to_voice": []}}])
     c += make_node("anyToVoice", "ifElse", "n8n-nodes-base.if", 2.3, "New lines to voice?", {
@@ -1136,7 +1155,10 @@ return { ...c.reply, reactions };""", [{"reply": {"transcript": "", "reactions":
   .to(readAudio)
   .to(transcribe)
   .to(context)
-  .to(decide)
+  .to(couldAsk
+    .onTrue(decide)
+    .onFalse(nobody.to(replyTurn)))
+  .add(decide)
   .to(check)
   .to(anyToVoice
     .onTrue(eachReaction.to(voiceTurn.to(withVoices.to(replyTurn))))
@@ -1145,7 +1167,7 @@ return { ...c.reply, reactions };""", [{"reply": {"transcript": "", "reactions":
   .add(decideGemini)
   .to(check)
   .group('Listen', [readAudio, transcribe], { description: 'Reads the speech and transcribes what the presenter said' })
-  .group('Decide', [context, decide, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why, and holds it to the rules' })
+  .group('Decide', [context, couldAsk, nobody, decide, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why, and holds it to the rules; skips the model where no question is possible' })
   .group('Voice', [anyToVoice, eachReaction, voiceTurn, withVoices], { description: 'Voices new lines with Sarvam; lines voiced in prep play as they are' });
 """
     return c
@@ -1192,10 +1214,19 @@ const statusFields = { debrief_status: JSON.stringify({ done: !!mailed, steps: d
 """
 
 
+def debrief_chunk(var, name, row_node):
+    """A streamed progress chunk for /debrief (contract 0.26): { debrief_status }, as the row just saved has it. Respond to Webhook passes its
+    input through, and a chunk that fails never stops the debrief."""
+    body = "{{ JSON.stringify({ debrief_status: JSON.parse($('" + row_node + "').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}"
+    return make_node(var, "node", "n8n-nodes-base.respondToWebhook", 1.5, name, {"respondWith": "json", "responseBody": Expr(body), "options": {}}, [{}],
+                     extra={"onError": "continueRegularOutput"})
+
+
 def debrief():
     c = IMPORTS
+    # Streaming (contract 0.26): a progress chunk after each step, so the dashboard shows n8n's steps as they happen, then the record
     c += make_node("debriefTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "Debrief a session (laptop)", {
-        "httpMethod": "POST", "path": "dryrun/debrief", "responseMode": "responseNode", "options": {},
+        "httpMethod": "POST", "path": "dryrun/debrief", "responseMode": "streaming", "options": {},
     }, [DEBRIEF_REQUEST])
     c += make_node("findHistory", "node", "n8n-nodes-base.dataTable", 1.1, "Earlier rehearsals", {
         "resource": "row", "operation": "get", "dataTableId": SESSIONS_TABLE, "matchType": "anyCondition",
@@ -1377,6 +1408,7 @@ const r = $('Read the session').first().json;
 return [{ json: { session_id: r.session_id, meeting_id: r.meeting_id, at: new Date().toISOString(), status: 'debriefing', headline: '',
                   bundle: JSON.stringify(r.bundle), telemetry: JSON.stringify(r.telemetry), debrief: '', ...statusFields } }];""", [{"session_id": "s1"}])
     c += sessions_upsert("saveStart", "Save: debriefing")
+    c += debrief_chunk("saidStart", "Report: read", "Row: debriefing")
     c += llm_nodes("judge", "Judge the pitch", "$('Read the session').first().json.prompt", GEMINI_REPLY, schema=DEBRIEF_SCHEMA,
                    source="$('Read the session').first().json")
     c += code_node("buildDebrief", "Build the debrief", REPLY_JS + """
@@ -1453,6 +1485,7 @@ return [{ json: { session_id: r.session_id, debrief, marks, backs: stakeholders.
 const j = $('Build the debrief').first().json;
 return [{ json: { session_id: j.session_id, overall: j.debrief.overall, headline: j.debrief.headline, ...statusFields } }];""", [{"session_id": "s1"}])
     c += sessions_upsert("saveJudged", "Save progress: judged")
+    c += debrief_chunk("saidJudged", "Report: judged", "Row: judged")
     c += make_node("emailReport", "node", "n8n-nodes-base.gmail", 2.2, "Email the report", {
         "resource": "message", "operation": "send",
         "sendTo": Expr("{{ $('Read the session').first().json.owner_email }}"),
@@ -1483,6 +1516,7 @@ const debrief = { ...j.debrief, actions_taken: (mailedOk ? ['report_emailed'] : 
 return [{ json: { session_id: r.session_id, status: 'done', overall: debrief.overall, headline: debrief.headline, debrief: JSON.stringify(debrief), ...statusFields } }];""",
                    [{"session_id": "s1", "debrief": "{}", "debrief_status": "{}"}])
     c += sessions_upsert("saveDone", "Save: debriefed")
+    c += debrief_chunk("saidDone", "Report: emailed", "Row: done")
     c += code_node("practised", "Mark the meeting practised", """
 // The meeting now has a rehearsal behind it (shown on the web app's home page)
 const r = $('Read the session').first().json;
@@ -1538,13 +1572,16 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
   .to(readSession)
   .to(rowStart)
   .to(saveStart)
+  .to(saidStart)
   .to(judge)
   .to(buildDebrief)
   .to(rowJudged)
   .to(saveJudged)
+  .to(saidJudged)
   .to(emailReport)
   .to(rowDone)
   .to(saveDone)
+  .to(saidDone)
   .to(practised)
   .to(savePractised)
   .to(theRecord)
@@ -1556,9 +1593,9 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
   .to(readSessions)
   .to(shapeSession)
   .to(sendSession)
-  .group('Read', [findHistory, findBrief, readSession, rowStart, saveStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
-  .group('Judge', [judge, judgeGroq, buildDebrief, rowJudged, saveJudged], { description: 'Marks the transcript, scores with evidence, reads the room, plans the drill' })
-  .group('Act', [emailReport, rowDone, saveDone, practised, savePractised, theRecord, replyDebrief], { description: 'Emails the report, saves it for the next rehearsal and marks the meeting practised' });
+  .group('Read', [findHistory, findBrief, readSession, rowStart, saveStart, saidStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
+  .group('Judge', [judge, judgeGroq, buildDebrief, rowJudged, saveJudged, saidJudged], { description: 'Marks the transcript, scores with evidence, reads the room, plans the drill' })
+  .group('Act', [emailReport, rowDone, saveDone, saidDone, practised, savePractised, theRecord, replyDebrief], { description: 'Emails the report, saves it for the next rehearsal and marks the meeting practised' });
 """
     return c
 

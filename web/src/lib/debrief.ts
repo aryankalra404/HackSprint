@@ -1,5 +1,5 @@
 import type { Bundle, PrepStep, RoomDebrief, SessionRecord, Telemetry, TelemetryEvent } from "./contract";
-import { N8N_URL, forgetMeetingReads } from "./api";
+import { N8N_URL, forgetMeetingReads, jsonObjects, parseOrNull } from "./api";
 import { getBrief, getRoom, slideLog, updateRoom } from "./room";
 import { cacheSession } from "./sessions";
 import { failedTurns } from "./turns";
@@ -80,7 +80,9 @@ export function startDebrief(again = false): void {
 
 async function run(id: string, body: unknown): Promise<void> {
   let done = false;
-  const follow = followProgress(id, () => done);
+  // n8n streams its steps (0.26); an older workflow that answers only at the end is followed through GET /session instead
+  let streamed = false;
+  const follow = followProgress(id, () => done || streamed);
   try {
     const res = await fetch(`${N8N_URL}/debrief`, {
       method: "POST",
@@ -88,8 +90,32 @@ async function run(id: string, body: unknown): Promise<void> {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) throw new Error(`n8n /debrief failed: ${res.status}`);
-    const record = (await res.json()) as SessionRecord;
+    if (!res.ok || !res.body) throw new Error(`n8n /debrief failed: ${res.status}`);
+    let record: SessionRecord | null = null;
+    let failed: string | null = null;
+    // Each chunk is n8n's { type, content } object (or, before streaming, the plain record)
+    const take = (value: unknown) => {
+      const v = typeof value === "string" ? parseOrNull(value) : value;
+      if (!v || typeof v !== "object") return;
+      const o = v as Record<string, unknown>;
+      if (o.type === "error") failed = typeof o.content === "string" ? o.content : "n8n stopped with an error";
+      else if (typeof o.type === "string" && "content" in o) take(o.content);
+      else if (o.debrief_status && !o.bundle) {
+        streamed = true;
+        const steps = (o.debrief_status as { steps?: PrepStep[] }).steps;
+        if (steps?.length && !done) setDebrief(id, { steps });
+      } else if (o.debrief && o.bundle) record = o as unknown as SessionRecord;
+    };
+    const split = jsonObjects();
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    for (;;) {
+      const { done: ended, value } = await reader.read();
+      if (ended) break;
+      for (const text of split(value)) take(parseOrNull(text));
+    }
+    if (failed) throw new Error(`n8n /debrief failed: ${failed}`);
+    if (!record) throw new Error("n8n sent no debrief");
+    record = record as SessionRecord;
     if (!record.debrief) throw new Error("n8n sent no debrief");
     done = true;
     await cacheSession(id, record);

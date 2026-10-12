@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Deck, DeckReview } from "./contract";
@@ -13,6 +14,8 @@ export interface StoredReview {
   state: "running" | "done" | "failed";
   review: DeckReview | null;
   error?: string;
+  // The slides' text, hashed: the same deck uploaded again keeps its review instead of asking n8n again
+  fingerprint?: string;
 }
 
 const DIR = path.join(process.cwd(), ".deck-reviews");
@@ -35,10 +38,15 @@ async function save(meetingId: string, stored: StoredReview): Promise<void> {
 export function startDeckReview(meetingId: string, deck: Deck, goal?: string): void {
   if (!N8N_URL) return;
   void (async () => {
-    const base = { deck_id: deck.id, deck_name: deck.name };
+    let base: Pick<StoredReview, "deck_id" | "deck_name" | "fingerprint"> = { deck_id: deck.id, deck_name: deck.name };
     try {
+      const [text, profile, before] = await Promise.all([deckText(deck), getProfile(), getDeckReview(meetingId)]);
+      base = { ...base, fingerprint: createHash("sha1").update(JSON.stringify(text.slides)).digest("hex") };
+      if (before?.state === "done" && before.fingerprint === base.fingerprint) {
+        await save(meetingId, { ...before, ...base });
+        return;
+      }
       await save(meetingId, { ...base, state: "running", review: null });
-      const [text, profile] = await Promise.all([deckText(deck), getProfile()]);
       if (!text.slides.some((s) => s.text)) {
         await save(meetingId, { ...base, state: "failed", review: null, error: "The slides have no text n8n can read." });
         return;

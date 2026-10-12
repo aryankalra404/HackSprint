@@ -8,7 +8,7 @@ const debriefTrigger = trigger({
     "parameters": {
       "httpMethod": "POST",
       "path": "dryrun/debrief",
-      "responseMode": "responseNode",
+      "responseMode": "streaming",
       "options": {}
     },
     "output": [
@@ -211,6 +211,23 @@ const saveStart = node({
   }
 });
 
+const saidStart = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: read",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ debrief_status: JSON.parse($('Row: debriefing').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
+]
+  }
+});
+
 const judge = node({
   type: "n8n-nodes-base.httpRequest",
   version: 4.5,
@@ -369,6 +386,23 @@ const saveJudged = node({
   }
 });
 
+const saidJudged = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: judged",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ debrief_status: JSON.parse($('Row: judged').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
+]
+  }
+});
+
 const emailReport = node({
   type: "n8n-nodes-base.gmail",
   version: 2.2,
@@ -448,6 +482,23 @@ const saveDone = node({
   {
     "id": 1
   }
+]
+  }
+});
+
+const saidDone = node({
+  type: "n8n-nodes-base.respondToWebhook",
+  version: 1.5,
+  config: {
+    "name": "Report: emailed",
+    "parameters": {
+      "respondWith": "json",
+      "responseBody": expr("{{ JSON.stringify({ debrief_status: JSON.parse($('Row: done').first().json.debrief_status), execution_id: $execution.id, workflow_id: $workflow.id }) }}"),
+      "options": {}
+    },
+    "onError": "continueRegularOutput",
+    "output": [
+  {}
 ]
   }
 });
@@ -662,13 +713,16 @@ export default workflow('dryrun-debrief', 'DryRun debrief')
   .to(readSession)
   .to(rowStart)
   .to(saveStart)
+  .to(saidStart)
   .to(judge)
   .to(buildDebrief)
   .to(rowJudged)
   .to(saveJudged)
+  .to(saidJudged)
   .to(emailReport)
   .to(rowDone)
   .to(saveDone)
+  .to(saidDone)
   .to(practised)
   .to(savePractised)
   .to(theRecord)
@@ -680,6 +734,6 @@ export default workflow('dryrun-debrief', 'DryRun debrief')
   .to(readSessions)
   .to(shapeSession)
   .to(sendSession)
-  .group('Read', [findHistory, findBrief, readSession, rowStart, saveStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
-  .group('Judge', [judge, judgeGroq, buildDebrief, rowJudged, saveJudged], { description: 'Marks the transcript, scores with evidence, reads the room, plans the drill' })
-  .group('Act', [emailReport, rowDone, saveDone, practised, savePractised, theRecord, replyDebrief], { description: 'Emails the report, saves it for the next rehearsal and marks the meeting practised' });
+  .group('Read', [findHistory, findBrief, readSession, rowStart, saveStart, saidStart], { description: 'Counts time, pace and filler words per slide and pairs each question with its answer' })
+  .group('Judge', [judge, judgeGroq, buildDebrief, rowJudged, saveJudged, saidJudged], { description: 'Marks the transcript, scores with evidence, reads the room, plans the drill' })
+  .group('Act', [emailReport, rowDone, saveDone, saidDone, practised, savePractised, theRecord, replyDebrief], { description: 'Emails the report, saves it for the next rehearsal and marks the meeting practised' });

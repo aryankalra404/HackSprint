@@ -310,7 +310,7 @@ const eachLine = node({
     "parameters": {
       "mode": "runOnceForAllItems",
       "language": "javaScript",
-      "jsCode": "// Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).\n// Generic lines the laptop already has in that voice (cached_voices, 0.26) aren't voiced again.\nconst b = $input.first().json;\nconst req = $('Start a rehearsal (web app)').first().json.body;\nif (req.voices === false) return [];\nconst voice = Object.fromEntries(b.personas.map(p => [p.id, p.voice]));\nconst cached = req.cached_voices || {};\nreturn b.lines.filter(l => !(l.generic && (cached[l.voice] || []).includes(l.text)))\n  .map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));"
+      "jsCode": "// Each line to voice, in its person's voice. Skipped when the web app asks for no voices (testing without spending TTS credits).\n// Lines the laptop already has in that voice with the same words (cached_voices, 0.26) aren't voiced again: the generic ones after a\n// voice's first rehearsal, and on \"Run it again\" every line whose words didn't change.\nconst b = $input.first().json;\nconst req = $('Start a rehearsal (web app)').first().json.body;\nif (req.voices === false) return [];\nconst voice = Object.fromEntries(b.personas.map(p => [p.id, p.voice]));\nconst cached = req.cached_voices || {};\nreturn b.lines.filter(l => !(cached[voice[l.persona_id]] || []).includes(l.text))\n  .map(l => ({ json: { id: l.id, text: l.text, speaker: voice[l.persona_id] } }));"
     },
     "alwaysOutputData": true,
     "output": [
@@ -388,7 +388,7 @@ const saidVoices = node({
     "name": "Report: voiced",
     "parameters": {
       "respondWith": "json",
-      "responseBody": expr("{{ JSON.stringify({ progress: { id: 'voices', detail: (() => { const own = $json.lines.filter(l => !l.generic); const v = own.filter(l => l.audio_base64).length; const g = $json.lines.filter(l => l.generic); const gv = g.filter(l => l.audio_base64).length; return (own.length ? v + ' of ' + own.length + ' lines for this meeting voiced, each in the voice of whoever says it' : 'No lines to voice') + (g.length ? (gv ? ', and ' + gv + ' everyday lines for new voices' : ', and the everyday lines came from the laptop') : ''); })() } }) }}"),
+      "responseBody": expr("{{ JSON.stringify({ progress: { id: 'voices', detail: (() => { const n = $json.lines.length; const v = $json.lines.filter(l => l.audio_base64).length; return !n ? 'No lines to voice' : v + ' new line' + (v === 1 ? '' : 's') + ' voiced, each in the voice of whoever says it' + (n > v ? '; ' + (n - v) + ' already on the laptop' : ''); })() } }) }}"),
       "options": {}
     },
     "onError": "continueRegularOutput",

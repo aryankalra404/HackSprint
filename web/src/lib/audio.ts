@@ -92,8 +92,9 @@ export async function compressSpeech(wavBase64: string): Promise<{ base64: strin
   }
 }
 
-// Generic lines (contract 0.26) say nothing about the meeting, so each is kept by its voice and text and reused by every later
-// rehearsal: n8n only voices the ones this index doesn't list (/prep's cached_voices).
+// Every voiced line (contract 0.26) is kept by its voice and text and reused by every later rehearsal: the generic lines, which say
+// nothing about the meeting, and on "Run it again" every line whose words didn't change. n8n only voices what this index doesn't list
+// (/prep's cached_voices).
 const VOICES_INDEX = path.join(AUDIO_DIR, "voices.json");
 
 function genericId(voice: string, text: string): string {
@@ -108,15 +109,15 @@ export async function cachedVoices(): Promise<Record<string, string[]>> {
   }
 }
 
-// The bundle as the room keeps it: each line voiced in /prep becomes an audio_url instead of base64, and a generic line n8n left
-// unvoiced gets the laptop's copy
+// The bundle as the room keeps it: each line voiced in /prep becomes an audio_url instead of base64, and a line n8n left unvoiced gets
+// the laptop's copy of the same words in the same voice
 export async function saveBundleAudio(bundle: Bundle): Promise<Bundle> {
   const voiceOf = new Map(bundle.personas.map((p) => [p.id, p.voice]));
   const index = await cachedVoices();
   const lines = await Promise.all(
     bundle.lines.map(async ({ audio_base64, ...line }) => {
       const voice = line.voice ?? voiceOf.get(line.persona_id);
-      if (!line.generic || !voice) {
+      if (!voice) {
         const url = audio_base64 ? await saveAudio(audio_base64) : null;
         return url ? { ...line, audio_url: url } : line;
       }
