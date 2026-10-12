@@ -4,9 +4,10 @@ import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meeti
 import { SAMPLE_ID, sampleBundle, sampleDetail } from "./mock/sample";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
-import { getRoom } from "./room";
+import { getBrief, getRoom } from "./room";
 import { cachedVoices, saveBundleAudio } from "./audio";
 import { cachedSession } from "./sessions";
+import { othersDoingThis } from "./deckResearch";
 import type { N8nProgress } from "./prepProgress";
 
 const MOCKS: Record<string, SessionRecord> = { demo: demoSession, "demo-prep": demoPrepSession };
@@ -27,7 +28,9 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
   // The session in the room right now, before it has been rehearsed
   const room = getRoom();
   if (room.session_id === sessionId && room.bundle) {
-    return { bundle: room.bundle, status: { done: true, steps: prepSteps(room.bundle) }, telemetry: null, debrief_status: null, debrief: null, history: [] };
+    const brief = getBrief();
+    const others = brief ? await othersDoingThis(brief.draft_id) : [];
+    return { bundle: room.bundle, status: { done: true, steps: prepSteps(room.bundle, others) }, telemetry: null, debrief_status: null, debrief: null, history: [] };
   }
   if (!N8N_URL) return null;
   // Any other session from n8n's sessions table (contract: GET /session), e.g. from another laptop
@@ -40,7 +43,8 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
 }
 
 // What n8n's rehearsal prep did, read from its bundle, so the dashboard's feed shows this panel's real prep
-export function prepSteps(bundle: Bundle): PrepStep[] {
+// others: who n8n's deck research found already doing what the deck pitches (0.31), which the panel was briefed to ask about
+export function prepSteps(bundle: Bundle, others: string[] = []): PrepStep[] {
   const objections = bundle.personas.reduce((n, p) => n + p.objections.length, 0);
   const chair = bundle.personas.find((p) => p.chair);
   const interrupts = bundle.personas.filter((p) => p.manner === "interrupts").map((p) => p.display_name.split(" ")[0]);
@@ -49,6 +53,8 @@ export function prepSteps(bundle: Bundle): PrepStep[] {
   const steps: PrepStep[] = [];
   if (bundle.slides.length > 0)
     steps.push({ id: "deck", label: "Read the deck", state: "done", detail: `${bundle.slides.length} slides, key points and a target time for each` });
+  if (others.length > 0)
+    steps.push({ id: "others", label: "Found who else already does this", state: "done", detail: `${others.join(", ")}: the panel will ask how yours is different` });
   steps.push({
     id: "personas",
     label: "Briefed the panel",

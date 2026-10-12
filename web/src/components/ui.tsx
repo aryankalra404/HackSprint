@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DeckFinding, Persona, ResearchCheck, StakeholderVerdict, Verdict } from "@/lib/contract";
+import type { Persona, StakeholderVerdict, Verdict } from "@/lib/contract";
 import { portraitOf, colorOf } from "@/lib/personas";
 
 // Every button and button-like link: three kinds, three sizes. sm sits in toolbars and rows, md is the default, lg is a page's one main action.
@@ -158,30 +158,6 @@ const OWED: Record<"parked" | "dodged" | "partial", [Tone, string]> = {
   partial: ["warn", "Partly answered"],
   dodged: ["bad", "Dodged"],
 };
-
-// The deck research (0.30): what the news says about a claim, and what the presenter said against it
-const FINDING: Record<DeckFinding["verdict"], [Tone, string]> = {
-  backed: ["good", "Backed by the news"],
-  challenged: ["bad", "Challenged by the news"],
-  unproven: ["warn", "Nothing found"],
-};
-
-export function FindingPill({ verdict }: { verdict: DeckFinding["verdict"] }) {
-  const [tone, label] = FINDING[verdict];
-  return <Pill tone={tone}>{label}</Pill>;
-}
-
-const CHECK: Record<Exclude<ResearchCheck["verdict"], "not_said">, [Tone, string]> = {
-  held: ["good", "Held up"],
-  unbacked: ["warn", "No evidence given"],
-  contradicted: ["bad", "Contradicted"],
-};
-
-export function CheckPill({ verdict }: { verdict: ResearchCheck["verdict"] }) {
-  if (verdict === "not_said") return <span className="inline-flex items-center rounded-full border border-line px-2 py-0.5 text-xs text-ink-2">Didn&apos;t come up</span>;
-  const [tone, label] = CHECK[verdict];
-  return <Pill tone={tone}>{label}</Pill>;
-}
 
 export function OwedPill({ status }: { status: "parked" | "dodged" | "partial" }) {
   const [tone, label] = OWED[status];

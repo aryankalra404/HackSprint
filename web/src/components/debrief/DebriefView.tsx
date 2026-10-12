@@ -12,7 +12,6 @@ import { GazeMap } from "./GazeMap";
 import { Actions } from "./Actions";
 import { Transcript } from "./Transcript";
 import { Owed } from "./Owed";
-import { Checks } from "./Checks";
 import { Trouble } from "./Trouble";
 import { AppHeader } from "../shell";
 import { btn } from "../ui";
@@ -77,8 +76,6 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
       </div>
 
       {debrief.owed && debrief.owed.length > 0 && <Owed owed={debrief.owed} bundle={bundle} />}
-
-      {debrief.checks && debrief.checks.length > 0 && <Checks checks={debrief.checks} />}
 
       <Metrics metrics={debrief.metrics} onSelect={selectAt} />
 

@@ -4,7 +4,6 @@ import { connection } from "next/server";
 import { getMeeting } from "@/lib/api";
 import { getBrief, getRoom } from "@/lib/room";
 import { Practice } from "@/components/brief/Practice";
-import { getDeckResearch } from "@/lib/deckResearch";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
 import { twinSummaries } from "@/lib/twins";
 import { Loading, PageTitle, ReadingPage } from "@/components/shell";
@@ -51,7 +50,6 @@ async function PracticeFromRoom({ id }: { id: string }) {
       panel={room.panel}
       nameCards={room.name_cards}
       room={room}
-      research={await getDeckResearch(id)}
       twins={await twinSummaries(detail?.meeting.attendees ?? [])}
     />
   );

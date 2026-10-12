@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import type { BriefInput, DraftMember, RehearseIn } from "@/lib/contract";
 import { deckText } from "@/lib/deck";
 import { addMeeting, getMeeting, prepSession, prepSteps } from "@/lib/api";
+import { othersDoingThis } from "@/lib/deckResearch";
 import { prepDone, prepFailed, prepProgress, prepStarted } from "@/lib/prepProgress";
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
 import { SAMPLE_ID, sampleDeck } from "@/lib/mock/sample";
@@ -109,7 +110,7 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
     scripted: false,
     panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty, twin_email }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty, ...(twin_email ? { twin_email } : {}) })),
   });
-  prepDone(runId, prepSteps(bundle));
+  prepDone(runId, prepSteps(bundle, await othersDoingThis(draftId)));
   return bundle.session_id;
 }
 

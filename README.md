@@ -32,7 +32,7 @@ A panel that feels real (built 12 Oct and live in n8n, not yet tried in a full s
 - The panel says "mm-hm" the moment you finish an answer, and n8n's reply is about 1.7 s faster than before.
 - If you freeze, the chair says "Take your time", then asks a question that leads you back in.
 - The debrief judges only your own pitch time and discounts the system's mistakes. A run that's too short isn't scored. For every question you couldn't answer, it drafts a suggested answer with sources, and the next rehearsal asks it again.
-- n8n guesses what you want from the meeting, for you to confirm. When you upload your deck, n8n checks its claims in the news; the panel asks about what it found, and the report shows whether what you said held up.
+- n8n guesses what you want from the meeting, for you to confirm. When you upload your deck, n8n searches the news for who else already does what you pitch, and the panel asks how yours is different, by name.
 
 Rehearse in the browser: the same panel at the same table, your slides, raised hands, questions, rescue cues and the chair's closing, then the same debrief, for anyone without a headset. Built and tested end to end against stand-in turns; not yet with n8n's real turns.
 

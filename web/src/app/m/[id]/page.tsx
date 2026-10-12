@@ -16,8 +16,6 @@ import { HowDidItGo } from "@/components/meetings/HowDidItGo";
 import { HowItWent } from "@/components/meetings/HowItWent";
 import { YourSide } from "@/components/brief/YourSide";
 import { getProfile } from "@/lib/profile";
-import { getDeckResearch } from "@/lib/deckResearch";
-import { DeckFindings } from "@/components/brief/DeckResearch";
 import { twinSummaries } from "@/lib/twins";
 import { sampleTwin } from "@/lib/mock/twin";
 import { SAMPLE_ID } from "@/lib/mock/sample";
@@ -53,7 +51,7 @@ async function Meeting({ id }: { id: string }) {
   if (!detail && id.startsWith("web-")) return <JustAdded />;
   if (!detail) notFound();
   const { meeting, brief, proposal } = detail;
-  const [profile, research, twins] = await Promise.all([getProfile(), getDeckResearch(id), twinSummaries(meeting.attendees)]);
+  const [profile, twins] = await Promise.all([getProfile(), twinSummaries(meeting.attendees)]);
   // After the real meeting has started (0.28): "How did it go?", then what n8n found. The sample meeting never happens.
   const happened = meeting.id !== SAMPLE_ID && meeting.status !== "researching" && hasStarted(meeting.start);
   return (
@@ -118,9 +116,6 @@ async function Meeting({ id }: { id: string }) {
       ) : (
         <BriefBody detail={{ ...detail, brief }} twins={twins} />
       )}
-
-      {/* What n8n found checking the deck's claims in the news (0.30): facts with sources, part of the brief */}
-      {brief && research && <DeckFindings stored={research} />}
 
       {brief && proposal && (
         <section id="practise" className="flex scroll-mt-6 flex-col gap-5 rounded-2xl border border-ink bg-surface p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
