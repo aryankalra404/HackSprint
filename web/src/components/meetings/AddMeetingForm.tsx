@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { addMeetingAction } from "@/app/new/actions";
+import { btn } from "../ui";
 
-const FIELD = "rounded-xl border border-line bg-surface px-3 py-2.5 text-sm focus:border-ink focus:outline-none";
+const FIELD = "rounded-xl border border-line bg-surface px-3 py-2.5 text-sm font-normal placeholder:text-muted focus:border-ink focus:outline-none";
 
 interface Sample {
   title: string;
@@ -61,10 +62,10 @@ export function AddMeetingForm({ sample, ownerEmail }: { sample: Sample; ownerEm
       </label>
       {error && <p role="alert" className="text-sm text-bad-ink">{error}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" disabled={pending} className="rounded-full bg-ink px-6 py-3 text-sm font-medium text-surface disabled:opacity-60">
+        <button type="submit" disabled={pending} className={btn("primary", "lg")}>
           {pending ? "Handing it to n8n…" : "Prepare this meeting"}
         </button>
-        <button type="button" onClick={() => setForm({ ...form, ...sample })} className="rounded-full border border-line bg-surface px-5 py-3 text-sm hover:border-ink">
+        <button type="button" onClick={() => setForm({ ...form, ...sample })} className={btn("quiet", "lg")}>
           Use the {sample.company} sample
         </button>
       </div>

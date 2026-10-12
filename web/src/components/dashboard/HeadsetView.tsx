@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { STREAM_PORT, STREAM_SESSION } from "@/lib/headset/config";
 import { canRecord, clipFileName, formatElapsed, recordCanvas, saveClip, type ClipRecording } from "@/lib/headset/recording";
 import { HeadsetStream, viewUrl, type HeadsetStats, type ViewStats, type ViewStatus } from "@/lib/headset/stream";
+import { btn } from "../ui";
 
 const STATUS_TEXT: Record<Exclude<ViewStatus, "live">, string> = {
   connecting: "Reaching the laptop's headset relay…",
@@ -124,7 +125,7 @@ export function HeadsetView({ name }: { name: string }) {
             type="button"
             onClick={toggleRecording}
             aria-pressed={recording}
-            className="ml-auto rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-ink hover:border-ink"
+            className={`${btn("secondary", "sm")} ml-auto`}
           >
             {recording ? "Stop and save clip" : "Record a clip"}
           </button>

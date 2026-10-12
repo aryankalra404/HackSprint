@@ -13,6 +13,8 @@ import { Actions } from "./Actions";
 import { Transcript } from "./Transcript";
 import { Owed } from "./Owed";
 import { Trouble } from "./Trouble";
+import { AppHeader } from "../shell";
+import { btn } from "../ui";
 
 export function DebriefView({ session }: { session: DebriefedSession }) {
   const { bundle, telemetry, debrief, history } = session;
@@ -45,21 +47,28 @@ export function DebriefView({ session }: { session: DebriefedSession }) {
   const sessionNumber = history.length + 1;
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-8 sm:py-10">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <Link href="/" className="font-display text-2xl">DryRun</Link>
-        <p className="text-xs text-ink-2">
-          Pitch to {bundle.prospect.company}, session {sessionNumber} {telemetry.client === "vr" ? "in the VR boardroom" : "in the browser"}
-        </p>
-        <nav className="flex gap-2 print:hidden">
-          <Link href={`/s/${bundle.session_id}`} className="rounded-full border border-line bg-surface px-4 py-2 text-sm hover:border-ink">
-            Dashboard
-          </Link>
-          <button type="button" onClick={() => window.print()} className="rounded-full bg-ink px-4 py-2 text-sm text-surface">
-            Save as PDF
-          </button>
-        </nav>
-      </header>
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-10 sm:px-8 print:px-0">
+      <AppHeader
+        trail={[
+          { label: "Meetings", href: "/" },
+          { label: `Pitch to ${bundle.prospect.company}`, href: `/s/${bundle.session_id}` },
+          { label: `Session ${sessionNumber} report, ${telemetry.client === "vr" ? "VR boardroom" : "browser"}` },
+        ]}
+        actions={
+          <>
+            <Link href={`/s/${bundle.session_id}`} className={btn("secondary")}>
+              Dashboard
+            </Link>
+            <button type="button" onClick={() => window.print()} className={btn("primary")}>
+              Save as PDF
+            </button>
+          </>
+        }
+      />
+      {/* The header doesn't print; the PDF keeps what this report is */}
+      <p className="hidden text-sm text-ink-2 print:block">
+        DryRun report: pitch to {bundle.prospect.company}, session {sessionNumber} {telemetry.client === "vr" ? "in the VR boardroom" : "in the browser"}
+      </p>
 
       <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
         <Verdict debrief={debrief} history={history} sessionNumber={sessionNumber} />

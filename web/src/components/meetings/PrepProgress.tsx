@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PrepStep } from "@/lib/contract";
 import { clock } from "@/lib/format";
-import { StatusIcon } from "../ui";
+import { StatusIcon, btn } from "../ui";
 
 interface Props {
   title: string;
@@ -25,9 +25,9 @@ export function PrepProgress({ title, progress, startedAt, runUrl, runId, onRetr
   const elapsed = startedAt ? clock(Math.max(0, (now - Date.parse(startedAt)) / 1000)) : "";
 
   return (
-    <section className="flex flex-col gap-6 rounded-2xl border border-line bg-surface p-6" aria-live="polite">
+    <section className="flex flex-col gap-6 rounded-2xl border border-line bg-surface p-5 sm:p-6" aria-live="polite">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-2xl">{failed ? `n8n couldn't finish preparing ${title}` : `n8n is preparing ${title}`}</h2>
+        <h2 className="font-display text-xl">{failed ? `n8n couldn't finish preparing ${title}` : `n8n is preparing ${title}`}</h2>
         {!failed && elapsed && <span className="font-display text-2xl text-ink-2 tabular-nums">{elapsed}</span>}
       </header>
 
@@ -83,7 +83,7 @@ export function PrepProgress({ title, progress, startedAt, runUrl, runId, onRetr
           <span className="text-muted">Running in n8n</span>
         )}
         {failed && onRetry && (
-          <button type="button" onClick={onRetry} disabled={retrying} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-60">
+          <button type="button" onClick={onRetry} disabled={retrying} className={btn("primary")}>
             {retrying ? "Starting again…" : "Try again"}
           </button>
         )}

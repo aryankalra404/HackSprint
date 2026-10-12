@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { btn } from "../ui";
 
 const LIMIT_CM = 50;
 // At most one save in flight, and this long between saves while dragging; the last position is always saved
@@ -67,7 +68,7 @@ export function HeightControl({ initial }: { initial: number }) {
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs hover:border-ink"
+        className="inline-flex items-center gap-2 h-8 rounded-full border border-line bg-surface px-3 text-xs hover:border-ink"
       >
         <svg aria-hidden="true" viewBox="0 0 12 12" className="size-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 1v10M3.5 3.5 6 1l2.5 2.5M3.5 8.5 6 11l2.5-2.5" />
@@ -76,7 +77,7 @@ export function HeightControl({ initial }: { initial: number }) {
       </button>
       {open && (
         <div role="dialog" aria-label="Height in VR" className="absolute right-0 top-full z-30 mt-2 flex w-56 gap-4 rounded-2xl border border-line bg-surface p-4 shadow-lg">
-          <div className="flex flex-col items-center gap-1 text-[11px] text-muted">
+          <div className="flex flex-col items-center gap-1 text-xs text-muted">
             <span>Higher</span>
             <input
               type="range"
@@ -102,7 +103,7 @@ export function HeightControl({ initial }: { initial: number }) {
               type="button"
               onClick={() => change(0)}
               disabled={cm === 0}
-              className="self-start rounded-full border border-line px-3 py-1 text-xs hover:border-ink disabled:opacity-50"
+              className={`${btn("secondary", "sm")} self-start`}
             >
               Reset
             </button>

@@ -9,9 +9,9 @@ import { StatusIcon } from "../ui";
 export function HowItWent({ after, runUrl }: { after: MeetingAfter; runUrl: string | null }) {
   const f = after.followup;
   return (
-    <section className="flex flex-col gap-6 rounded-2xl border border-line bg-surface p-6">
+    <section className="flex flex-col gap-6 rounded-2xl border border-line bg-surface p-5 sm:p-6">
       <header className="flex flex-col gap-1">
-        <h2 className="font-display text-2xl">How it went</h2>
+        <h2 className="font-display text-xl">How it went</h2>
         <p className="text-sm text-ink-2">
           From your {after.source === "voice" ? "voice note" : "notes"} of {meetingWhen(after.at)}
           {after.heard ? `, transcribed by ${after.heard}` : ""}. Each point is quoted from what you said, and went into that person&apos;s twin.

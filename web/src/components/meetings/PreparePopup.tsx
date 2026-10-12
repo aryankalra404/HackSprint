@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Meeting } from "@/lib/contract";
 import { meetingWhen, untilLabel } from "@/lib/format";
+import { btn } from "../ui";
 
 const DISMISSED = "dryrun-dismissed-";
 
@@ -57,13 +58,13 @@ export function PreparePopup({ meetings }: { meetings: Meeting[] }) {
           {meeting.why ? meeting.why + " " : ""}n8n has researched {meeting.company} and written your brief.
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          <Link href={href} className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-surface">
+          <Link href={href} className={btn("primary")}>
             Read the brief
           </Link>
-          <Link href={`${href}#practise`} className="rounded-full border border-line px-5 py-2.5 text-sm hover:border-ink">
+          <Link href={`${href}#practise`} className={btn("secondary")}>
             Practise now
           </Link>
-          <button type="button" onClick={later} className="rounded-full px-4 py-2.5 text-sm text-ink-2 hover:text-ink">
+          <button type="button" onClick={later} className={btn("quiet")}>
             Later
           </button>
         </div>

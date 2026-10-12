@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { Room } from "@/lib/contract";
+import { btn } from "../ui";
 
 const ACCEPT = ".pdf,.pptx,.ppt,.key,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint";
 
@@ -67,7 +68,7 @@ export function DeckPanel({ room, compact = false }: { room: Room; compact?: boo
 
   const current = deck?.slides[slide];
   const pager = deck && (
-    <div className="inline-flex items-center gap-1 rounded-full border border-line bg-surface p-0.5 text-xs">
+    <div className="inline-flex h-8 items-center gap-1 rounded-full border border-line bg-surface p-0.5 text-xs">
       <button type="button" onClick={() => go(slide - 1)} disabled={slide === 0} aria-label="Previous slide" className="rounded-full px-2.5 py-1 hover:bg-paper disabled:opacity-40">
         ‹
       </button>
@@ -173,7 +174,7 @@ function DropZone({ uploading, onFile }: { uploading: string | null; onFile: (fi
             <p className="text-sm font-medium">Add your deck</p>
             <p className="text-xs text-muted">PDF, PowerPoint or Keynote. It goes on the TV in the headset, with a speaker view on the monitor.</p>
           </div>
-          <FilePicker onFile={onFile} className="rounded-full bg-ink px-4 py-2 text-xs font-medium text-surface">
+          <FilePicker onFile={onFile} className={btn("primary", "sm")}>
             Choose a file
           </FilePicker>
         </>

@@ -16,6 +16,7 @@ import { HeightControl } from "../room/HeightControl";
 import { SessionControls } from "./SessionControls";
 import { HeadsetView } from "./HeadsetView";
 import { DeckPanel } from "../room/DeckPanel";
+import { AppHeader } from "../shell";
 
 type View = "headset" | "plan";
 
@@ -25,7 +26,19 @@ const STAGE = { opening: "the opening", pitch: "the pitch", questions: "question
 // Prep (briefed, waiting) and debrief share the layout. For the session in the laptop's room, the dashboard follows the room:
 // the header starts, ends and restarts it, and the room panel shows the room plan while waiting and switches to what the
 // presenter sees in the headset once the session is live (the headset only streams while that view is open).
-export function Dashboard({ session, nameCards, heightOffset, room: initialRoom }: { session: SessionRecord; nameCards: boolean; heightOffset: number; room: Room | null }) {
+export function Dashboard({
+  session,
+  nameCards,
+  heightOffset,
+  room: initialRoom,
+  meetingId = null,
+}: {
+  session: SessionRecord;
+  nameCards: boolean;
+  heightOffset: number;
+  room: Room | null;
+  meetingId?: string | null;
+}) {
   const [open, setOpen] = useState<PersonaId | null>(null);
   const room = useRoom(initialRoom);
   const { bundle, debrief } = session;
@@ -54,25 +67,29 @@ export function Dashboard({ session, nameCards, heightOffset, room: initialRoom 
 
   return (
     <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6 lg:h-dvh">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <Link href="/" className="font-display text-2xl">DryRun</Link>
-          <span className="text-sm text-ink-2">Pitch to {bundle.prospect.company}</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <AppHeader
+        className="-mt-4"
+        trail={[
+          { label: "Meetings", href: "/" },
+          meetingId ? { label: `Pitch to ${bundle.prospect.company}`, href: `/m/${encodeURIComponent(meetingId)}` } : { label: `Pitch to ${bundle.prospect.company}` },
+          { label: "Dashboard" },
+        ]}
+        actions={
+          <>
           {room && !debrief && <DeckPanel room={room} compact />}
           <NameCardsToggle initial={nameCards} />
           <HeightControl initial={heightOffset} />
           {room && !debrief ? (
             <SessionControls room={room} />
           ) : (
-            <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs">
+            <p className="inline-flex items-center gap-2 h-8 rounded-full border border-line bg-surface px-3 text-xs">
               <span aria-hidden="true" className={`size-2 rounded-full ${debrief ? "bg-good" : "animate-pulse bg-warn"}`} />
               {debrief ? "Debrief ready" : "Waiting for the presenter"}
             </p>
           )}
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="flex min-h-0 flex-col gap-3 rounded-2xl border border-line bg-surface p-4" aria-label="The room">
@@ -167,7 +184,7 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => 
     { id: "plan", label: "Room plan" },
   ] as const;
   return (
-    <div role="tablist" aria-label="What the room panel shows" className="inline-flex rounded-full border border-line bg-paper p-0.5 text-xs">
+    <div role="tablist" aria-label="What the room panel shows" className="inline-flex h-8 items-center rounded-full border border-line bg-paper p-0.5 text-xs">
       {options.map((o) => (
         <button
           key={o.id}
@@ -175,7 +192,7 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => 
           role="tab"
           aria-selected={view === o.id}
           onClick={() => onChange(o.id)}
-          className={`rounded-full px-3 py-1 ${view === o.id ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"}`}
+          className={`h-full rounded-full px-3 font-medium ${view === o.id ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"}`}
         >
           {o.label}
         </button>

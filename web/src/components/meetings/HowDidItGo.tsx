@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { type Mic, micContext, openMic } from "@/lib/rehearse/mic";
 import { SAMPLE_RATE, concat, encodeWav, rms, toBase64 } from "@/lib/rehearse/wav";
-import { StatusIcon } from "../ui";
+import { StatusIcon, btn } from "../ui";
 
 // "How did it go?" after a real meeting (contract 0.28): a voice note recorded here (16 kHz mono, the rehearsal's mic) and/or typed
 // notes, sent to n8n's DryRun after the meeting through the laptop (POST /api/after-meeting, which cuts it into pieces for Sarvam).
@@ -107,9 +107,9 @@ export function HowDidItGo({ meetingId, names }: { meetingId: string; names: str
   const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "each person");
 
   return (
-    <section className="flex flex-col gap-5 rounded-2xl border border-ink bg-surface p-6">
+    <section className="flex flex-col gap-5 rounded-2xl border border-ink bg-surface p-5 sm:p-6">
       <div className="flex flex-col gap-2">
-        <h2 className="font-display text-2xl">How did it go?</h2>
+        <h2 className="font-display text-xl">How did it go?</h2>
         <p className="max-w-2xl text-sm text-ink-2">
           Say it in a minute, the way you&apos;d tell a colleague: what {who} raised, what you promised, what was decided. n8n writes it down
           per person, adds it to their twins, checks how much of it your rehearsal predicted and drafts the follow-up. The follow-up waits in
@@ -120,7 +120,7 @@ export function HowDidItGo({ meetingId, names }: { meetingId: string; names: str
       <div className="flex flex-wrap items-center gap-3">
         {phase.at === "recording" ? (
           <>
-            <button type="button" onClick={stop} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface">Stop</button>
+            <button type="button" onClick={stop} className={btn("primary")}>Stop</button>
             <span className="flex items-center gap-2 text-sm tabular-nums">
               <span aria-hidden="true" className="inline-block size-2.5 rounded-full bg-bad" />
               Recording {clock(elapsed)} <span className="text-muted">of {clock(MAX_S)}</span>
@@ -133,10 +133,10 @@ export function HowDidItGo({ meetingId, names }: { meetingId: string; names: str
           <>
             <audio controls src={voice.url} className="h-9" />
             <span className="text-sm text-ink-2 tabular-nums">Voice note, {clock(voice.seconds)}</span>
-            <button type="button" onClick={record} disabled={phase.at === "sending"} className="rounded-full border border-line px-3 py-1 text-sm hover:border-ink disabled:opacity-50">Record again</button>
+            <button type="button" onClick={record} disabled={phase.at === "sending"} className={btn("secondary", "sm")}>Record again</button>
           </>
         ) : (
-          <button type="button" onClick={record} disabled={phase.at === "sending"} className="rounded-full border border-ink px-4 py-2 text-sm font-medium hover:bg-paper disabled:opacity-50">
+          <button type="button" onClick={record} disabled={phase.at === "sending"} className={btn("secondary")}>
             Record a voice note
           </button>
         )}
@@ -156,7 +156,7 @@ export function HowDidItGo({ meetingId, names }: { meetingId: string; names: str
       </label>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={send} disabled={!canSend} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50">
+        <button type="button" onClick={send} disabled={!canSend} className={btn("primary")}>
           {phase.at === "sending" ? "n8n is reading it…" : "Send to n8n"}
         </button>
         {phase.at === "sending" ? (

@@ -2,6 +2,35 @@ import type { ReactNode } from "react";
 import type { Persona, StakeholderVerdict, Verdict } from "@/lib/contract";
 import { portraitOf, colorOf } from "@/lib/personas";
 
+// Every button and button-like link: three kinds, three sizes. sm sits in toolbars and rows, md is the default, lg is a page's one main action.
+type ButtonKind = "primary" | "secondary" | "quiet";
+const BTN_KIND: Record<ButtonKind, string> = {
+  primary: "bg-ink text-surface hover:bg-ink/85",
+  secondary: "border border-line bg-surface text-ink hover:border-ink",
+  quiet: "text-ink-2 hover:bg-ink/5 hover:text-ink",
+};
+const BTN_SIZE = { sm: "h-8 px-3.5 text-xs", md: "h-9 px-4 text-sm", lg: "h-11 px-6 text-sm" };
+
+export function btn(kind: ButtonKind = "secondary", size: keyof typeof BTN_SIZE = "md") {
+  return `inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 ${BTN_KIND[kind]} ${BTN_SIZE[size]}`;
+}
+
+// A section's heading on a reading page: a title, an optional count, a line on what it holds and an action on the right
+export function SectionHead({ id, title, count, note, action }: { id?: string; title: ReactNode; count?: number; note?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-col gap-1">
+        <h2 id={id} className="flex items-baseline gap-2 font-display text-xl leading-tight">
+          {title}
+          {count != null && <span className="font-sans text-sm font-normal text-muted">{count}</span>}
+        </h2>
+        {note && <p className="text-sm text-ink-2">{note}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
 export function Card({ title, aside, children, className = "" }: { title?: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`rounded-2xl border border-line bg-surface p-5 sm:p-6 ${className}`}>

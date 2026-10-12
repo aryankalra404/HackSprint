@@ -3,7 +3,7 @@ import type { SessionRecord } from "@/lib/contract";
 import { personaTag, colorOf } from "@/lib/personas";
 import { clock } from "@/lib/format";
 import { exchanges, freezes, RESCUE_LABEL, slideSegments } from "@/lib/timeline";
-import { StatusIcon, verdictTone } from "../ui";
+import { StatusIcon, btn, verdictTone } from "../ui";
 
 // Before the pitch: the deck with where each stakeholder will push back.
 // After: what actually happened, on the real clock.
@@ -32,10 +32,10 @@ export function BottomStrip({ session }: { session: SessionRecord }) {
             {debrief.previous_overall != null && debrief.overall != null && (
               <p className="text-sm text-good-ink">
                 ▲ {debrief.overall - debrief.previous_overall}
-                <span className="block text-[11px] text-muted">since last</span>
+                <span className="block text-xs text-muted">since last</span>
               </p>
             )}
-            <Link href={`/s/${bundle.session_id}/report`} className="rounded-full bg-ink px-5 py-3 text-sm text-surface">
+            <Link href={`/s/${bundle.session_id}/report`} className={btn("primary", "lg")}>
               Open full report
             </Link>
           </>

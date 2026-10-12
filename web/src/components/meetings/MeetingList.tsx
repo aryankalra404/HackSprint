@@ -30,7 +30,7 @@ function MeetingRow({ meeting: m }: { meeting: Meeting }) {
       <span className="flex flex-col items-center self-start rounded-xl border border-line py-2 text-center">
         <span className="text-xs text-ink-2">{valid ? d.toLocaleString("en-IN", { month: "short", timeZone: IST }) : ""}</span>
         <span className="font-display text-2xl leading-none">{valid ? d.toLocaleString("en-IN", { day: "numeric", timeZone: IST }) : "?"}</span>
-        <span className="mt-1 text-[11px] text-muted">{valid ? d.toLocaleString("en-IN", { weekday: "short", timeZone: IST }) : ""}</span>
+        <span className="mt-1 text-xs text-muted">{valid ? d.toLocaleString("en-IN", { weekday: "short", timeZone: IST }) : ""}</span>
       </span>
 
       <span className="flex min-w-0 flex-col gap-2">
@@ -94,7 +94,7 @@ function PracticeLine({ meeting }: { meeting: Meeting }) {
       {p.last.overall != null && (
         <span className="flex shrink-0 flex-col items-center leading-none">
           <span className="font-display text-xl">{p.last.overall}</span>
-          <span className="mt-0.5 text-[11px] text-muted">of 100</span>
+          <span className="mt-0.5 text-xs text-muted">of 100</span>
         </span>
       )}
       <span className="flex min-w-0 flex-col gap-0.5 text-sm">

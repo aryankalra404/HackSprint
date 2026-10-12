@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { retryMeetingAction } from "@/app/m/actions";
+import { btn } from "../ui";
 
 // Overrules n8n's decision to skip a meeting: n8n prepares it like any meeting added by hand, and its page shows the progress
 export function PrepareAnyway({ meetingId, className }: { meetingId: string; className?: string }) {
@@ -34,7 +35,7 @@ export function PrepareAnyway({ meetingId, className }: { meetingId: string; cla
             router.push(`/m/${encodeURIComponent(meetingId)}`);
           })
         }
-        className={className ?? "rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium hover:border-ink disabled:opacity-60"}
+        className={className ?? btn("secondary", "sm")}
       >
         {starting || started ? "n8n is starting…" : "Prepare anyway"}
       </button>

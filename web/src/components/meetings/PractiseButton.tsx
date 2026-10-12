@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { practiseAction } from "@/app/m/actions";
+import { btn } from "../ui";
 
 // Seats this meeting's practice panel (the headset follows) and opens the practice table
 export function PractiseButton({ meetingId }: { meetingId: string }) {
@@ -18,7 +19,7 @@ export function PractiseButton({ meetingId }: { meetingId: string }) {
             if (!res.ok) setError(res.error);
           })
         }
-        className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-60"
+        className={btn("primary", "lg")}
       >
         {pending ? "Seating the panel…" : "Set up the practice panel"}
       </button>

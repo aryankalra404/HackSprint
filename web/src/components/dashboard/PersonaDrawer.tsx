@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type { PersonaId, SessionRecord } from "@/lib/contract";
 import { momentLabel, slideLabel } from "@/lib/format";
 import { exchanges } from "@/lib/timeline";
-import { PersonaAvatar, StancePill, VerdictPill } from "../ui";
+import { PersonaAvatar, StancePill, VerdictPill, btn } from "../ui";
 
 // "twin" (0.27): what this real person actually raised before, with where it came from
 const SOURCE_LABEL = { deck: "From your deck", research: "From research", history: "From a past session", twin: "From their twin" } as const;
@@ -41,7 +41,7 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
               </a>
             )}
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-line px-3 py-1 text-sm hover:border-ink">
+          <button type="button" onClick={onClose} className={btn("secondary", "sm")}>
             Close
           </button>
         </header>
@@ -68,7 +68,7 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
             {persona.objections.map((o) => (
               <li key={o.text} className="text-sm">
                 <p>{o.text}</p>
-                <p className="mt-0.5 text-[11px] text-muted">
+                <p className="mt-0.5 text-xs text-muted">
                   {/* -1: not tied to a slide (no deck, or it could come at any time) */}
                   {SOURCE_LABEL[o.source]}
                   {o.source === "twin" && o.from ? ` (${o.from})` : ""}, {o.slide_index < 0 ? "at any time" : `about ${slideLabel(o.slide_index).toLowerCase()}`}
@@ -84,7 +84,7 @@ export function PersonaDrawer({ session, id, onClose }: { session: SessionRecord
             <ul className="flex flex-col gap-4">
               {asked.map((x) => (
                 <li key={x.id} className="flex flex-col gap-1.5 text-sm">
-                  <p className="text-[11px] text-muted">{momentLabel(x.t, x.slide_index)}</p>
+                  <p className="text-xs text-muted">{momentLabel(x.t, x.slide_index)}</p>
                   <p className="font-display text-xl leading-snug">{x.question}</p>
                   {x.answer && <p className="text-ink-2">You: “{x.answer.transcript}”</p>}
                   {x.answer?.verdict && <span className="w-fit"><VerdictPill verdict={x.answer.verdict} /></span>}

@@ -1,14 +1,15 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/api";
-import { getRoom } from "@/lib/room";
+import { getBrief, getRoom } from "@/lib/room";
 import { Dashboard } from "@/components/dashboard/Dashboard";
+import { Loading } from "@/components/shell";
 
 export const metadata = { title: "DryRun dashboard" };
 
 export default function DashboardPage({ params }: PageProps<"/s/[sessionId]">) {
   return (
-    <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Loading the room…</p>}>
+    <Suspense fallback={<div className="p-8"><Loading>Loading the room…</Loading></div>}>
       {params.then(({ sessionId }) => (
         <Session sessionId={sessionId} />
       ))}
@@ -21,5 +22,14 @@ async function Session({ sessionId }: { sessionId: string }) {
   if (!session) notFound();
   const room = getRoom();
   // Only the session in the laptop's room can be started and ended from here
-  return <Dashboard session={session} nameCards={room.name_cards} heightOffset={room.height_offset} room={room.session_id === sessionId ? room : null} />;
+  const inRoom = room.session_id === sessionId;
+  return (
+    <Dashboard
+      session={session}
+      nameCards={room.name_cards}
+      heightOffset={room.height_offset}
+      room={inRoom ? room : null}
+      meetingId={inRoom ? (getBrief()?.draft_id ?? null) : null}
+    />
+  );
 }

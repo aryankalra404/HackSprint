@@ -5,6 +5,7 @@ import { N8N_URL } from "@/lib/api";
 import { AVATARS } from "@/lib/personas";
 import { getTwin, getTwinRun, norm, rememberLook } from "@/lib/twins";
 import { TwinPage } from "@/components/twin/TwinPage";
+import { Loading } from "@/components/shell";
 
 export const metadata = { title: "DryRun twin" };
 
@@ -12,7 +13,7 @@ export const metadata = { title: "DryRun twin" };
 // meeting says about them (name, company), for the portrait and a first build.
 export default function TwinRoute({ params, searchParams }: PageProps<"/people/[email]">) {
   return (
-    <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Opening the twin…</p>}>
+    <Suspense fallback={<div className="p-8"><Loading>Opening the twin…</Loading></div>}>
       {Promise.all([params, searchParams]).then(([{ email }, q]) => (
         <Twin email={decodeURIComponent(email)} q={q} />
       ))}

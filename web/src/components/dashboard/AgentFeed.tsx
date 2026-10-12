@@ -37,7 +37,7 @@ export function AgentFeed({ items, status }: { items: FeedItem[]; status?: strin
                     />
                     <div className="flex min-w-0 flex-col gap-1">
                       <p className="text-sm leading-snug">
-                        <span className="mr-2 text-[11px] text-muted">{item.when}</span>
+                        <span className="mr-2 text-xs text-muted">{item.when}</span>
                         {item.title}
                         {item.busy && <span className="text-muted">…</span>}
                       </p>

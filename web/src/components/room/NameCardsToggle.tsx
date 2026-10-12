@@ -28,7 +28,7 @@ export function NameCardsToggle({ initial }: { initial: boolean }) {
       aria-checked={on}
       onClick={toggle}
       disabled={saving}
-      className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs hover:border-ink disabled:opacity-60"
+      className="inline-flex items-center gap-2 h-8 rounded-full border border-line bg-surface px-3 text-xs hover:border-ink disabled:opacity-60"
     >
       <span aria-hidden="true" className={`relative h-3.5 w-6 rounded-full transition-colors ${on ? "bg-ink" : "bg-axis"}`}>
         <span className={`absolute top-0.5 size-2.5 rounded-full bg-surface transition-all ${on ? "left-3" : "left-0.5"}`} />

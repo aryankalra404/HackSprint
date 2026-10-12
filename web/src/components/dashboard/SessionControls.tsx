@@ -39,10 +39,10 @@ export function SessionControls({ room }: { room: Room }) {
           : { dot: "bg-good", text: `Session ended${lasted(room)}` }
         : { dot: "bg-warn animate-pulse", text: "Waiting for the presenter to start speaking" };
 
-  const button = "rounded-full px-4 py-1.5 text-xs font-medium disabled:opacity-60";
+  const button = "inline-flex h-8 items-center rounded-full px-4 text-xs font-medium disabled:opacity-60";
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs" aria-live="polite">
+      <p className="inline-flex items-center gap-2 h-8 rounded-full border border-line bg-surface px-3 text-xs" aria-live="polite">
         <span aria-hidden="true" className={`size-2 rounded-full ${status.dot}`} />
         {status.text}
       </p>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat, TwinSummary } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
@@ -16,6 +15,8 @@ import { PitchLength } from "./PitchLength";
 import { RehearseDialog } from "./RehearseDialog";
 import { SAMPLE_ID } from "@/lib/mock/sample";
 import { DeckReview } from "./DeckReview";
+import { AppHeader } from "../shell";
+import { btn } from "../ui";
 import type { StoredReview } from "@/lib/deckReview";
 
 type Draft = Pick<PanelProposal, "draft_id" | "suggestions">;
@@ -132,15 +133,14 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
 
   return (
     <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6 lg:h-dvh">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <Link href="/" className="font-display text-2xl">DryRun</Link>
-          <span className="text-sm text-ink-2">Practise: {meeting.title}, {meeting.company}</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+      <AppHeader
+        className="-mt-4"
+        trail={[{ label: "Meetings", href: "/" }, { label: meeting.title, href: `/m/${encodeURIComponent(meeting.id)}` }, { label: "Practice" }]}
+        actions={
+          <>
           <NameCardsToggle initial={nameCards} />
           <HeightControl initial={initialRoom.height_offset} />
-          <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs" aria-live="polite">
+          <p className="inline-flex items-center gap-2 h-8 rounded-full border border-line bg-surface px-3 text-xs" aria-live="polite">
             <span
               aria-hidden="true"
               className={`size-2 rounded-full ${saved === "failed" ? "bg-bad" : saved === "saving" ? "animate-pulse bg-warn" : headset.connected ? "bg-good" : "bg-axis"}`}
@@ -153,11 +153,9 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
                   ? `Live in the headset (${headset.via === "wifi" ? "Wi-Fi" : "USB"})`
                   : "Saved. Headset not connected"}
           </p>
-          <Link href={`/m/${encodeURIComponent(meeting.id)}`} className="text-sm text-ink-2 hover:text-ink">
-            ← The brief
-          </Link>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-h-0 flex-col gap-4">
@@ -196,7 +194,7 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
                   type="button"
                   onClick={briefSample}
                   disabled={briefing || notReady}
-                  className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface disabled:opacity-50"
+                  className={btn("primary", "lg")}
                 >
                   {briefing ? "Seating the sample…" : "Start the rehearsal (5)"}
                 </button>
@@ -214,7 +212,7 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
                     setChoosing(true);
                   }}
                   disabled={notReady}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-medium text-surface hover:bg-ink/85 disabled:opacity-50"
+                  className={btn("primary", "lg")}
                 >
                   <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="currentColor">
                     <path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.2-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5z" />

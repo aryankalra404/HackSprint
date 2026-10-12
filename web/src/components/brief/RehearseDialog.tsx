@@ -5,6 +5,7 @@ import type { DraftMember, PrepStep, RehearseIn } from "@/lib/contract";
 import type { PrepRun } from "@/lib/prepProgress";
 import { colorOf, portraitOf } from "@/lib/personas";
 import { clock } from "@/lib/format";
+import { btn } from "../ui";
 
 const POLL_MS = 500;
 // How long the finished steps stay on screen before the rehearsal opens
@@ -260,10 +261,10 @@ function Progress({
         )}
         {error ? (
           <span className="flex gap-2">
-            <button type="button" onClick={onBack} className="rounded-full border border-line px-4 py-2 text-sm hover:border-ink">
+            <button type="button" onClick={onBack} className={btn("secondary")}>
               Back
             </button>
-            <button type="button" onClick={onRetry} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface">
+            <button type="button" onClick={onRetry} className={btn("primary")}>
               Try again
             </button>
           </span>

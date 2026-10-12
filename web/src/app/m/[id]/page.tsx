@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { getMeeting, n8nProblem, n8nRunUrl } from "@/lib/api";
 import type { MeetingDetail } from "@/lib/contract";
 import { hasStarted, meetingWhen, stillResearching, untilLabel } from "@/lib/format";
-import { PersonaAvatar } from "@/components/ui";
+import { PersonaAvatar, SectionHead, StatusIcon, btn } from "@/components/ui";
+import { Loading, PageTitle, ReadingPage } from "@/components/shell";
 import { MeetingStatus } from "@/components/meetings/MeetingStatus";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
@@ -27,11 +28,13 @@ export const metadata = { title: "DryRun brief" };
 
 export default function MeetingPage({ params }: PageProps<"/m/[id]">) {
   return (
-    <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Loading the brief…</p>}>
-      {params.then(({ id }) => (
-        <Meeting id={decodeURIComponent(id)} />
-      ))}
-    </Suspense>
+    <ReadingPage active="meetings">
+      <Suspense fallback={<Loading>Reading the brief…</Loading>}>
+        {params.then(({ id }) => (
+          <Meeting id={decodeURIComponent(id)} />
+        ))}
+      </Suspense>
+    </ReadingPage>
   );
 }
 
@@ -41,12 +44,9 @@ async function Meeting({ id }: { id: string }) {
     detail = await getMeeting(id);
   } catch (err) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-10 sm:px-8">
-        <Link href="/" className="font-display text-2xl">DryRun</Link>
-        <p role="alert" className="rounded-2xl border border-line bg-surface p-5 text-sm text-ink-2">
-          Couldn&apos;t reach n8n for this meeting. {n8nProblem(err)}
-        </p>
-      </div>
+      <p role="alert" className="rounded-2xl border border-line bg-surface p-5 text-sm text-ink-2">
+        Couldn&apos;t reach n8n for this meeting. {n8nProblem(err)}
+      </p>
     );
   }
   // A meeting just added from the web app takes a few seconds to reach n8n's table
@@ -57,24 +57,26 @@ async function Meeting({ id }: { id: string }) {
   // After the real meeting has started (0.28): "How did it go?", then what n8n found. The sample meeting never happens.
   const happened = meeting.id !== SAMPLE_ID && meeting.status !== "researching" && hasStarted(meeting.start);
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-6 sm:px-8 sm:py-10">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-baseline gap-4">
-          <Link href="/" className="font-display text-2xl">DryRun</Link>
-          <Link href="/" className="text-sm text-ink-2 hover:text-ink">← Your meetings</Link>
-        </div>
-        <MeetingStatus status={meeting.status} />
-      </header>
-
-      <section className="flex flex-col gap-2">
-        <p className="text-sm text-ink-2">
-          {meeting.company !== meeting.title && `${meeting.company}, `}
-          {meetingWhen(meeting.start)} ({untilLabel(meeting.start)})
-        </p>
-        <h1 className="font-display text-4xl leading-tight">{meeting.title}</h1>
-        {meeting.why && <p className="max-w-3xl text-ink-2">{meeting.why}</p>}
+    <>
+      <div className="flex flex-col gap-4">
+        <PageTitle
+          crumbs={[{ label: "Meetings", href: "/" }]}
+          eyebrow={`${meeting.company !== meeting.title ? `${meeting.company}, ` : ""}${meetingWhen(meeting.start)} (${untilLabel(meeting.start)})`}
+          title={meeting.title}
+          lead={meeting.why}
+          aside={
+            <>
+              <MeetingStatus status={meeting.status} />
+              {brief && proposal && (
+                <a href="#practise" className={btn("primary")}>
+                  {meeting.practice ? "Practise again" : "Practise"}
+                </a>
+              )}
+            </>
+          }
+        />
         {brief && meeting.progress && meeting.progress.length > 0 && <HowPrepared meeting={meeting} />}
-      </section>
+      </div>
 
       {meeting.after ? (
         <HowItWent after={meeting.after} runUrl={n8nRunUrl(meeting.after.run)} />
@@ -91,13 +93,13 @@ async function Meeting({ id }: { id: string }) {
       {detail.sessions && detail.sessions.length > 0 && <Rehearsals sessions={detail.sessions} />}
 
       {meeting.status === "skipped" ? (
-        <section className="flex flex-col items-start gap-3 rounded-2xl border border-line bg-surface p-6">
-          <h2 className="font-display text-2xl">n8n skipped this one</h2>
+        <section className="flex flex-col items-start gap-3 rounded-2xl border border-ink bg-surface p-5 sm:p-6">
+          <h2 className="font-display text-xl">n8n skipped this one</h2>
           <p className="max-w-2xl text-sm text-ink-2">
             It read the invite and decided it isn&apos;t worth a brief or a rehearsal, for the reason above. If it matters to you, n8n will
             research it and brief you like any other meeting.
           </p>
-          <PrepareAnyway meetingId={meeting.id} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-60" />
+          <PrepareAnyway meetingId={meeting.id} className={btn("primary")} />
         </section>
       ) : !brief ? (
         meeting.progress && meeting.progress.length > 0 ? (
@@ -120,14 +122,14 @@ async function Meeting({ id }: { id: string }) {
       )}
 
       {brief && proposal && (
-        <section id="practise" className="scroll-mt-6 flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 sm:flex-row sm:items-center sm:justify-between">
+        <section id="practise" className="flex scroll-mt-6 flex-col gap-5 rounded-2xl border border-ink bg-surface p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col gap-3">
-            <h2 className="font-display text-2xl">{meeting.practice ? "Practise it again" : "Practise this meeting"}</h2>
+            <h2 className="font-display text-xl">{meeting.practice ? "Practise it again" : "Practise this meeting"}</h2>
             <p className="max-w-xl text-sm text-ink-2">
               Rehearse against the people coming, plus practice roles that usually weigh in on a decision like this. You can change anyone
               before you start. The practice roles are hypothetical and never appear in your brief.
             </p>
-            <ul className="flex flex-wrap gap-3">
+            <ul className="flex flex-wrap gap-2">
               {proposal.members.map((m) => (
                 <li key={m.id} className="flex items-center gap-2 rounded-full border border-line py-1 pr-3 pl-1">
                   <PersonaAvatar persona={m} size={28} />
@@ -142,7 +144,7 @@ async function Meeting({ id }: { id: string }) {
           </div>
         </section>
       )}
-    </div>
+    </>
   );
 }
 
@@ -175,18 +177,18 @@ function HowPrepared({ meeting }: { meeting: NonNullable<MeetingDetail["meeting"
 
 function JustAdded() {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-10 sm:px-8">
-      <Link href="/" className="font-display text-2xl">DryRun</Link>
-      <Researching company="the company" />
-    </div>
+    <Researching company="the company" />
   );
 }
 
 function Researching({ company }: { company: string }) {
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-6">
+    <section className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-5 sm:p-6">
       <RefreshWhileResearching />
-      <h2 className="font-display text-2xl">n8n is preparing this meeting</h2>
+      <h2 className="flex items-center gap-3 font-display text-xl">
+        <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-line border-t-ink" />
+        n8n is preparing this meeting
+      </h2>
       <p className="text-sm text-ink-2">
         It&apos;s reading your recent emails with the attendees, researching {company} on the web, and writing your brief. This takes about a
         minute; this page updates by itself.
@@ -203,12 +205,15 @@ function BriefBody({ detail, twins }: { detail: MeetingDetail & { brief: NonNull
   // The sample's brief comes from its sample twin; a real one from n8n (GET /meeting joins the twins)
   const since: SinceLastTime[] = brief.since_last_time ?? (meeting.id === SAMPLE_ID ? [sinceFromTwin(sampleTwin())].filter((x): x is SinceLastTime => !!x) : []);
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="flex flex-col gap-8">
-        <p className="text-lg leading-relaxed">{brief.summary}</p>
-
+    <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-10">
+      <div className="flex min-w-0 flex-col gap-12">
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-ink">Who&apos;s coming</h2>
+          <h2 className="text-sm font-medium text-ink-2">In short</h2>
+          <p className="text-pretty text-xl leading-relaxed">{brief.summary}</p>
+        </section>
+
+        <section className="flex flex-col gap-4">
+          <SectionHead title={"Who's coming"} count={brief.attendees.length} />
           {brief.attendees.length === 0 ? (
             <p className="text-sm text-muted">No attendees were named in the invite.</p>
           ) : (
@@ -230,8 +235,8 @@ function BriefBody({ detail, twins }: { detail: MeetingDetail & { brief: NonNull
 
         {since.length > 0 && <SinceLastTimeSection since={since} />}
 
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-ink">Questions likely to come up</h2>
+        <section className="flex flex-col gap-4">
+          <SectionHead title="Questions likely to come up" note="Open one for a suggested answer and why n8n expects it." />
           <ol className="flex flex-col gap-2">
             {brief.questions.map((q, i) => (
               <li key={i}>
@@ -255,35 +260,40 @@ function BriefBody({ detail, twins }: { detail: MeetingDetail & { brief: NonNull
         </section>
 
         {brief.risks.length > 0 && (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-ink">What could lose it</h2>
-            <ul className="list-disc pl-5 text-ink-2">
+          <section className="flex flex-col gap-4">
+            <SectionHead title="What could lose it" />
+            <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-surface">
               {brief.risks.map((r) => (
-                <li key={r}>{r}</li>
+                <li key={r} className="flex items-start gap-3 p-4">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-warn/15 text-warn-ink">
+                    <StatusIcon tone="warn" className="size-3.5" />
+                  </span>
+                  {r}
+                </li>
               ))}
             </ul>
           </section>
         )}
       </div>
 
-      <aside className="flex flex-col gap-6">
-        <section className="flex flex-col gap-3 rounded-2xl bg-paper p-5">
-          <h2 className="text-sm font-semibold text-ink">About {meeting.company}</h2>
+      <aside className="flex flex-col gap-8 lg:sticky lg:top-6 lg:self-start">
+        <section className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-5">
+          <h2 className="font-display text-base">About {meeting.company}</h2>
           <p className="text-sm">{brief.company.what_they_do}</p>
           {brief.company.recent_news.length > 0 && (
             <ul className="flex flex-col gap-2 text-sm">
               {brief.company.recent_news.map((n, i) => (
-                <li key={i}>
-                  {n.date && <span className="font-medium">{n.date}: </span>}
-                  <span className="text-ink-2">{n.text}</span>
+                <li key={i} className="flex flex-col gap-0.5 border-t border-line pt-2">
+                  {n.date && <span className="text-xs font-medium text-ink-2">{n.date}</span>}
+                  <span>{n.text}</span>
                 </li>
               ))}
             </ul>
           )}
         </section>
         {brief.sources.length > 0 && (
-          <section className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-ink">Sources</h2>
+          <section className="flex flex-col gap-2 px-1">
+            <h2 className="text-sm font-medium text-ink-2">Sources</h2>
             <ul className="flex flex-col gap-1 text-sm">
               {brief.sources.map((s) => (
                 <li key={s.url} className="truncate">
@@ -326,7 +336,7 @@ const fromLabel = (f: { source: string; date: string }) => {
 function SinceLastTimeSection({ since }: { since: SinceLastTime[] }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-ink">Since last time</h2>
+      <SectionHead title="Since last time" note={"What each person you've met before raised, and what you promised them."} />
       <ul className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-4">
         {since.map((s) => (
           <li key={s.email} className="flex flex-col gap-2">

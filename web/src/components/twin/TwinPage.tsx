@@ -6,7 +6,8 @@ import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinFactKind, Tw
 import type { TwinRun } from "@/lib/twins";
 import { colorOf, portraitOf } from "@/lib/personas";
 import { KIND_LABEL, type MeetingHits, applyChanges, fullness, hitRate, overdue, playableSteps, plural, shortDate, sourceLabel, summarize } from "@/lib/twinView";
-import { StatusIcon } from "../ui";
+import { StatusIcon, btn } from "../ui";
+import { AppHeader } from "../shell";
 import { Halftone } from "./Halftone";
 import { type Leaf, TwinTree, toLeaves } from "./TwinTree";
 import { TwinTimeline } from "./TwinTimeline";
@@ -190,10 +191,13 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
 
   if (forgotten)
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-16 sm:px-8">
-        <h1 className="font-display text-3xl">DryRun has forgotten {who}</h1>
-        <p className="text-ink-2">Their twin and every fact in it are deleted from n8n&apos;s people table.</p>
-        <Link href="/people" className="text-ink-2 underline decoration-line hover:text-ink">← Everyone DryRun knows</Link>
+      <div className="mx-auto flex max-w-5xl flex-col px-4 sm:px-8">
+        <AppHeader active="people" />
+        <div className="flex flex-col items-start gap-4 py-16">
+          <h1 className="font-display text-3xl">DryRun has forgotten {who}</h1>
+          <p className="text-ink-2">Their twin and every fact in it are deleted from n8n&apos;s people table.</p>
+          <Link href="/people" className={btn("secondary")}>Everyone DryRun knows</Link>
+        </div>
       </div>
     );
 
@@ -260,19 +264,22 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
   );
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-6 px-4 py-6 sm:px-8 print:max-w-none print:p-0">
-      <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div className="flex items-baseline gap-4">
-          <Link href="/" className="font-display text-2xl">DryRun</Link>
-          <Link href="/people" className="text-sm text-ink-2 hover:text-ink">People</Link>
-          <span className="text-sm text-muted">/ {who}</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Toggle on={view === "tree"} onClick={() => setView("tree")}>Tree</Toggle>
-          <Toggle on={view === "list"} onClick={() => setView("list")}>List</Toggle>
-          <button type="button" onClick={() => window.print()} className="rounded-full border border-line px-3 py-1 hover:border-ink">Print file</button>
-        </div>
-      </header>
+    <div className="mx-auto flex max-w-[1400px] flex-col gap-6 px-4 pb-10 sm:px-8 print:max-w-none print:p-0">
+      <AppHeader
+        trail={[{ label: "People", href: "/people" }, { label: who }]}
+        actions={
+          <>
+            <div role="group" aria-label="Show the twin as" className="inline-flex rounded-full border border-line bg-paper p-0.5">
+              {(["tree", "list"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)} className={`h-7 rounded-full px-3 text-xs font-medium ${view === v ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"}`}>
+                  {v === "tree" ? "Tree" : "List"}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => window.print()} className={btn("secondary", "sm")}>Print file</button>
+          </>
+        }
+      />
 
       {shown.sample && (
         <p className="rounded-xl border border-line bg-surface px-4 py-2 text-sm text-ink-2 print:hidden">
@@ -284,8 +291,8 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
         <div className="sticky top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink bg-surface px-4 py-2 text-sm shadow-sm print:hidden" role="status">
           <span>{plural(queue.length, "change")} to save. They go to n8n together, as one run.</span>
           <span className="flex gap-2">
-            <button type="button" onClick={() => setQueue([])} className="rounded-full border border-line px-3 py-1 hover:border-ink">Undo</button>
-            <button type="button" onClick={() => save()} disabled={saving} className="rounded-full bg-ink px-3 py-1 font-medium text-surface disabled:opacity-60">
+            <button type="button" onClick={() => setQueue([])} className={btn("secondary", "sm")}>Undo</button>
+            <button type="button" onClick={() => save()} disabled={saving} className={btn("primary", "sm")}>
               {saving ? "Saving…" : "Save"}
             </button>
           </span>
@@ -301,7 +308,7 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
         {view === "tree" && (
           <section aria-label="The tree" className={treeOpen ? "fixed inset-0 z-40 overflow-auto bg-paper p-4" : "hidden lg:block print:block"}>
             {treeOpen && (
-              <button type="button" onClick={() => setTreeOpen(false)} className="mb-3 rounded-full border border-line px-3 py-1 text-sm hover:border-ink">Close the tree</button>
+              <button type="button" onClick={() => setTreeOpen(false)} className={`${btn("secondary", "sm")} mb-3`}>Close the tree</button>
             )}
             {tree}
           </section>
@@ -325,7 +332,7 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
             <div className="flex items-center gap-3 lg:hidden print:hidden">
               <Halftone portrait={portrait} color={color} fill={full.fill} size={96} label={who} />
               {view === "tree" && (
-                <button type="button" onClick={() => setTreeOpen(true)} className="rounded-full border border-line px-3 py-1 text-sm hover:border-ink">Show the tree</button>
+                <button type="button" onClick={() => setTreeOpen(true)} className={btn("secondary", "sm")}>Show the tree</button>
               )}
             </div>
           }
@@ -349,12 +356,12 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
 
       <footer className="flex flex-col gap-3 print:hidden">
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={build} disabled={building || (!n8n && !shown.sample)} className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50">
+          <button type="button" onClick={build} disabled={building || (!n8n && !shown.sample)} className={btn("primary")}>
             {building ? "n8n is building…" : shown.sources.length ? "Build again" : "Build twin"}
           </button>
-          <button type="button" onClick={() => setPanel(panel === "note" ? null : "note")} className="rounded-full border border-line px-4 py-2 text-sm hover:border-ink">Add a note</button>
-          <button type="button" onClick={() => setPanel(panel === "alias" ? null : "alias")} className="rounded-full border border-line px-4 py-2 text-sm hover:border-ink">Link another email</button>
-          <button type="button" onClick={replay} disabled={building || !shown.sources.length} className="rounded-full border border-line px-4 py-2 text-sm hover:border-ink disabled:opacity-50">Replay how it was built</button>
+          <button type="button" onClick={() => setPanel(panel === "note" ? null : "note")} className={btn("secondary")}>Add a note</button>
+          <button type="button" onClick={() => setPanel(panel === "alias" ? null : "alias")} className={btn("secondary")}>Link another email</button>
+          <button type="button" onClick={replay} disabled={building || !shown.sources.length} className={btn("secondary")}>Replay how it was built</button>
           <button type="button" onClick={() => setPanel(panel === "forget" ? null : "forget")} className="ml-auto rounded-full px-4 py-2 text-sm text-ink-2 hover:text-bad-ink">Forget this person</button>
         </div>
         <p className="text-xs text-muted">
@@ -370,7 +377,7 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-4 text-sm">
             <span>Delete {who}&apos;s twin and every fact in it from n8n? This can&apos;t be undone.</span>
             <button type="button" onClick={() => { setPanel(null); void save([{ op: "forget" }]); }} className="rounded-full bg-bad px-3 py-1 font-medium text-surface">Forget {first}</button>
-            <button type="button" onClick={() => setPanel(null)} className="rounded-full border border-line px-3 py-1 hover:border-ink">Keep</button>
+            <button type="button" onClick={() => setPanel(null)} className={btn("secondary", "sm")}>Keep</button>
           </div>
         )}
       </footer>
@@ -661,7 +668,7 @@ function NoteForm({ first, onAdd }: { first: string; onAdd: (text: string, kind:
           </select>
         </label>
         <span className="text-xs text-muted">{text.length >= 300 ? "Long text is kept as a source; n8n reads it for facts on the next build." : "Kept as you wrote it, marked “you added this”."}</span>
-        <button type="submit" className="ml-auto rounded-full bg-ink px-3 py-1 font-medium text-surface">Add</button>
+        <button type="submit" className={`${btn("primary", "sm")} ml-auto`}>Add</button>
       </div>
     </form>
   );
@@ -679,7 +686,7 @@ function AliasForm({ first, onAdd }: { first: string; onAdd: (email: string) => 
     >
       <label htmlFor="twin-alias" className="text-xs font-semibold text-ink-2">Another address of {first}&apos;s</label>
       <input id="twin-alias" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="min-w-64 flex-1 rounded-lg border border-line bg-paper px-2 py-1" placeholder="name@company.com" />
-      <button type="submit" className="rounded-full bg-ink px-3 py-1 font-medium text-surface">Link</button>
+      <button type="submit" className={btn("primary", "sm")}>Link</button>
       <span className="w-full text-xs text-muted">Emails with it count as {first} for sure from then on; the next build reads them.</span>
     </form>
   );
@@ -700,7 +707,7 @@ function Num({ n, label, note }: { n: number | string | null; label: string; not
     <div className="flex min-w-0 flex-col">
       <dd className="font-display text-3xl leading-none tabular-nums">{n ?? "–"}</dd>
       <dt className="mt-1 text-xs text-ink-2">{label}</dt>
-      {note && <span className="truncate text-[10px] text-muted">{note}</span>}
+      {note && <span className="truncate text-xs text-muted">{note}</span>}
     </div>
   );
 }
@@ -709,7 +716,7 @@ const Empty = ({ children }: { children: React.ReactNode }) => <p className="tex
 
 function Toggle({ on, onClick, disabled, children }: { on: boolean; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={on} className={`rounded-full border px-3 py-1 text-sm disabled:opacity-50 ${on ? "border-ink bg-ink text-surface" : "border-line hover:border-ink"}`}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={on} className={`h-8 rounded-full border px-3 text-xs font-medium disabled:opacity-50 ${on ? "border-ink bg-ink text-surface" : "border-line bg-surface text-ink-2 hover:border-ink hover:text-ink"}`}>
       {children}
     </button>
   );

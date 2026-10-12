@@ -30,10 +30,10 @@ export function DeckReview({ meetingId, initial, live = false }: { meetingId: st
 
   if (!stored) return null;
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-5">
+    <section className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-5 sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Where your deck will get pushback</h2>
-        <span className="text-xs text-muted">n8n checked {stored.deck_name} against your brief</span>
+        <h2 className="font-display text-xl leading-tight">Where your deck will get pushback</h2>
+        <span className="text-sm text-ink-2">n8n checked {stored.deck_name} against your brief</span>
       </div>
       {stored.state === "running" && <p className="text-sm text-ink-2">n8n is reading your slides against what it found about them…</p>}
       {stored.state === "failed" && <p className="text-sm text-ink-2">n8n couldn&apos;t review this deck. {stored.error}</p>}
@@ -65,7 +65,7 @@ function Items({ review }: { review: Review }) {
             </p>
             {x.fix && (
               <p className="rounded-lg bg-paper px-3 py-2 text-sm">
-                <span className="text-xs font-semibold">Fix: </span>
+                <span className="font-medium">Fix: </span>
                 {x.fix}
               </p>
             )}

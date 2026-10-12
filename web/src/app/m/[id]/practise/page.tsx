@@ -7,12 +7,14 @@ import { Practice } from "@/components/brief/Practice";
 import { getDeckReview } from "@/lib/deckReview";
 import { PractiseButton } from "@/components/meetings/PractiseButton";
 import { twinSummaries } from "@/lib/twins";
+import { Loading, PageTitle, ReadingPage } from "@/components/shell";
+import { btn } from "@/components/ui";
 
 export const metadata = { title: "DryRun practice" };
 
 export default function PractisePage({ params }: PageProps<"/m/[id]/practise">) {
   return (
-    <Suspense fallback={<p className="px-8 py-24 text-sm text-muted">Loading the table…</p>}>
+    <Suspense fallback={<div className="p-8"><Loading>Setting the table…</Loading></div>}>
       {params.then(({ id }) => (
         <PracticeFromRoom id={decodeURIComponent(id)} />
       ))}
@@ -28,11 +30,14 @@ async function PracticeFromRoom({ id }: { id: string }) {
   if (room.phase !== "drafting" || !brief || brief.draft_id !== id) {
     const detail = await getMeeting(id).catch(() => null);
     return (
-      <div className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-24">
-        <h1 className="font-display text-3xl">The table is set for another meeting</h1>
-        <p className="text-ink-2">Seat this meeting&apos;s practice panel to start. The headset will follow.</p>
-        {detail?.proposal ? <PractiseButton meetingId={id} /> : <Link href={`/m/${encodeURIComponent(id)}`} className="underline">Back to the brief</Link>}
-      </div>
+      <ReadingPage active="meetings">
+        <PageTitle
+          crumbs={[{ label: "Meetings", href: "/" }, ...(detail ? [{ label: detail.meeting.title, href: `/m/${encodeURIComponent(id)}` }] : [])]}
+          title="The table is set for another meeting"
+          lead="Seat this meeting's practice panel to start. The headset will follow."
+        />
+        <div>{detail?.proposal ? <PractiseButton meetingId={id} /> : <Link href={`/m/${encodeURIComponent(id)}`} className={btn("secondary")}>Back to the brief</Link>}</div>
+      </ReadingPage>
     );
   }
   // The title only; the practice page works from the room even when n8n can't be reached
