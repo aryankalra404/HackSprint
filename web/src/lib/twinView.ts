@@ -3,28 +3,6 @@ import type { Twin, TwinChange, TwinFact, TwinFactKind, TwinLogStep, TwinMeeting
 // How the twin page reads a twin (contract 0.27). Safe on the client and the server. Nothing here decides what a twin knows: n8n
 // does (DryRun twin, DryRun twin update). The page only draws it.
 
-// The four branches of the tree, and which facts hang on each
-export type Branch = "who" | "cares" | "raised" | "promised";
-export const BRANCHES: { id: Branch; label: string }[] = [
-  { id: "raised", label: "What they raised" },
-  { id: "cares", label: "What they care about" },
-  { id: "promised", label: "What you promised" },
-  { id: "who", label: "Who they are" },
-];
-const BRANCH_OF: Record<TwinFactKind, Branch> = { role: "who", context: "who", preference: "cares", raised: "raised", decision: "raised", promised: "promised" };
-export const branchOf = (f: Pick<TwinFact, "kind">): Branch => BRANCH_OF[f.kind];
-
-export const KIND_LABEL: Record<TwinFactKind, string> = {
-  raised: "Raised",
-  decision: "Decided",
-  promised: "You promised",
-  preference: "Cares about",
-  role: "Role",
-  context: "Context",
-};
-
-export const SOURCE_GLYPH: Record<TwinSource["type"], string> = { email: "✉", meeting_note: "◎", web: "⌂", news: "▤", manual: "✎" };
-
 // "From your email of 3 Oct", "kaverifreight.in", "Your note, 22 Sep"
 export function sourceLabel(s: TwinSource): string {
   const d = shortDate(s.date);
@@ -32,14 +10,6 @@ export function sourceLabel(s: TwinSource): string {
   if (s.type === "manual") return `${s.title}${d ? `, ${d}` : ""}`;
   if (s.type === "meeting_note") return `Your notes from the meeting${d ? ` of ${d}` : ""}`;
   return `${s.title}${d && s.type === "news" ? `, ${d}` : ""}`;
-}
-
-// The short tab on the tree's outer ring
-export function sourceTab(s: TwinSource): string {
-  if (s.type === "web") return s.title.replace(/^www\./, "").split("/")[0];
-  if (s.type === "manual") return "your note";
-  if (s.type === "news") return "news";
-  return shortDate(s.date) || "email";
 }
 
 export function shortDate(iso: string | undefined | null): string {
@@ -107,11 +77,6 @@ export function overdue(f: TwinFact): boolean {
   const year = new Date(f.added || Date.now()).getFullYear();
   const due = new Date(`${m[1]} ${m[2]} ${year} 23:59`);
   return !Number.isNaN(due.getTime()) && due.getTime() < Date.now();
-}
-
-// Gmail search or the page, for "Open the email"
-export function sourceHref(s: TwinSource): string | null {
-  return s.url || null;
 }
 
 // The steps the page plays: the last build's log (Replay), or an opened twin all at once

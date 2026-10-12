@@ -58,50 +58,20 @@ body {
   }
 }
 
-/* The twin page (contract 0.27): a line draws in because a fact was connected, a leaf appears when its line arrives, a source tab
-   drops onto the ring. Only what was just added moves; with reduced motion everything shows at once. */
-.tw-line {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: tw-draw 0.4s ease-out forwards;
-}
-.tw-fade,
-.tw-leaf {
+/* The twin page (contract 0.27): what a build step just added fades in, as n8n reports it. With reduced motion everything shows at once. */
+.tw-fade {
   opacity: 0;
-  animation: tw-in 0.3s ease-out 0.3s forwards;
-}
-.tw-tab {
-  opacity: 0;
-  animation: tw-drop 0.35s ease-out forwards;
-}
-@keyframes tw-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
+  animation: tw-in 0.35s ease-out forwards;
 }
 @keyframes tw-in {
   to {
     opacity: 1;
   }
 }
-@keyframes tw-drop {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .tw-line,
-  .tw-fade,
-  .tw-leaf,
-  .tw-tab {
+  .tw-fade {
     animation: none;
     opacity: 1;
-    stroke-dashoffset: 0;
   }
 }
 
