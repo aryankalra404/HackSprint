@@ -158,8 +158,9 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
       />
 
       <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="flex min-h-0 flex-col gap-4">
-          <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-line bg-surface p-4" aria-label="The table">
+        {/* The column scrolls when the deck review is long; the table never shrinks below the room plan's own minimum */}
+        <div className="flex min-h-0 flex-col gap-4 lg:overflow-y-auto">
+          <section className="flex flex-1 shrink-0 flex-col rounded-2xl border border-line bg-surface p-4 md:min-h-[454px]" aria-label="The table">
             <div className="hidden min-h-0 flex-1 md:block">
               <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} twins={twins} />
             </div>
