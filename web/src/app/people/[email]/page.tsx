@@ -39,7 +39,8 @@ async function Twin({ email, q }: { email: string; q: Record<string, string | st
       look={{ avatar: avatar ?? stored?.look?.avatar, color: color ?? stored?.look?.color }}
       n8n={!!N8N_URL}
       ask={{ name: name || twin.name, company: company || twin.company, domain: one(q.domain) }}
-      run={getTwinRun(e)}
+      // Only a build still running: the page picks up its progress (a finished one is already in the twin)
+      run={getTwinRun(e)?.state === "running" ? getTwinRun(e) : null}
     />
   );
 }
