@@ -134,7 +134,9 @@ Decide, for this meeting and this panel (never a generic template):
   A slide with no text: title "Slide <n>" (n from 1), no key points, a calm cue and an empty question only; never guess what it shows. No deck: an empty list.
 - personas: for each panel member, by id: display_name (keep the given name; invent a realistic Indian name only if it is empty),
   priorities (what they care about most in this meeting), and objections tied to slides (slide_index, or -1 when there is no deck or it
-  could come at any time), grounded in the deck and the research, with source "deck" or "research". If there was a last rehearsal,
+  could come at any time), grounded in the deck and the research, with source "deck" or "research". The brief's deck_research is
+  what n8n found when it checked the deck's claims against the news: give each challenged or unproven finding to the person who would
+  care most, as a "research" objection on its slide, built on its question and what the sources say. If there was a last rehearsal,
   give each of its weak spots to the person who would press on it hardest, as an objection with source "history", on the slide it is
   about, so this rehearsal is harder exactly where the last one was weak; the plan must leave room to ask about them. Each question
   it owes (owed: questions the presenter could not answer last time) goes back to the person who asked it, as a "history" objection
@@ -312,6 +314,10 @@ Questions the presenter could not answer well (thread id, who asked, what they s
 What n8n found about the company (the brief's research, with numbered sources):
 {research}
 
+What n8n found when it checked the deck's claims against the news (numbered; each with what the sources say; empty if no deck was
+checked):
+{deck_research}
+
 Decide:
 - headline: one sentence on how it went and what it means for the real meeting (e.g. "A clear story, but finance left unconvinced
   about the price.").
@@ -337,6 +343,10 @@ Decide:
   presenter's voice, 3 to 5 sentences, built only from their deck's key points, the research above and what they actually said;
   confirm, what they must check or fill in themselves before the real meeting (never invent facts about their own product, numbers
   or customers: say what to confirm instead); and sources, the numbers of the research sources it used (empty if none).
+- checks: for each deck finding above, by its number: verdict "held" (the presenter said it in a way the sources back, or for a
+  challenged claim, addressed what the sources say), "contradicted" (said something the sources contradict), "unbacked" (claimed it
+  with no evidence where the panel will want some) or "not_said" (it did not come up); quote, the presenter's words on it copied
+  exactly (empty for "not_said"); note, one sentence on why, naming what the source says.
 Be honest and specific; no generic advice. Answer in JSON."""
 
 DEBRIEF_SCHEMA = {"type": "object", "properties": {
@@ -368,42 +378,74 @@ DEBRIEF_SCHEMA = {"type": "object", "properties": {
     "owed": {"type": "array", "items": {"type": "object", "properties": {
         "thread_id": {"type": "string"}, "suggested": {"type": "string"}, "confirm": {"type": "string"},
         "sources": {"type": "array", "items": {"type": "integer"}}},
-        "required": ["thread_id", "suggested", "confirm", "sources"]}}},
-    "required": ["headline", "metrics", "stakeholders", "slides", "drill", "weak_spots", "owed"]}
+        "required": ["thread_id", "suggested", "confirm", "sources"]}},
+    "checks": {"type": "array", "items": {"type": "object", "properties": {
+        "finding": {"type": "integer"}, "verdict": {"type": "string", "enum": ["held", "contradicted", "unbacked", "not_said"]},
+        "quote": {"type": "string"}, "note": {"type": "string"}},
+        "required": ["finding", "verdict", "quote", "note"]}}},
+    "required": ["headline", "metrics", "stakeholders", "slides", "drill", "weak_spots", "owed", "checks"]}
 
-# DryRun deck review (/deck-review, contract 0.26): the presenter's slides against what n8n found about the company and its people
-DECK_REVIEW_PROMPT = """You check a presenter's deck before a real meeting, against what is known about the people they will pitch to.
-Find where the deck will get pushback in this meeting, and from whom.
+# DryRun deck research (/deck-research, contract 0.30): the deck is a source. n8n picks what is worth checking, searches the news for it,
+# then says what the sources say. It never gives advice on the slides.
+DECK_CLAIMS_PROMPT = """You are preparing a presenter for a real meeting. Read their deck and decide which of its claims the people
+they pitch to would check, and how to search the news for each.
 
 The meeting: {meeting}
 What the presenter offers and wants from it: {side}
-The brief (real attendees and what they care about, the hardest questions, the risks):
-{brief}
-The research on the company, with numbered sources:
-{research}
 The deck, slide by slide (index from 0):
 {deck}
 
-items: 3 to 5, the strongest first, each:
-- slide_index: the slide it is about;
-- claim: the claim on that slide, copied or closely paraphrased from its text (e.g. "30% lower fuel cost");
-- pushback: what they know or care about that challenges it, in one or two sentences, from the research or the brief only
-  (e.g. "Their FY25 report says fuel cost already fell 18%, so they will ask what is left to save"). If nothing in the research
-  contradicts it but nothing supports it either, say what evidence they will ask for;
-- source: the number of the research source it rests on, or 0 if it comes from the brief or is a claim with nothing behind it;
-- who: who will push, an attendee's name from the brief with their focus in brackets, or a role if no attendee fits;
-- fix: what to change on the slide or what to say, in one sentence.
-summary: one sentence on how the deck will land with this panel.
-Never state facts that are not in the brief or the research, and never invent facts about the presenter's own product.
+about: one sentence on what the deck pitches and to whom, in plain words.
+checks: 2 to 5 claims worth checking, the most decisive first. Pick claims about the world that the news could confirm or
+  contradict: the size of the problem (failures, costs, accidents, demand), the market and who buys, who else already does this
+  (competitors, existing government schemes, platforms or programmes), numbers the deck gives (savings, growth, accuracy), and how
+  mature the technology is. Never pick claims only the presenter could know or that no newspaper would report: their team, IDs and
+  reference numbers, reviews or approvals of their own project, their roadmap, their own results or which dataset they used. Each:
+- slide_index: the slide the claim is on;
+- claim: the claim, copied or closely paraphrased from the slide (e.g. "30% lower fuel cost");
+- query: a Google News search on the claim's subject, 3 to 5 words, the way a journalist would headline it (e.g. "UAV engine
+  failures India", "route optimisation fuel savings"), not the claim's wording. Spell out acronyms the way the deck means them
+  ("Smart India Hackathon", not "SIH"); no names of the presenter's product, no quotes or operators;
+- broad: a broader search, 2 or 3 words, for when the first finds nothing (e.g. "drone predictive maintenance").
 Answer in JSON."""
 
-DECK_REVIEW_SCHEMA = {"type": "object", "properties": {
-    "items": {"type": "array", "items": {"type": "object", "properties": {
-        "slide_index": {"type": "integer"}, "claim": {"type": "string"}, "pushback": {"type": "string"}, "source": {"type": "integer"},
-        "who": {"type": "string"}, "fix": {"type": "string"}},
-        "required": ["slide_index", "claim", "pushback", "source", "who", "fix"]}},
-    "summary": {"type": "string"}},
-    "required": ["items", "summary"]}
+DECK_CLAIMS_SCHEMA = {"type": "object", "properties": {
+    "about": {"type": "string"},
+    "checks": {"type": "array", "items": {"type": "object", "properties": {
+        "slide_index": {"type": "integer"}, "claim": {"type": "string"}, "query": {"type": "string"}, "broad": {"type": "string"}},
+        "required": ["slide_index", "claim", "query", "broad"]}}},
+    "required": ["about", "checks"]}
+
+DECK_FINDINGS_PROMPT = """You check a presenter's claims against the news before a real meeting. Say what the sources say; give no
+advice on the slides.
+
+The meeting: {meeting}
+What the deck pitches: {about}
+
+The claims, each with the headlines found for it (numbered sources; a headline may be about something else that shares a word or an
+acronym: ignore any that is not about the same subject):
+{checks}
+
+What n8n already found about the company for the brief (numbered sources continue):
+{research}
+
+findings: one per claim above, in the same order, each:
+- check: the claim's number;
+- verdict: "backed" if the relevant sources support it, "challenged" if they contradict it or show a competitor, an existing scheme or
+  platform, or a smaller number, "unproven" if no relevant source speaks to it;
+- fact: what the relevant sources say about it, in one or two plain sentences, with dates or numbers where the headlines give them.
+  Only what the sources say; for "unproven", say plainly that n8n found nothing that backs or contradicts it;
+- question: how someone on the panel would put it to the presenter, in one short sentence (e.g. "Where does 30% come from, when the
+  industry reports half that?");
+- sources: the numbers of the relevant sources it rests on (empty for "unproven").
+Never state facts that are not in the sources, and never invent facts about the presenter's own product. Answer in JSON."""
+
+DECK_FINDINGS_SCHEMA = {"type": "object", "properties": {
+    "findings": {"type": "array", "items": {"type": "object", "properties": {
+        "check": {"type": "integer"}, "verdict": {"type": "string", "enum": ["backed", "challenged", "unproven"]},
+        "fact": {"type": "string"}, "question": {"type": "string"}, "sources": {"type": "array", "items": {"type": "integer"}}},
+        "required": ["check", "verdict", "fact", "question", "sources"]}}},
+    "required": ["findings"]}
 
 # DryRun twin (/twin, contract 0.27): a factual file on one real person, from real sources only, every fact quoted
 TWIN_PROMPT = """You keep a factual file on one real person the presenter works with: {person}.

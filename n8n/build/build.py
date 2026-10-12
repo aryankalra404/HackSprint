@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_REVIEW_PROMPT, DECK_REVIEW_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_CLAIMS_PROMPT, DECK_CLAIMS_SCHEMA, DECK_FINDINGS_PROMPT, DECK_FINDINGS_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
                      TURN_SCHEMA, TWIN_PROMPT, TWIN_SCHEMA, WEB_PROMPT, AFTER_PROMPT, AFTER_SCHEMA)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
@@ -735,8 +735,9 @@ return [{ json: { req, minutes, timing, twins, twins_text: twins.length ? JSON.s
                   history: last ? JSON.stringify({ score: last.overall, headline: last.headline, weak_spots: last.weak_spots, drill: last.drill && last.drill.title, owed: last.owed }) : 'First rehearsal.',
                   brief: { summary: brief.summary || '', attendees: brief.attendees || [], questions: brief.questions || [], risks: brief.risks || [],
                            company: brief.company || {},
-                           // n8n's review of the uploaded deck (0.26, DryRun deck review): the panel presses on the same points
-                           where_the_deck_will_get_pushback: ((parse(row.deck_review) || {}).items || []).map(x => ({ slide_index: x.slide_index, claim: x.claim, pushback: x.pushback, who: x.who })) } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
+                           // What n8n found checking the deck's claims against the news (0.30, DryRun deck research): the panel asks about them
+                           deck_research: ((parse(row.deck_research) || {}).findings || []).map(x => ({ slide_index: x.slide_index, claim: x.claim, verdict: x.verdict, fact: x.fact,
+                             question: x.question, sources: (x.sources || []).map(y => y.title + (y.publisher ? ' (' + y.publisher + ')' : '')) })) } } }];""", [{"minutes": 5, "presenter": "Aryan", "meeting": {}, "panel": [], "slides": [], "brief": {}}])
     c += progress_chunk("saidGather", "Report: gathered", "gather",
                         "[$json.meeting.company ? 'The brief on ' + $json.meeting.company : 'No saved brief for this meeting', "
                         "$json.panel.length + ($json.panel.length === 1 ? ' person' : ' people') + ' at the table', "
@@ -1447,6 +1448,10 @@ const sources = (brief.sources || []).slice(0, 12);
 const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
   .concat(((brief.company && brief.company.recent_news) || []).map(n => 'News' + (n.date ? ' (' + n.date + ')' : '') + ': ' + n.text))
   .concat(sources.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' ' + x.url)).filter(Boolean).join('\\n') || 'No research saved for this meeting.';
+// What n8n found checking the deck's claims against the news (0.30): the debrief checks what was said against each
+const findings = ((parse(briefRow.deck_research) || {}).findings || []).slice(0, 5);
+const deckResearch = findings.map((f, i) => (i + 1) + '. Slide ' + (f.slide_index + 1) + ', the deck claims "' + f.claim + '": ' + f.verdict + '. ' + f.fact
+  + (f.sources && f.sources.length ? ' (' + f.sources.map(x => x.title).join('; ') + ')' : '')).join('\\n') || 'None.';
 const totalWords = slides.reduce((a, s) => a + words(s.transcript), 0) + exchanges.reduce((a, x) => a + words(x.answer), 0);
 const answered = exchanges.filter(x => x.answer).length;
 const summary = totalWords + ' words over ' + slides.filter(s => s.transcript).length + ' slide' + (slides.length === 1 ? '' : 's')
@@ -1470,13 +1475,14 @@ const parts = {
     : 'Only ' + clock(pitchSeconds) + ' of pitch (' + pitchWords + ' words): too little to score. Give scores of 0; they will not be shown. Still write the talk tracks, weak spots and drill.',
   owed: owed.length ? owed.map(o => o.thread_id + ': ' + name(o.persona_id) + ' asked "' + o.question + '"; the presenter said "' + (o.said || '(nothing)') + '" (' + o.status + ')').join('\\n') : 'None.',
   research,
+  deck_research: deckResearch,
 };
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
 const telemetry = { session_id: b.session_id, client: b.client || 'web', duration_s: duration, events, ...(b.gaze_dwell_s ? { gaze_dwell_s: b.gaze_dwell_s } : {}),
                     ...(b.facing_slides_s != null ? { facing_slides_s: b.facing_slides_s } : {}) };
 return [{ json: { session_id: b.session_id, meeting_id: b.meeting_id || '', owner_email: b.owner_email || (b.presenter && b.presenter.email) || '',
                   bundle, telemetry, slides, exchanges, pacing, history, weak_before: weakBefore, summary, prompt,
-                  trouble, garbled, owed, sources, pitch: { seconds: pitchSeconds, words: pitchWords, scored } } }];""",
+                  trouble, garbled, owed, sources, findings, pitch: { seconds: pitchSeconds, words: pitchWords, scored } } }];""",
                    [{"session_id": "s1", "meeting_id": "evt123", "summary": "", "prompt": "", "slides": [], "exchanges": [], "history": []}])
     c += code_node("rowStart", "Row: debriefing", DEBRIEF_PROGRESS_JS + """
 // The session in the DryRun sessions table while n8n debriefs it
@@ -1552,8 +1558,19 @@ const owed = r.owed.map(o => {
   return { thread_id: o.thread_id, persona_id: o.persona_id, question: o.question, said: o.said, status: o.status, suggested: x.suggested || '', confirm: x.confirm || '',
            sources: (x.sources || []).map(n => r.sources[n - 1]).filter(Boolean).map(x => ({ title: x.title, url: x.url })) };
 }).filter(o => o.suggested);
+// The deck's findings against what was said (0.30): a quote that isn't in the transcript, or came from a mis-heard one, isn't used,
+// so that check becomes "not_said"
+const said = r.slides.map(s => s.transcript).concat(r.exchanges.map(x => x.answer || '')).join(' ');
+const VERDICTS = ['held', 'contradicted', 'unbacked', 'not_said'];
+const checks = (r.findings || []).map((f, i) => {
+  const x = (d.checks || []).find(c => c.finding === i + 1) || {};
+  const quote = x.verdict !== 'not_said' && !misheard(x.quote) ? find(said, x.quote) : null;
+  const verdict = quote && VERDICTS.includes(x.verdict) ? x.verdict : 'not_said';
+  return { slide_index: f.slide_index, claim: f.claim, verdict, quote: quote || '', note: x.note || '',
+           sources: (f.sources || []).map(y => ({ title: y.title, url: y.url })) };
+});
 const debrief = { headline, overall, previous_overall: r.history.length ? r.history[r.history.length - 1].overall : null,
-                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), owed, trouble: r.trouble, pitch: r.pitch,
+                  stakeholders, metrics, slides, facing, drill, weak_spots: (d.weak_spots || []).slice(0, 3), owed, trouble: r.trouble, pitch: r.pitch, checks,
                   actions_taken: (owed.length ? ['answers_drafted'] : []).concat(['weak_spots_saved']) };
 return [{ json: { session_id: r.session_id, debrief, marks, backs: stakeholders.filter(s => s.stance === 'backs').length } }];""",
                    [{"session_id": "s1", "debrief": {"metrics": [], "stakeholders": [], "drill": {"title": ""}, "weak_spots": []}, "marks": 0, "backs": 0}])
@@ -1676,97 +1693,164 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
     return c
 
 
-# ---------------------------------------------------------------- DryRun deck review (/deck-review)
+# ---------------------------------------------------------------- DryRun deck research (/deck-research)
 
-DECK_REVIEW_REQUEST = {"body": {"meeting_id": "evt123", "deck": {"name": "RouteIQ.pdf", "slides": [{"index": 0, "text": "RouteIQ cuts fuel cost by 30%"}]},
-                                "presenter": {"offer": "RouteIQ: route optimisation"}, "goal": "a paid pilot"}}
+DECK_REQUEST = {"body": {"meeting_id": "evt123", "deck": {"name": "RouteIQ.pdf", "slides": [{"index": 0, "text": "RouteIQ cuts fuel cost by 30%"}]},
+                         "presenter": {"offer": "RouteIQ: route optimisation"}, "goal": "a paid pilot"}}
+# Headlines kept per search: enough to find the relevant ones among stories that only share a word
+DECK_HEADLINES = 6
 
 
-def deck_review():
+def deck_research():
+    """The deck is a source (contract 0.30): n8n picks the claims worth checking, searches the news for each in the deck's own words,
+    weighs what it found, and saves the findings on the meeting for /prep and /debrief. No advice on the slides."""
     c = IMPORTS
-    c += make_node("reviewTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "A deck was uploaded (laptop)", {
-        "httpMethod": "POST", "path": "dryrun/deck-review", "responseMode": "responseNode", "options": {},
-    }, [DECK_REVIEW_REQUEST])
-    c += make_node("reviewMeeting", "node", "n8n-nodes-base.dataTable", 1.1, "Find the meeting", {
+    c += make_node("deckTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "A deck was uploaded (laptop)", {
+        "httpMethod": "POST", "path": "dryrun/deck-research", "responseMode": "responseNode", "options": {},
+    }, [DECK_REQUEST])
+    c += make_node("deckMeeting", "node", "n8n-nodes-base.dataTable", 1.1, "Find the meeting", {
         "resource": "row", "operation": "get", "dataTableId": MEETINGS_TABLE, "matchType": "anyCondition",
         "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.meeting_id || 'none' }}")}]},
     }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "company": "Delhivery", "brief": "{}", "proposal": "{}"}], extra={"alwaysOutputData": True})
-    c += code_node("reviewGather", "What to check it against", """
-// The deck's slide text against the brief: its research with numbered sources, the attendees and what they care about, the hardest
-// questions and risks, and what the presenter offers and wants (docs/CONTRACT.md, POST /deck-review)
+    c += code_node("deckRead", "Read the deck", """
+// The deck's slide text, the meeting and what the presenter wants from it (docs/CONTRACT.md, POST /deck-research)
 const req = $('A deck was uploaded (laptop)').first().json.body;
 const row = $input.first().json || {};
 const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
-const brief = parse(row.brief) || {};
 const proposal = parse(row.proposal) || {};
-const sources = (brief.sources || []).slice(0, 12);
-const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
-  .concat(((brief.company && brief.company.recent_news) || []).map(n => 'News' + (n.date ? ' (' + n.date + ')' : '') + ': ' + n.text))
-  .concat(sources.map((x, i) => '[' + (i + 1) + '] ' + x.title + ' ' + x.url)).filter(Boolean).join('\\n') || 'No research saved for this meeting.';
 const goal = req.goal || (proposal.goal && proposal.goal.text) || '';
 const offer = (req.presenter && req.presenter.offer) || '';
 const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1200) })).filter(s => s.text);
-const parts = {
-  meeting: (row.title || 'A meeting') + (row.company ? ' with ' + row.company : ''),
-  side: (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.',
-  brief: JSON.stringify({ summary: brief.summary || '', attendees: brief.attendees || [], questions: (brief.questions || []).map(q => q.question), risks: brief.risks || [] }),
-  research,
-  deck: JSON.stringify(slides),
-};
-const PROMPT = """ + json.dumps(DECK_REVIEW_PROMPT) + """;
+const meeting = (row.title || 'A meeting') + (row.company ? ' with ' + row.company : '');
+const side = (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.';
+const parts = { meeting, side, deck: JSON.stringify(slides) };
+const PROMPT = """ + json.dumps(DECK_CLAIMS_PROMPT) + """;
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-const indexes = ((req.deck && req.deck.slides) || []).map(s => s.index);
-return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, slides: slides.length, indexes, sources, prompt } }];""",
-                   [{"meeting_id": "evt123", "found": True, "slides": 1, "sources": [], "prompt": ""}])
-    c += llm_nodes("reviewJudge", "Review the deck", "$json.prompt", GEMINI_REPLY, schema=DECK_REVIEW_SCHEMA,
-                   source="$('What to check it against').first().json")
-    c += code_node("reviewBuild", "The review", REPLY_JS + """
-// Held to the deck and the sources: real slides only, each source by its number, at most five
-const g = $('What to check it against').first().json;
+return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), brief: row.brief || '', prompt } }];""",
+                   [{"meeting_id": "evt123", "found": True, "meeting": "RouteIQ pitch with Delhivery", "indexes": [0], "brief": "", "prompt": ""}])
+    c += llm_nodes("deckClaims", "Pick the claims to check", "$json.prompt", GEMINI_REPLY, schema=DECK_CLAIMS_SCHEMA,
+                   source="$('Read the deck').first().json")
+    c += code_node("deckSearches", "The searches", REPLY_JS + """
+// Two Google News searches per claim (its subject, then broader), on a real slide, at most five claims
+const g = $('Read the deck').first().json;
+const d = JSON.parse(replyText($input.first().json) || '{}');
+const clean = q => String(q || '').split('"').join('').trim();
+const seen = new Set();
+const checks = (d.checks || []).filter(x => g.indexes.includes(x.slide_index) && x.claim && clean(x.query))
+  .map(x => ({ slide_index: x.slide_index, claim: String(x.claim), query: clean(x.query), broad: clean(x.broad) }))
+  .filter(x => !seen.has(x.query.toLowerCase()) && seen.add(x.query.toLowerCase())).slice(0, 5);
+// Nothing worth checking still goes on (one empty search that fails quietly), so the laptop always gets an answer
+if (!checks.length) return [{ json: { none: true, about: d.about || '', url: '' } }];
+const url = q => 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=en-IN&gl=IN&ceid=IN:en';
+return checks.flatMap((x, i) => [x.query].concat(x.broad && x.broad.toLowerCase() !== x.query.toLowerCase() ? [x.broad] : [])
+  .map(q => ({ json: { ...x, i, q, about: d.about || '', url: url(q) } })));""",
+                   [{"i": 0, "slide_index": 0, "claim": "30% lower fuel cost", "query": "route optimisation fuel savings", "broad": "fleet fuel costs", "q": "route optimisation fuel savings", "about": "", "url": ""}])
+    c += make_node("deckNews", "node", "n8n-nodes-base.httpRequest", 4.5, "Search the news", {
+        "method": "GET", "url": Expr("{{ $json.url }}"),
+        "options": {"timeout": 20000, "response": {"response": {"responseFormat": "text"}}},
+    }, [{"data": "<rss></rss>"}], extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2})
+    c += code_node("deckGather", "Gather what it found", """
+// Each claim with its headlines (date, publisher, link), numbered across all searches, then the brief's own sources after them
+const g = $('Read the deck').first().json;
+const all = $('The searches').all().map(i => i.json);
+const results = $input.all().map(i => String(i.json.data || ''));
+const unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+const tag = (xml, t) => { const m = xml.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };
+const headlines = xml => xml.split('<item>').slice(1).map(it => {
+  const src = it.match(/<source url="([^"]*)">([^]*?)<\\/source>/);
+  const date = new Date(tag(it, 'pubDate'));
+  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };
+}).filter(h => h.title && h.url);
+// Per claim: the subject search first, topped up from the broad one, without repeats
+const byClaim = {};
+all.forEach((x, k) => { if (x.none) return; (byClaim[x.i] = byClaim[x.i] || { ...x, items: [] }).items.push(...headlines(results[k] || '')); });
+const sources = [];
+const searched = Object.values(byClaim).sort((a, b) => a.i - b.i).map(x => {
+  const seen = new Set();
+  const items = x.items.filter(h => !seen.has(h.title.toLowerCase()) && seen.add(h.title.toLowerCase())).slice(0, """ + str(DECK_HEADLINES) + """);
+  const numbered = items.map(h => { sources.push(h); return sources.length; });
+  return { slide_index: x.slide_index, claim: x.claim, query: x.query, found: items.length, numbered };
+});
+const parse = s => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
+const brief = parse(g.brief) || {};
+const own = (brief.sources || []).slice(0, 8).map(x => ({ title: x.title, url: x.url, publisher: '', date: '' }));
+const research = [brief.company && brief.company.what_they_do ? 'What they do: ' + brief.company.what_they_do : '']
+  .concat(own.map(x => { sources.push(x); return '[' + sources.length + '] ' + x.title; })).filter(Boolean).join('\\n') || 'None.';
+const text = searched.map((x, k) => (k + 1) + '. Slide ' + (x.slide_index + 1) + ': "' + x.claim + '" (searched: ' + x.query + ')\\n'
+  + (x.numbered.length ? x.numbered.map(n => '   [' + n + '] ' + sources[n - 1].title + (sources[n - 1].publisher ? ' (' + sources[n - 1].publisher + (sources[n - 1].date ? ', ' + sources[n - 1].date : '') + ')' : '')).join('\\n') : '   No headlines found.')).join('\\n');
+const parts = { meeting: g.meeting, about: (all[0] && all[0].about) || 'Not given.', checks: text || 'No claims to check.', research };
+const PROMPT = """ + json.dumps(DECK_FINDINGS_PROMPT) + """;
+const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
+return [{ json: { searched: searched.map(x => ({ query: x.query, slide_index: x.slide_index, claim: x.claim, found: x.found })), about: parts.about,
+                  headlines: searched.reduce((a, x) => a + x.found, 0), sources, prompt } }];""",
+                   [{"searched": [], "about": "", "headlines": 0, "sources": [], "prompt": ""}])
+    c += llm_nodes("deckWeigh", "Weigh the evidence", "$json.prompt", GEMINI_REPLY, schema=DECK_FINDINGS_SCHEMA,
+                   source="$('Gather what it found').first().json")
+    c += code_node("deckBuild", "The findings", REPLY_JS + """
+// Held to the sources: each finding on a claim that was searched, citing only sources n8n found; a finding with no source can only be
+// "unproven". Challenged first, then backed, then unproven.
+const r = $('Read the deck').first().json;
+const g = $('Gather what it found').first().json;
 const d = JSON.parse(replyText($json) || '{}');
-const items = (d.items || []).filter(x => g.indexes.includes(x.slide_index) && x.claim && x.pushback).slice(0, 5)
-  .map(x => ({ slide_index: x.slide_index, claim: x.claim, pushback: x.pushback, who: x.who || '', fix: x.fix || '',
-               source: g.sources[x.source - 1] ? { title: g.sources[x.source - 1].title, url: g.sources[x.source - 1].url } : null }));
-const review = { items, summary: d.summary || '', at: new Date().toISOString() };
-return [{ json: { meeting_id: g.meeting_id, found: g.found, review, deck_review: JSON.stringify(review), updated_at: review.at } }];""",
-                   [{"meeting_id": "evt123", "found": True, "review": {"items": []}, "deck_review": "{}"}])
-    c += make_node("reviewKnown", "ifElse", "n8n-nodes-base.if", 2.3, "A known meeting?", {
+const order = { challenged: 0, backed: 1, unproven: 2 };
+const used = new Set();
+const findings = (d.findings || []).map(f => {
+  const x = g.searched[f.check - 1];
+  if (!x || used.has(f.check) || !f.fact) return null;
+  used.add(f.check);
+  const sources = [...new Set(f.sources || [])].map(n => g.sources[n - 1]).filter(Boolean).slice(0, 3);
+  const verdict = sources.length && order[f.verdict] != null ? f.verdict : 'unproven';
+  return { slide_index: x.slide_index, claim: x.claim, verdict, fact: String(f.fact), question: String(f.question || ''), sources };
+}).filter(Boolean).sort((a, b) => order[a.verdict] - order[b.verdict]);
+const research = { about: g.about === 'Not given.' ? '' : g.about, searched: g.searched.map(x => ({ query: x.query, slide_index: x.slide_index, found: x.found })),
+                   findings, at: new Date().toISOString() };
+return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_research: JSON.stringify(research), updated_at: research.at } }];""",
+                   [{"meeting_id": "evt123", "found": True, "research": {"findings": []}, "deck_research": "{}"}])
+    c += make_node("deckKnown", "ifElse", "n8n-nodes-base.if", 2.3, "A known meeting?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
             "conditions": [{"leftValue": Expr("{{ $json.found }}"), "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": True}}],
             "combinator": "and",
         }, "options": {},
     }, [{"found": True}])
-    # Saved on the meeting, so the next /prep aims the panel at the same points
-    c += make_node("reviewSave", "node", "n8n-nodes-base.dataTable", 1.1, "Save it on the meeting", {
+    # Saved on the meeting: the next /prep asks about the findings, and /debrief checks what was said against them
+    c += make_node("deckSave", "node", "n8n-nodes-base.dataTable", 1.1, "Save it on the meeting", {
         "resource": "row", "operation": "update", "dataTableId": MEETINGS_TABLE, "matchType": "allConditions",
         "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.meeting_id }}")}]},
-        "columns": {"mappingMode": "defineBelow", "value": {"deck_review": Expr("{{ $json.deck_review }}"), "updated_at": Expr("{{ $json.updated_at }}")},
+        "columns": {"mappingMode": "defineBelow", "value": {"deck_research": Expr("{{ $json.deck_research }}"), "updated_at": Expr("{{ $json.updated_at }}")},
                     "matchingColumns": [], "schema": [
-                        {"id": "deck_review", "displayName": "deck_review", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True},
+                        {"id": "deck_research", "displayName": "deck_research", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True},
                         {"id": "updated_at", "displayName": "updated_at", "required": False, "defaultMatch": False, "display": True, "type": "string", "canBeUsedToMatch": True}]},
     }, [{"id": 1}], extra={"onError": "continueRegularOutput", "alwaysOutputData": True})
-    c += make_node("reviewReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the review", {
-        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('The review').first().json.review) }}"), "options": {},
+    c += make_node("deckReply", "node", "n8n-nodes-base.respondToWebhook", 1.5, "Send the findings", {
+        "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('The findings').first().json.research) }}"), "options": {},
     }, [{}])
-    c += ("const about = sticky('## DryRun deck review\\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-review, docs/CONTRACT.md): "
-          "checks its claims against the brief (the research and its sources, the attendees and what they care about) and says where it will "
-          "get pushback, from whom, and how to fix it. Saved on the meeting, so the next rehearsal presses on the same points.', [reviewTrigger], { color: 4 });\n\n")
-    c += """export default workflow('dryrun-deck-review', 'DryRun deck review')
+    c += ("const about = sticky('## DryRun deck research\\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-research, docs/CONTRACT.md): "
+          "the deck is a source, not something to mark. n8n picks the claims an outsider could check, searches Google News for each in the deck\\'s "
+          "own words, and weighs what it found: backed, challenged or unproven, with the sources. Saved on the meeting: the next rehearsal asks "
+          "about them, and the debrief checks what the presenter said against them.', [deckTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-deck-research', 'DryRun deck research')
   .add(about)
-  .add(reviewTrigger)
-  .to(reviewMeeting)
-  .to(reviewGather)
-  .to(reviewJudge)
-  .to(reviewBuild)
-  .to(reviewKnown
-    .onTrue(reviewSave.to(reviewReply))
-    .onFalse(reviewReply))
-  .add(reviewJudge.onError(reviewJudgeGroq))
-  .add(reviewJudgeGroq)
-  .to(reviewBuild)
-  .group('Review', [reviewMeeting, reviewGather, reviewJudge, reviewJudgeGroq, reviewBuild], { description: 'Checks the deck against the brief and its sources' })
-  .group('Save', [reviewKnown, reviewSave], { description: 'Saves the review on the meeting for the next rehearsal' });
+  .add(deckTrigger)
+  .to(deckMeeting)
+  .to(deckRead)
+  .to(deckClaims)
+  .to(deckSearches)
+  .to(deckNews)
+  .to(deckGather)
+  .to(deckWeigh)
+  .to(deckBuild)
+  .to(deckKnown
+    .onTrue(deckSave.to(deckReply))
+    .onFalse(deckReply))
+  .add(deckClaims.onError(deckClaimsGroq))
+  .add(deckClaimsGroq)
+  .to(deckSearches)
+  .add(deckWeigh.onError(deckWeighGroq))
+  .add(deckWeighGroq)
+  .to(deckBuild)
+  .group('Read the deck', [deckMeeting, deckRead, deckClaims, deckClaimsGroq, deckSearches], { description: 'Picks the claims an outsider could check and a news search for each' })
+  .group('Research', [deckNews, deckGather, deckWeigh, deckWeighGroq, deckBuild], { description: 'Searches the news per claim and weighs what it found, held to the sources' });
 """
     return c
 
@@ -2515,6 +2599,6 @@ return [{ json: { meeting_id: r.meeting_id, after: JSON.stringify(after) } }];""
 
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-review.ts", deck_review()), ("twin.ts", twin()), ("twin-update.ts", twin_update()), ("after-meeting.ts", after_meeting())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-research.ts", deck_research()), ("twin.ts", twin()), ("twin-update.ts", twin_update()), ("after-meeting.ts", after_meeting())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")
