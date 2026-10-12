@@ -381,7 +381,7 @@ DEBRIEF_SCHEMA = {"type": "object", "properties": {
 # presenter's own product, which no outside source has written about; what a well-read panel knows is the competition. n8n searches the
 # news for it, and the panel asks "how is yours different?" by name. It never checks the presenter's claims or advises on the slides.
 DECK_SEARCH_PROMPT = """You are preparing a presenter for a real meeting. Read their deck and plan how to find who else already does what
-it pitches: competitors, big companies with a similar product, startups, government or defence programmes, research labs.
+it pitches: competitors, big companies with a similar product, startups, government programmes, research labs.
 
 The meeting: {meeting}
 What the presenter offers and wants from it: {side}
@@ -390,10 +390,10 @@ The deck, slide by slide (index from 0):
 
 about: one sentence on what the deck pitches and to whom, in plain words.
 searches: 2 or 3 Google News searches that would surface others doing the same thing, the most specific first. Each:
-- query: 3 to 5 words naming the kind of product or solution the way a journalist would (e.g. "engine health monitoring drones",
-  "AI route optimisation logistics"), never the presenter's own product name, project title or team; spell out acronyms the way the
+- query: 3 to 5 words naming the kind of product or solution the way a journalist would (e.g. "AI route optimisation logistics",
+  "remote patient monitoring app", "solar inverter fault detection"), never the presenter's own product name, project title or team; spell out acronyms the way the
   deck means them; no quotes or operators;
-- broad: a broader search, 2 or 3 words, for when the first finds nothing (e.g. "predictive maintenance aircraft");
+- broad: a broader search, 2 or 3 words, for when the first finds nothing (e.g. "fleet management software");
 - slide_index: the slide where a panel would bring the competition up: the slide that says what is new or different, or the solution
   slide (never the title slide unless the deck has nothing else).
 Answer in JSON."""
@@ -417,17 +417,17 @@ Headlines found (numbered sources; many will share a word or an acronym but be a
 
 others: up to 4 companies, products, programmes or labs that the headlines show already building or running the same or nearly the
 same thing as the deck (the same problem for the same kind of user, or the same technology for the same use). Leave out: a headline
-about the wider field (e.g. "AI in defence", "drones in agriculture"), a trend piece, explainer or opinion, a company only investing,
+about the wider field (e.g. "AI in healthcare", "the EV boom"), a trend piece, explainer or opinion, a company only investing,
 hiring or seeking partners, and a hobby project. Most decks have 0 to 2; an empty list is a fine answer. Each:
-- name: who does the work, as the headline names them (e.g. "HAL", "an IIT Delhi startup"); never the publisher, the outlet or a
-  think tank writing about it (if the headline doesn't say who, name the programme, e.g. "the Su-30 MKI health index");
+- name: who does the work, as the headline names them (e.g. "Tata Motors", "a Pune startup"); never the publisher, the outlet or a
+  think tank writing about it (if the headline doesn't say who, name the programme, e.g. "the state's telemedicine programme");
 - what: what the source says they do, in one plain sentence, with the date where the headline gives one; nothing beyond the headline;
 - close: "same" if they do what the deck pitches, "near" if it overlaps (the same technology on the same kind of machine or user, or
-  the same problem for the same user solved another way); the same technology in an unrelated field (railways for an aircraft deck)
-  is neither: leave it out;
+  the same problem for the same user solved another way); the same technology in an unrelated industry (e.g. AI
+  fault detection on railway tracks, for a deck about factory machines) is neither: leave it out;
 - slide_index: the slide where the panel would bring them up (from the slides above);
-- question: how someone on the panel would put it, naming them, in one short sentence (e.g. "HAL already monitors these engines.
-  What does yours do that theirs doesn't?");
+- question: how someone on the panel would put it, naming them, in one short sentence (e.g. "A Pune startup already plans routes for
+  fleets like ours. What does yours do that theirs doesn't?");
 - sources: the numbers of the headlines it rests on (at least one).
 Answer in JSON."""
 
