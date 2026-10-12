@@ -12,8 +12,12 @@ import { getProfile, saveProfile } from "@/lib/profile";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+// Seating or briefing a panel replaces the room's run: never while one is live (it would be lost, without a debrief)
+const LIVE_RUN = "A rehearsal is running. End it on the dashboard first, so it gets its debrief.";
+
 // Seats this meeting's practice panel in the room (the headset follows it), then opens the practice table
 export async function practiseAction(meetingId: string): Promise<Result<never>> {
+  if (getRoom().phase === "live") return { ok: false, error: LIVE_RUN };
   const detail = await getMeeting(meetingId);
   if (!detail?.proposal) return { ok: false, error: "This meeting's brief isn't ready yet." };
   const { meeting, proposal } = detail;
@@ -122,6 +126,7 @@ export async function briefPanelAction(
   if (problem) return { ok: false, error: problem };
   const roleless = panel.filter((m) => !m.role.trim()).map((m) => m.display_name || "someone");
   if (roleless.length) return { ok: false, error: `Add a role for ${roleless.join(" and ")}: what they do shapes what they push on.` };
+  if (getRoom().phase === "live") return { ok: false, error: LIVE_RUN };
   // The sample is briefed on the laptop, with its own panel: no n8n call
   if (draftId === SAMPLE_ID) redirect(`/s/${briefSample()}`);
 
@@ -141,7 +146,7 @@ export async function rebriefAction(): Promise<Result<never>> {
   const room = getRoom();
   const brief = getBrief();
   if (!brief || room.panel.length === 0) return { ok: false, error: "There's no panel in the room to brief again." };
-  if (room.phase === "live") return { ok: false, error: "End the run before briefing the panel again." };
+  if (room.phase === "live") return { ok: false, error: LIVE_RUN };
   // The sample's script is fixed: briefing it again just reseats it, with no n8n call
   if (room.scripted) redirect(`/s/${briefSample()}`);
   let sessionId: string;
