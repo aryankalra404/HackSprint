@@ -92,17 +92,20 @@ One **twin** per real person, keyed by email, in the **DryRun people** data tabl
 4. **Rehearsal prep** reads the twins of panel members with a `twin_email` (filled in by the laptop from the brief's attendees): what they actually raised becomes objections with `source: "twin"`, the date and the source; their preferences shape their manner.
 The twin page draws the twin as a halftone portrait that fills in with what's known, a tree from the person to every fact and source, a footnoted file and a timeline to rewind; one renderer plays the live build, the saved one (Replay, no n8n call) and the timeline. The sample twin (Rajiv Menon of the sample meeting) lives in `web/src/lib/mock/twin.ts` and never reaches n8n.
 
-## Workflow 4: After the real meeting (twins step 5, not built: ask first)
-Triggered when a prepared meeting's end time has passed. n8n asks the presenter "How did it go?" by email, with a link to the meeting page.
-1. **Take in what happened.** By default, a one-minute voice note recorded on the meeting page and transcribed (Sarvam or Gemini). When available, a Google Meet transcript (a Doc in Drive, attached to the calendar event) or a note-taker webhook (Fireflies, Otter, Fathom, tl;dv) is used instead.
-2. **Extract per person:** what each attendee raised, objected to or asked for, and what the presenter promised.
-3. **Act:**
-   - draft the follow-up email that answers the open points, and send it only after the presenter approves it (Gmail send-and-wait)
-   - book the next step on the calendar
-   - update each attendee's twin in the **DryRun people** data table (keyed by email)
-   - mark the meeting `done`
+## Workflow 4: After the real meeting (twins step 5, built 12 Oct, contract 0.28): **DryRun after the meeting**
+Once a meeting has started, its page asks "How did it go?" (home lists meetings until 12 hours after they start). The presenter records a voice note in the browser (16 kHz mono, the rehearsal's mic code, up to 4 minutes) and/or types notes.
+1. **The laptop** (`POST /api/after-meeting`) cuts the recording into pieces of at most 28 s, each ending at the quietest moment of its last 6 s so no word is split, compresses each to AAC and sends them with the notes and the owner's address to `POST /after-meeting`. One execution.
+2. **Take in what happened.** Sarvam (`saaras:v4`, language detected, the attendees' names and the company as key terms) transcribes each piece; if any piece fails, all go to Groq Whisper. Typed notes are added after the transcript.
+3. **Extract per person** (Gemini, Groq if it fails): what each attendee raised, what the presenter promised, what was decided, the next step, each with a word-for-word quote. A Code node keeps only attendees from the invite (by email) and only quoted items.
+4. **Hit rate:** what each person really raised against what their practice seat asked in the last debriefed rehearsal of this meeting (by `twin_email` or name). Only the counts and the matched real facts are kept, never the practice lines.
+5. **Act:**
+   - update each attendee's twin in **DryRun people** (or start one): the notes as a connected `meeting_note` source, the facts, the meeting and the prediction
+   - save `after` on the meeting and mark it `done`; answer the laptop, which marks its copies of those twins stale so each is read again once
+   - draft the follow-up and email it to the presenter with Send it / Don't send (Gmail send-and-wait, in the same execution, up to 2 days); send it to the attendees only on "Send it", and save the answer on the meeting
+The meeting page then shows "How it went": per person, the hit rate, the follow-up's status and the transcript. The twin page shows the hit rate per real meeting (the "predicted" number, a list of what was and wasn't predicted, and the score on the timeline's meeting diamond).
+Not built: booking the next step on the calendar, Google Meet transcripts or note-taker webhooks as the input, and an email nudging the presenter after the meeting. Notes sent twice for the same meeting used to keep the first note's facts; the fix in "Hold to the rules" is built but not deployed yet (12 Oct).
 
-The people table exists now (twins, above): the brief already shows "Since last time" and the next rehearsal seats each known attendee from their twin. Not built: prep's triage choosing a catch-up brief instead of full research for a known attendee.
+The people table holds the twins (above): the brief shows "Since last time" and the next rehearsal seats each known attendee from their twin. Not built: prep's triage choosing a catch-up brief instead of full research for a known attendee.
 
 ## Changes from the submitted deck
 | Submitted idea | v1 | Why |
@@ -112,5 +115,5 @@ The people table exists now (twins, above): the brief already shows "Since last 
 | BigQuery + Firebase dashboard | n8n data tables + web debrief page | Faster to build, and judges can inspect it in n8n |
 | No follow-up actions | Email, calendar drill, adaptive next session | PS 22 asks for systems that act with minimal human input |
 | Upload a deck by hand to start | Pre-flight starts by itself from a calendar invite (built) | Removes the repetitive prep work, which is the heart of PS 22 |
-| The loop closes only across rehearsals | Twins of real people, built from real sources (12 Oct); learning from real meetings is WF4 (next) | The real meeting is what matters, and memory per account is a moat investors understand |
+| The loop closes only across rehearsals | Twins of real people, built from real sources (12 Oct); learning from real meetings is WF4 (built 12 Oct, with the hit rate) | The real meeting is what matters, and memory per account is a moat investors understand |
 | Windows desktop build | Web client | Anyone can try it without a headset |
