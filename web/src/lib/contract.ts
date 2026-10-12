@@ -376,6 +376,17 @@ export interface OwedAnswer {
   sources: { title: string; url: string }[];
 }
 
+// What the presenter said against one finding of the deck research (0.30)
+export interface ResearchCheck {
+  slide_index: number;
+  claim: string;
+  verdict: "held" | "contradicted" | "unbacked" | "not_said";
+  // Copied exactly from the transcript; empty for "not_said"
+  quote: string;
+  note: string;
+  sources: { title: string; url: string }[];
+}
+
 // Something that went wrong on the system's side, which the debrief discounts (0.26)
 export interface Trouble {
   t: number;
@@ -399,6 +410,8 @@ export interface Debrief {
   owed?: OwedAnswer[];
   trouble?: Trouble[];
   pitch?: { seconds: number; words: number; scored: boolean };
+  // 0.30: what was said against each finding of the deck research; missing before 0.30
+  checks?: ResearchCheck[];
   actions_taken: string[];
 }
 
@@ -432,20 +445,29 @@ export function isDebriefed(s: SessionRecord): s is DebriefedSession {
   return s.telemetry != null && s.debrief != null;
 }
 
-// Where the deck will get pushback (0.26, POST /deck-review): n8n's check of the slides against the brief's research
-export interface DeckReviewItem {
-  slide_index: number;
-  claim: string;
-  pushback: string;
-  // null: from what the attendees care about, or a claim with nothing behind it
-  source: { title: string; url: string } | null;
-  who: string;
-  fix: string;
+// What n8n found checking the deck's claims against the news (0.30, POST /deck-research). The deck is a source, not something to mark.
+export interface DeckSource {
+  title: string;
+  url: string;
+  publisher: string;
+  date: string;
 }
 
-export interface DeckReview {
-  items: DeckReviewItem[];
-  summary: string;
+export interface DeckFinding {
+  slide_index: number;
+  claim: string;
+  verdict: "backed" | "challenged" | "unproven";
+  // What the sources say; for "unproven", that n8n found nothing either way
+  fact: string;
+  // How a panel would put it: practice, never shown as a fact
+  question: string;
+  sources: DeckSource[];
+}
+
+export interface DeckResearch {
+  about: string;
+  searched: { query: string; slide_index: number; found: number }[];
+  findings: DeckFinding[];
   at: string;
 }
 

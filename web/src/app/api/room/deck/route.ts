@@ -1,6 +1,6 @@
 import { convertDeck, DeckError } from "@/lib/deck";
 import { getBrief, setDeck } from "@/lib/room";
-import { startDeckReview } from "@/lib/deckReview";
+import { startDeckResearch } from "@/lib/deckResearch";
 import { SAMPLE_ID } from "@/lib/mock/sample";
 
 // The presenter uploads their deck from the web (contract: POST /api/room/deck). The laptop turns it into slide images,
@@ -12,9 +12,9 @@ export async function POST(request: Request) {
   try {
     const deck = await convertDeck(file.name, Buffer.from(await file.arrayBuffer()));
     const room = setDeck(deck);
-    // n8n checks the deck against the meeting's brief (0.26), in the background
+    // n8n researches the deck's claims in the news (0.30), in the background
     const brief = getBrief();
-    if (brief && brief.draft_id !== SAMPLE_ID) startDeckReview(brief.draft_id, deck, brief.goal?.text);
+    if (brief && brief.draft_id !== SAMPLE_ID) startDeckResearch(brief.draft_id, deck, brief.goal?.text);
     return Response.json(room);
   } catch (e) {
     if (e instanceof DeckError) return Response.json({ error: e.message }, { status: e.status });
