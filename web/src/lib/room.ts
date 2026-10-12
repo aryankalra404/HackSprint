@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { BriefInput, Deck, DraftMember, LiveNow, PanelProposal, PitchSuggestion, Room, SessionAction, SessionActor } from "./contract";
+import type { BriefInput, Deck, DraftMember, LiveNow, PanelProposal, PitchSuggestion, Room, SessionAction, SessionActor, TurnMode } from "./contract";
 import { removeDeckFiles } from "./deck";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "./personas";
 
@@ -17,8 +17,15 @@ interface Store {
   headsetSeen: number;
   headsetPolling: number;
   headsetVia: "wifi" | "usb";
-  // The slide changes during the live run, for the debrief (contract: POST /debrief events); not part of the room
-  slideLog: { startedAt: string; events: { t: number; type: "slide"; slide_index: number }[] } | null;
+  // What the debrief needs from the live run that isn't in the room (contract: POST /debrief events): the slide changes, and the turns
+  // n8n didn't answer (0.26: turn_failed, so the silence counts as the system's). Saved with the room, so a restart mid-run keeps them.
+  runLog: RunLog | null;
+}
+
+interface RunLog {
+  startedAt: string;
+  events: { t: number; type: "slide"; slide_index: number }[];
+  failed: { t: number; mode: TurnMode }[];
 }
 
 const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5, rehearse_in: "vr", debrief: null };
@@ -28,14 +35,18 @@ const g = globalThis as { __dryrunRoom?: Store };
 
 function store(): Store {
   if (!g.__dryrunRoom) {
-    let saved: Pick<Store, "room" | "brief"> = { room: EMPTY, brief: null };
+    let saved: Pick<Store, "room" | "brief"> & { runLog?: RunLog | null } = { room: EMPTY, brief: null };
     try {
       saved = JSON.parse(readFileSync(FILE, "utf8"));
     } catch {
       // No saved room yet
     }
     // A room saved by an older version may lack newer fields
-    g.__dryrunRoom = { ...saved, room: { ...EMPTY, ...saved.room }, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb", slideLog: null };
+    const room = { ...EMPTY, ...saved.room };
+    // A debrief is followed in memory: one still running when the laptop stopped can't finish, so it shows as failed, with Try again
+    if (room.debrief?.state === "running")
+      room.debrief = { ...room.debrief, state: "failed", error: "The laptop restarted while n8n was debriefing this run. Try again." };
+    g.__dryrunRoom = { room, brief: saved.brief, waiters: new Set(), headsetSeen: 0, headsetPolling: 0, headsetVia: "usb", runLog: saved.runLog ?? null };
   }
   return g.__dryrunRoom;
 }
@@ -48,15 +59,19 @@ export function getBrief(): Store["brief"] {
   return store().brief;
 }
 
+function save(s: Store): void {
+  try {
+    writeFileSync(FILE, JSON.stringify({ room: s.room, brief: s.brief, runLog: s.runLog }));
+  } catch {
+    // Saving is a convenience; the room still works in memory
+  }
+}
+
 export function updateRoom(patch: Partial<Omit<Room, "version">>, brief?: Store["brief"]): Room {
   const s = store();
   s.room = { ...s.room, ...patch, version: s.room.version + 1 };
   if (brief !== undefined) s.brief = brief;
-  try {
-    writeFileSync(FILE, JSON.stringify({ room: s.room, brief: s.brief }));
-  } catch {
-    // Saving is a convenience; the room still works in memory
-  }
+  save(s);
   for (const wake of s.waiters) wake();
   s.waiters.clear();
   return s.room;
@@ -105,7 +120,7 @@ export function changeSession(action: SessionAction, by: SessionActor): { ok: tr
   const now = new Date().toISOString();
   if (action === "start") {
     if (room.phase !== "briefed") return { ok: false, error: `Can't start: the room is ${room.phase}, not briefed.`, room };
-    store().slideLog = { startedAt: now, events: [{ t: 0, type: "slide", slide_index: 0 }] };
+    store().runLog = { startedAt: now, events: [{ t: 0, type: "slide", slide_index: 0 }], failed: [] };
     return { ok: true, room: updateRoom({ phase: "live", slide: 0, debrief: null, live: { started_at: now, started_by: by, ended_at: null, ended_by: null, stage: "opening", feed: [] } }) };
   }
   if (action === "restart") {
@@ -143,7 +158,7 @@ export function setSlide(index: number): { ok: true; room: Room } | { ok: false;
   const slide = Math.max(0, Math.min(room.deck.slides.length - 1, Math.trunc(index)));
   if (slide === room.slide) return { ok: true, room };
   // During a run, each change goes in the debrief's slide log, timed from the start
-  const log = store().slideLog;
+  const log = store().runLog;
   if (room.phase === "live" && room.live && log?.startedAt === room.live.started_at)
     log.events.push({ t: Math.round((Date.now() - Date.parse(room.live.started_at)) / 100) / 10, type: "slide", slide_index: slide });
   return { ok: true, room: updateRoom({ slide }) };
@@ -163,6 +178,20 @@ export function panelProblem(panel: DraftMember[]): string | null {
 
 // The slide changes of a run, oldest first (for the debrief)
 export function slideLog(startedAt: string): { t: number; type: "slide"; slide_index: number }[] {
-  const log = store().slideLog;
+  const log = store().runLog;
   return log?.startedAt === startedAt ? log.events : [{ t: 0, type: "slide", slide_index: 0 }];
+}
+
+// A turn n8n didn't answer in time
+export function logFailedTurn(startedAt: string, t: number, mode: TurnMode): void {
+  const log = store().runLog;
+  if (log?.startedAt !== startedAt) return;
+  log.failed.push({ t, mode });
+  save(store());
+}
+
+// The turns of a run n8n didn't answer (for the debrief)
+export function failedTurns(startedAt: string): { t: number; type: "turn_failed"; mode: TurnMode }[] {
+  const log = store().runLog;
+  return log?.startedAt === startedAt ? log.failed.map((f) => ({ ...f, type: "turn_failed" as const })) : [];
 }

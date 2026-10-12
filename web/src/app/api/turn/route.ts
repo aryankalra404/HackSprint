@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   // The sample's scripted run and stand-in turns need no n8n
   if (!N8N_URL && !FAKE_TURNS && !getRoom().scripted) return Response.json({ error: "n8n isn't connected (DRYRUN_N8N_URL is unset)" }, { status: 503 });
   try {
-    return Response.json(await takeTurn((await request.json()) as TurnRequest));
+    return Response.json(await takeTurn((await request.json()) as TurnRequest, request.signal));
   } catch (err) {
     if (err instanceof TurnError) return Response.json({ error: err.message }, { status: err.status });
     return Response.json({ error: err instanceof Error ? err.message : "The turn failed" }, { status: 500 });

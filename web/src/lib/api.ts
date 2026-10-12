@@ -71,11 +71,12 @@ export function prepSteps(bundle: Bundle): PrepStep[] {
   return steps;
 }
 
-export async function postToN8n<T>(path: string, body: unknown): Promise<T> {
+export async function postToN8n<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${N8N_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) throw new Error(`n8n ${path} failed: ${res.status}`);
   return res.json();

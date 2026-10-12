@@ -1,8 +1,9 @@
 import type { Bundle, LiveSession, LoggedTurn, Reaction, Thread, ThinkingTurn, TurnContext, TurnRequest, TurnResponse, VoicedLine } from "./contract";
 import { postToN8n } from "./api";
 import { compressSpeech, saveAudio } from "./audio";
-import { getRoom, updateRoom } from "./room";
+import { getRoom, logFailedTurn, updateRoom } from "./room";
 import { sampleReply } from "./sample";
+import { pitchEndTimeoutS, turnTimeoutS } from "./rehearse/turn-taker";
 
 // The laptop's side of a turn (contract: POST /turn). The headset sends what the presenter said; the laptop adds what n8n needs to
 // decide (the bundle, the turns so far, the questions still open), so n8n keeps no state. n8n's voices are saved here and handed to
@@ -11,6 +12,11 @@ import { sampleReply } from "./sample";
 // DRYRUN_FAKE_TURNS=1 answers turns from the bundle instead of n8n (stand-in turns), so clients can be built without spending executions
 export const FAKE_TURNS = process.env.DRYRUN_FAKE_TURNS === "1";
 const FAKE_DELAY_MS = 2_000;
+
+// The clients give up on a turn after turnTimeoutS (pitchEndTimeoutS for the pitch end; the headset uses the same numbers). The laptop
+// gives up on n8n this much sooner, for its own work either side (compressing the speech, saving the voices), so a reply the client
+// will never play doesn't go in the feed: the debrief would score questions nobody heard.
+const LAPTOP_MARGIN_S = 2;
 
 export class TurnError extends Error {
   constructor(
@@ -24,14 +30,6 @@ export class TurnError extends Error {
 // The bundle without audio: the lines' voices stay on the laptop
 function withoutAudio(bundle: Bundle): Bundle {
   return { ...bundle, lines: bundle.lines.map(({ audio_base64: _a, audio_url: _u, ...l }) => l) };
-}
-
-// Turns n8n didn't answer, per run (keyed by its start), so the debrief knows the silence was the system's (contract 0.26: turn_failed)
-const g = globalThis as { __dryrunFailedTurns?: Map<string, { t: number; mode: TurnRequest["mode"] }[]> };
-const failed = (g.__dryrunFailedTurns ??= new Map<string, { t: number; mode: TurnRequest["mode"] }[]>());
-
-export function failedTurns(startedAt: string): { t: number; type: "turn_failed"; mode: TurnRequest["mode"] }[] {
-  return (failed.get(startedAt) ?? []).map((f) => ({ ...f, type: "turn_failed" as const }));
 }
 
 // Questions nobody has answered yet: a question stays open until an answer with that person's asked_by arrives
@@ -68,7 +66,8 @@ function stageAfter(stage: LiveSession["stage"], turn: LoggedTurn): LiveSession[
   return stage;
 }
 
-export async function takeTurn(body: TurnRequest): Promise<TurnResponse> {
+// `client` is the request's signal: aborted when the client stops waiting
+export async function takeTurn(body: TurnRequest, client?: AbortSignal): Promise<TurnResponse> {
   if (!body || !["opening", "segment", "answer", "pitch_end"].includes(body.mode)) throw new TurnError("mode must be opening, segment, answer or pitch_end", 400);
   const room = getRoom();
   if (room.phase !== "live" || !room.live || !room.bundle) throw new TurnError(`The room is ${room.phase}, not live.`, 409);
@@ -77,7 +76,7 @@ export async function takeTurn(body: TurnRequest): Promise<TurnResponse> {
   const thinking: ThinkingTurn = { id: `${room.live.started_at}:${body.t}:${body.mode}`, mode: body.mode, slide_index: body.slide_index, t: body.t, ...(body.asked_by ? { asked_by: body.asked_by } : {}) };
   setThinking(room.live.started_at, (list) => [...list, thinking]);
   try {
-    return await forward(body, room as typeof room & { live: LiveSession; bundle: Bundle });
+    return await forward(body, room as typeof room & { live: LiveSession; bundle: Bundle }, client);
   } finally {
     setThinking(room.live.started_at, (list) => list.filter((x) => x.id !== thinking.id));
   }
@@ -90,7 +89,7 @@ function setThinking(startedAt: string, change: (list: ThinkingTurn[]) => Thinki
   updateRoom({ live: { ...now.live, thinking: change(now.live.thinking ?? []) } });
 }
 
-async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { live: LiveSession; bundle: Bundle }): Promise<TurnResponse> {
+async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { live: LiveSession; bundle: Bundle }, client?: AbortSignal): Promise<TurnResponse> {
   const feed = room.live.feed ?? [];
   let reply: TurnResponse;
   if (room.scripted) {
@@ -100,14 +99,17 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     await new Promise((r) => setTimeout(r, FAKE_DELAY_MS));
     reply = standInReply(body, room.bundle, feed);
   } else {
+    const limitS = (body.mode === "pitch_end" ? pitchEndTimeoutS : turnTimeoutS) - LAPTOP_MARGIN_S;
+    const signal = AbortSignal.any([AbortSignal.timeout(limitS * 1000), ...(client ? [client] : [])]);
     const { audio_wav_base64, ...rest } = body;
     const speech = await compressSpeech(audio_wav_base64 ?? "");
     const context: TurnContext = { bundle: withoutAudio(room.bundle), elapsed_s: body.t, turns: feed, threads: threadsFrom(feed), pending: pendingQuestions(feed) };
     try {
-      reply = await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context });
+      reply = await postToN8n<TurnResponse>("/turn", { ...rest, audio_base64: speech.base64, audio_format: speech.format, context }, signal);
     } catch (err) {
-      failed.set(room.live.started_at, [...(failed.get(room.live.started_at) ?? []), { t: body.t, mode: body.mode }]);
-      throw new TurnError(err instanceof Error ? err.message : "n8n failed", 502);
+      logFailedTurn(room.live.started_at, body.t, body.mode);
+      const late = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      throw new TurnError(late ? `n8n took longer than ${limitS} s, so the turn was dropped` : err instanceof Error ? err.message : "n8n failed", 502);
     }
   }
 
@@ -132,6 +134,11 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     answer_verdict: reply.answer_verdict ?? null,
     ...(reply.threads?.length ? { threads: reply.threads } : {}),
   };
+  // The client stopped waiting while the voices were saved: it never plays them, so the turn counts as failed, not said
+  if (client?.aborted) {
+    logFailedTurn(room.live.started_at, body.t, body.mode);
+    throw new TurnError("The client stopped waiting for this turn", 502);
+  }
   // The room may have moved on while n8n worked (ended, restarted): only a live session of the same run keeps the turn
   const now = getRoom();
   if (now.phase === "live" && now.live && now.live.started_at === room.live.started_at) {
