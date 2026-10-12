@@ -21,34 +21,68 @@ Pitch line: **"Every real meeting makes the twin sharper."** The hit rate is the
 - **The twin page (`/people/[email]`):** below.
 - **After a real meeting:** the meeting page asks "How did it go?" and you record the one-minute voice note (WF4, below).
 
-## The twin page: watching a twin being made
-This is the page judges remember. It should look like a briefing file being assembled live, in the app's paper-and-ink style, not a sci-fi hologram.
+## The twin page: a portrait drawn from evidence
+This is the page judges remember. The idea: **the person is literally drawn by what n8n finds.** Their portrait is printed as a halftone (newspaper dots), and every fact n8n connects adds dots, so a new contact is a faint sketch and someone you've met three times is a full portrait. Around it, a tree grows from the person out to every fact and, at the edge, every source. It should look like a well-made printed briefing file, drawn in ink: the app's paper-and-ink style, not a sci-fi hologram.
 
+### Layout (desktop)
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Rajiv Mehta         Kaveri Logistics, finance (from his signature, 3 Oct)    │
-│ 3 real meetings   23 facts   2 to check     Predicted 3 of 4 last time ▲      │
-├───────────────────────────────────────┬──────────────────────────────────────┤
-│        ✉ 3 Oct ─────┐                 │ Known                                │
-│   ✉ 21 Sep ───┐     │    ◎ 14 Oct     │  • Asked for a pilot proposal  ✉ 3 Oct│
-│               ╲     │   ╱  meeting    │  • Wants Mumbai lane first     ◎ 14 Oct│
-│                (  RAJIV  )            │  • Budget signed off by CEO    ✉ 21 Sep│
-│               ╱  twin    ╲            │ n8n's reading (labelled)             │
-│   🌐 kaveri.in/team ┄┄┄?   ✎ your note │  • Pushes on cost (4 of 5 emails)    │
-│     "Rajiv Mehta, CFO"                │ You promised                          │
-│     [ Same person ✓ ] [ Not him ✗ ]   │  • Case study by 18 Oct  ⚠ overdue   │
-│                                       │ What he raised, meeting by meeting    │
-│  ── connected   ┄┄ needs your OK      │ Prediction  ▁▃▆ 1/4  2/4  3/4         │
-└───────────────────────────────────────┴──────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│  People / Rajiv Mehta                                    [Tree | List]  [Print file]│
+├──────────────────────────────────────────────────┬─────────────────────────────────┤
+│   ✉ 21 Sep          ✉ 3 Oct        ◎ 14 Oct      │ RAJIV MEHTA  (wide Archivo)     │
+│      ╲                 │              ╱          │ Finance, Kaveri Logistics ¹     │
+│   Wants Mumbai lane ── │ ── Asked for a pilot    │                                 │
+│        first           │      proposal           │  3        23       2      3/4   │
+│            ╲   WHAT HE RAISED   ╱               │ meetings facts  to check predicted│
+│   WHO HE IS ── ░▒▓ halftone ▓▒░ ── HE CARES ABOUT│                                 │
+│   Finance ¹    ▒▓ portrait ▓▒     Cost ⁴        │ Known                           │
+│                ░▒▓▓▓▓▓▓▓▒░                     │  Asked for a pilot proposal ²   │
+│            ╱  YOU PROMISED  ╲                  │  Budget signed off by CEO ³     │
+│   Case study by 18 Oct ⚠   ┄┄ "Rajiv Mehta,     │ n8n's reading                   │
+│      (overdue)                CFO" kaveri.in ?  │  Pushes on cost, 4 emails ⁴     │
+│                              [Same ✓] [Not ✗]   │ You promised                    │
+│                                                 │  ⚠ Case study, due 18 Oct       │
+│  14:02:11  Reading 7 emails with rajiv@kaveri.in│ ─────────────                   │
+│                                                 │ ¹ Signature, email of 3 Oct     │
+│                                                 │ ² "Could you send a pilot…" 3 Oct│
+├──────────────────────────────────────────────────┴─────────────────────────────────┤
+│  Sep ─────●──────────●───────────●──────────────◆ 14 Oct ───────────── today ▸     │
+│        email      email       email          meeting (3/4 predicted)    ▲ drag     │
+└────────────────────────────────────────────────────────────────────────────────────┘
   [ Build again ]  [ Add a note ]  [ Link another email ]  [ Replay how it was built ]
 ```
 
-- **Left, the evidence map:** the twin in the middle (their avatar and seat colour), each source around it as a small card with its icon (email, meeting, voice note, web page, news, your note). Solid ink line: connected. Dashed line with "?": a suggestion, with **Same person / Not them** on the card. A rejected card fades out with a strike.
-- **Right, the dossier:** Known, n8n's reading, You promised (overdue ones flagged with an icon and a label), what they raised meeting by meeting, and the prediction hit rate over time. Hovering a fact lights up its source card and the line between them, so every claim can be traced.
-- **Building it live:** "Build twin" streams n8n's steps like `/prep` does (one execution). Each step lands on the page as it happens: "Found 7 emails with rajiv@kaveri.in" (seven email cards slide in and connect), "Read your notes from 14 Oct", "kaveri.in/team lists a Rajiv Mehta, CFO: same person?" (a dashed card appears), "Pulled 23 facts, 2 to check". Facts type into the dossier as n8n extracts them. Lines draw in with a short stroke animation; reduced-motion users get them instantly.
-- **Replay:** the page keeps the last build's steps, so "Replay how it was built" plays the whole animation again with **no n8n call**. That's the version to show judges.
-- **How full the twin is,** stated honestly from counts, never a made-up intelligence percentage: "Thin: 2 emails, no meetings yet. In rehearsal this seat leans on their role." / "Solid: 3 meetings, 11 emails."
-- **You can add to it:** a note ("prefers numbers on one page"), pasted text from their profile, notes from a meeting DryRun didn't see, another email address of theirs. Each becomes a source card marked "you added this".
+### The pieces
+- **The halftone portrait (centre).** The avatar this person sits as in VR (`web/public/vr/*.jpg`), drawn on a canvas as halftone dots in their seat colour. How many dots are filled in follows how much is known, counted honestly: a twin with 2 emails is a light sketch, one with 3 meetings and 11 emails is a full portrait. Under it, their name on a tent card like the one in the VR room. No percentage, no "intelligence score".
+- **The tree (around the portrait).** Four branches in ink hairlines: **Who they are**, **What they care about**, **What they raised**, **What you promised**. Each fact is a leaf: a tick and a short label. From each leaf a hairline runs out to its **source** on the outer ring: a small file tab with a glyph and a date ("✉ 3 Oct", "◎ 14 Oct meeting", "kaveri.in", "✎ your note"). Reading inward is how the twin was built; reading outward is where each fact came from.
+  - **n8n's readings** sit where two or more leaves' lines meet, as a small open circle labelled "n8n's reading: pushes on cost (4 emails)". A reading never appears without its leaves.
+  - **Suggestions** are dashed lines to a grey leaf, with **Same person ✓ / Not them ✗** right on the leaf. Confirm and the line inks in and the leaf darkens. Reject and it fades out with a strike.
+  - An overdue promise has the warning icon and the word "overdue" (never colour alone).
+- **The file (right).** Typeset like a printed briefing: the name in the wide cut, the role with its source, four big numbers (meetings, facts, to check, predicted), then Known, n8n's reading and You promised. **Every fact carries a footnote number,** and the sources are listed under it like a well-sourced article, with the quote and the date. Hovering a footnote lights up its leaf and its line in the tree, and hovering a leaf lights up its footnote.
+- **The timeline (bottom).** A date ruler with a tick for every email and a diamond for every real meeting, with that meeting's hit rate ("3/4 predicted"). **Drag the playhead back** and the tree and the portrait rewind to what the twin knew on that day; drag forward and you see it fill in meeting by meeting. That's the "it gets sharper" claim shown, not told.
+- **The build (live or replayed).** One line at the bottom of the tree, set like a teleprinter with a timestamp, shows n8n's real streamed steps: "14:02:11 Reading 7 emails with rajiv@kaveri.in". Each step does something visible: source tabs drop onto the outer ring, then lines draw inward (the stroke draws in over about 400 ms), leaves appear when their line arrives, the branch grows, and dots fill into the portrait. A full replay takes about 10 s. **Replay** plays the last build's saved steps without calling n8n.
+
+### Useful, not only pretty
+- **Click a leaf:** a small card with the quote, the source, the date and "Open the email" (Gmail link) or the meeting.
+- **"Since last time"** toggle: leaves added since your last real meeting with them are drawn in full ink, the rest greyed. It's the same "Since last time" the brief shows.
+- **Filter by source:** emails, meetings, web, your notes.
+- **List view:** the same twin as a plain file (the right column, full width), for reading, for screen readers and for small screens.
+- **Print file:** a one-page PDF of the file and the tree to take into the real meeting.
+
+### What keeps it from looking AI-made
+- **Never:** gradients, glows, glass, purple-blue palettes, sparkle or brain icons, "AI-powered" badges, shimmering placeholders, a chat-style typing cursor, particles, emoji.
+- **Always:** ink on paper, hairlines, one typeface (Archivo, wide cut for the name and the numbers), sentence-case labels, tabular numbers. Colour appears once, the person's seat colour on the portrait's dots and their tent card, plus status colours only with an icon and a label.
+- **Copy is concrete and dated:** "From your email of 3 Oct", "n8n found 7 emails", "Rajiv's website lists a Rajiv Mehta, CFO. Same person?". Never "AI insights" or "Analyzing persona…".
+- **Motion means something:** a line draws because a fact was connected, and dots fill because something was learned. Nothing moves when nothing happened. With reduced motion, everything shows at once.
+- **Honest empty states:** "Nothing yet: no emails with this address, no meetings. Add a note or build after your first meeting."
+
+### Small screens
+The file comes first, with footnotes. The portrait sits on top (smaller) and the tree opens on a tap as a full-screen view. The timeline stays as a swipeable ruler.
+
+### How to build it
+- SVG for the tree (`d3-hierarchy`'s tree layout in a radial projection; it's small, ≤ 40 leaves), canvas for the halftone (sample the portrait's brightness on a grid and draw dots sized by darkness, in a stable order so the same twin always draws the same way), and CSS for the motion (`stroke-dashoffset` for lines). No animation library.
+- The page plays a list of steps (`{ t, step, adds: { sources, facts, readings } }`), the same list whether it comes live from n8n's stream, from the saved build log (Replay) or from the timeline (rewind is replaying up to a date). One renderer, three uses.
+- Build it against the sample twin first, so the whole look can be tuned without n8n.
 
 ## How n8n builds it
 
@@ -104,14 +138,14 @@ A box on the twin page: "What will Rajiv push on about pricing?" An n8n **AI Age
 | Step | What | About |
 |---|---|---|
 | 1 | People table, **DryRun twin** (streamed), merge rules | 4 h |
-| 2 | Twin page: the evidence map, the dossier, live build, Replay; "Twin" buttons on the brief | 5 h |
+| 2 | Twin page: halftone portrait, the tree, the footnoted file, the timeline, live build and Replay, list view; "Twin" buttons on the brief | 6–7 h |
 | 3 | **DryRun twin update** (batched confirm, reject, note, alias, forget) | 1.5 h |
 | 4 | Prep reads twins: "Since last time" on the brief, twin seats in the practice panel | 2 h |
 | 5 | WF4: voice note, Sarvam, per-person facts, follow-up with approval | 4 h |
 | 6 | Hit rate on the twin page | 1 h |
 | 7 | Ask the twin (stretch) | 2 h |
 
-About two days for 1–6. If time runs short, cut in this order: Ask the twin, the hit rate, then WF4's follow-up email (keep the voice note, which is what feeds the twins).
+About two and a half days for 1–6. If time runs short, cut in this order: Ask the twin, the hit rate, then WF4's follow-up email (keep the voice note, which is what feeds the twins).
 
 Executions: a build is one; a batch of confirmations is one; a voice note is one (the approval waits inside the same run); reading twins costs none after the first.
 
