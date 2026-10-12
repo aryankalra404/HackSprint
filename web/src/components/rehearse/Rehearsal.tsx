@@ -38,7 +38,7 @@ export function Rehearsal({ room: initialRoom, meetingId, debug }: { room: Room;
   return (
     <>
       <p className="px-6 py-24 text-center text-ink-2 md:hidden">Rehearse on a laptop or desktop; the mic and slides need the room.</p>
-      <div className="mx-auto hidden h-dvh max-w-[1600px] flex-col gap-3 px-4 py-4 md:flex">
+      <div className="mx-auto hidden h-dvh max-w-[1800px] flex-col gap-3 overflow-hidden px-4 py-4 md:flex">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <Link href="/" className="font-display text-2xl">DryRun</Link>
@@ -66,8 +66,8 @@ export function Rehearsal({ room: initialRoom, meetingId, debug }: { room: Room;
         </header>
         {r.error && <p role="alert" className="text-sm text-bad-ink">{r.error}</p>}
 
-        <main className={`grid min-h-0 flex-1 gap-3 ${thinking ? "grid-cols-[minmax(0,1fr)_minmax(320px,400px)_320px]" : "grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"}`}>
-          <section aria-label="The table" className="relative flex min-h-0 flex-col rounded-2xl border border-line bg-surface p-3">
+        <main className={`grid min-h-0 flex-1 gap-3 ${thinking ? "grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_300px]" : "grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"}`}>
+          <section aria-label="The table" className="relative flex min-h-0 min-w-0 flex-col rounded-2xl border border-line bg-surface p-3">
             <RehearsalTable personas={bundle.personas} speaking={view.speaking} hands={view.hands} centre={centre} voiceLevel={r.voiceLevel} />
             {vrRoom && (room.phase === "briefed" || done || live) ? (
               <VrRoomCard live={live} />
