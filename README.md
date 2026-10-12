@@ -20,6 +20,8 @@ Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built
 
 - **n8n debriefs every rehearsal.** When a session ends, n8n reads what you said slide by slide, marks it (hedges, claims with no proof, what landed) with a better way to say each, scores you with quotes as evidence, judges who on the panel would back you, emails you the report and briefs the next rehearsal to press on your weak spots. The meeting shows every rehearsal and its report. (Tested end to end through the web app.)
 
+- **Twins of the people you meet** (built 12 Oct). For each real person you meet, n8n keeps a twin: what they asked for, what you promised them, what they care about, every fact quoted from its source. It reads only real sources: your emails with their address, the meetings they were invited to, and their name on public pages and in news (those only as suggestions you confirm). Never anything from a rehearsal, and never its own briefs or reports. The twin page shows the person as a halftone portrait that fills in as facts are connected, with a tree from them to every fact and source; you can watch n8n build it live, replay the build, rewind it to a date, and confirm or reject what it found. The brief shows "Since last time" for people you know, and the rehearsal seats them from their twin. (Tested with a sample twin and with real builds on test addresses; not yet in a real rehearsal.)
+
 ## Being built
 In the headset: the panel interrupting with grounded questions in voice (built and tested in the Unity editor, not yet on the Quest), and the Rescue Agent that feeds you cues when you freeze.
 

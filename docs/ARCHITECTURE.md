@@ -9,7 +9,7 @@ Status: 10 Oct 2026. Each workflow below is marked **built** or **planned**. It 
   practice, dashboard, report)│
                               ▼                                    ┌── Gemini (triage, research, brief, panel; later turns and scoring)
               Laptop: Next.js web app ── HTTPS webhooks ─────────► │  n8n   ├── Google News RSS + company website (research)
-              • the one room (panel,      docs/CONTRACT.md         │ Cloud  ├── Data table: DryRun meetings (later: people, sessions)
+              • the one room (panel,      docs/CONTRACT.md         │ Cloud  ├── Data tables: DryRun meetings, sessions, people (twins)
                 deck, bundle, live state)                                │        ├── Gmail + Google Calendar (trigger, brief email, actions)
               • forwards headset calls                             └────────┴── TTS for persona voices (planned: Sarvam or Google)
                               ▲
@@ -84,7 +84,15 @@ Input: every turn with its transcript and n8n's note, and the slide changes the 
 ## Deck review (built, 12 Oct) (`POST /dryrun/deck-review`, workflow **DryRun deck review**)
 Sent by the laptop in the background when a deck is uploaded for a meeting. Reads the meeting's brief, checks the slides' claims against its research, sources and attendees (Gemini, Groq if it fails), and returns 3 to 5 places the deck will get pushback, with the source, who will push and a fix. Saved on the meeting (`deck_review`) for the next rehearsal prep; the laptop keeps a copy for the brief and practice pages.
 
-## Workflow 4: After the real meeting (parked for the roadmap, see PLAN.md Decisions)
+## Twins of the people you meet (built 12 Oct, contract 0.27): **DryRun twin**, **DryRun twin update**
+One **twin** per real person, keyed by email, in the **DryRun people** data table. Plan and rules: `docs/TWINS.md`.
+1. **Build** (`POST /twin`, streamed like `/prep`, one execution and at most one model call): open the row or start one; the presenter's emails from or to every address of theirs (connected: the same address); the real meetings they were invited to (dates for the timeline, never facts); their full name in other people's emails, Google News and their company's own pages (suggestions only). DryRun's own brief and report emails are left out. Gemini (Groq if it fails) pulls facts, each with a quote, and up to three readings; a Code node then holds them to the rules (the quote must be in the source, a promise only from the presenter's own emails or notes, a reading needs two connected facts, the role only from a connected source) and merges (no duplicates, rejected stays rejected). Each step streams with the sources and facts it added; the steps are kept as the build log for Replay.
+2. **Update** (`POST /twin/update`, no model): the twin page's queued clicks in one batch: confirm or reject a suggestion with its facts, a note, another address, delete a fact, forget the person.
+3. **Read**: the meetings API serves `GET /twin` and `GET /twins`, and `GET /meeting` joins each attendee's twin (counts) and "Since last time" (connected facts only, never readings). The laptop keeps a copy of every twin it has seen (`web/.twins/`), so the twin page and the people list cost nothing to view.
+4. **Rehearsal prep** reads the twins of panel members with a `twin_email` (filled in by the laptop from the brief's attendees): what they actually raised becomes objections with `source: "twin"`, the date and the source; their preferences shape their manner.
+The twin page draws the twin as a halftone portrait that fills in with what's known, a tree from the person to every fact and source, a footnoted file and a timeline to rewind; one renderer plays the live build, the saved one (Replay, no n8n call) and the timeline. The sample twin (Rajiv Menon of the sample meeting) lives in `web/src/lib/mock/twin.ts` and never reaches n8n.
+
+## Workflow 4: After the real meeting (twins step 5, not built: ask first)
 Triggered when a prepared meeting's end time has passed. n8n asks the presenter "How did it go?" by email, with a link to the meeting page.
 1. **Take in what happened.** By default, a one-minute voice note recorded on the meeting page and transcribed (Sarvam or Gemini). When available, a Google Meet transcript (a Doc in Drive, attached to the calendar event) or a note-taker webhook (Fireflies, Otter, Fathom, tl;dv) is used instead.
 2. **Extract per person:** what each attendee raised, objected to or asked for, and what the presenter promised.
@@ -94,7 +102,7 @@ Triggered when a prepared meeting's end time has passed. n8n asks the presenter 
    - update each attendee's twin in the **DryRun people** data table (keyed by email)
    - mark the meeting `done`
 
-The people table also feeds Prep's triage. For a known attendee, n8n writes a catch-up brief ("since last time") instead of full research, and that person's twin opens the next rehearsal with what they actually raised.
+The people table exists now (twins, above): the brief already shows "Since last time" and the next rehearsal seats each known attendee from their twin. Not built: prep's triage choosing a catch-up brief instead of full research for a known attendee.
 
 ## Changes from the submitted deck
 | Submitted idea | v1 | Why |
@@ -104,5 +112,5 @@ The people table also feeds Prep's triage. For a known attendee, n8n writes a ca
 | BigQuery + Firebase dashboard | n8n data tables + web debrief page | Faster to build, and judges can inspect it in n8n |
 | No follow-up actions | Email, calendar drill, adaptive next session | PS 22 asks for systems that act with minimal human input |
 | Upload a deck by hand to start | Pre-flight starts by itself from a calendar invite (built) | Removes the repetitive prep work, which is the heart of PS 22 |
-| The loop closes only across rehearsals | Twins of real people learn from real meetings (WF4, proposed) | The real meeting is what matters, and memory per account is a moat investors understand |
+| The loop closes only across rehearsals | Twins of real people, built from real sources (12 Oct); learning from real meetings is WF4 (next) | The real meeting is what matters, and memory per account is a moat investors understand |
 | Windows desktop build | Web client | Anyone can try it without a headset |

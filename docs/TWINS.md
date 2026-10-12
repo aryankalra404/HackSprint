@@ -1,6 +1,13 @@
 # Twins of the people you meet (working plan, proposed 12 Oct)
 
-**Status: proposed, not approved.** Nothing here is built. Build only after the Quest build and one real run pass (PLAN.md, Mon 12 – Fri 16), and confirm with the team (Decisions, 10 and 11 Oct). Temporary: once built, fold it into `PLAN.md`, `CONTRACT.md` and `ARCHITECTURE.md` and delete this file.
+**Status: approved 12 Oct; steps 1–4 built the same day (contract 0.27).** Built: the **DryRun people** table, **DryRun twin** (streamed build), **DryRun twin update** (batched changes), the twin page (`/people/[email]`) and the people list (`/people`) with the sample twin, the brief's Twin buttons and "Since last time", and twin seats in the practice panel and rehearsal prep. Not built: steps 5–7 (WF4, the hit rate, Ask the twin; ask before WF4). Temporary: once all of it is built, fold it into `PLAN.md`, `CONTRACT.md` and `ARCHITECTURE.md` and delete this file.
+
+**How the build differs from the plan below (12 Oct):**
+- **"Since last time" and twin counts are joined when the meeting is read** (the meetings API reads the people table on `GET /meeting`), not written by calendar prep. A twin built after the brief shows up at once, and prep didn't need changing. So the brief *email* doesn't carry "Since last time" yet, and **calendar prep doesn't start twins of new addresses by itself**: every prep run would then cost an extra execution and model call per new attendee. The brief offers "Twin: New, build it from your emails" instead. Ask before adding either.
+- **DryRun's own emails are never a source.** The first real build found the brief emails ("Your brief for … is ready") and rehearsal reports in the inbox naming the attendee; a report is about a practice run (rule 1). Both Gmail searches exclude those subjects and the Code nodes drop them again.
+- **Suggestions are decided in the leaf's card and in the file**, not with buttons on every tab: on the tree they crowded the leaves. A suggested source shows "?" on its tab.
+- **The tree's layout is hand-rolled** (four fixed branches, at most 8 leaves each, the rest counted "in the file"), not `d3-hierarchy`: no new dependency.
+- **Readings shape a twin seat's manner and priorities but never become objections**; an objection is `source: "twin"` only when it names a connected fact of that person's twin (checked in n8n after the model).
 
 ## The idea in one line
 For every real person you meet for work, n8n keeps a **twin**: what they actually raised, what you promised them, what they care about, each fact with its source. It is assembled from your emails, your real meetings, public professional sources and what you tell it. n8n connects what it is sure of by itself and asks you about the rest. The twin then sits in your practice panel, and after every real meeting n8n checks how well the rehearsal predicted what they asked.
@@ -137,10 +144,10 @@ A box on the twin page: "What will Rajiv push on about pricing?" An n8n **AI Age
 ## Order and cost
 | Step | What | About |
 |---|---|---|
-| 1 | People table, **DryRun twin** (streamed), merge rules | 4 h |
-| 2 | Twin page: halftone portrait, the tree, the footnoted file, the timeline, live build and Replay, list view; "Twin" buttons on the brief | 6–7 h |
-| 3 | **DryRun twin update** (batched confirm, reject, note, alias, forget) | 1.5 h |
-| 4 | Prep reads twins: "Since last time" on the brief, twin seats in the practice panel | 2 h |
+| 1 | People table, **DryRun twin** (streamed), merge rules (built 12 Oct) | 4 h |
+| 2 | Twin page: halftone portrait, the tree, the footnoted file, the timeline, live build and Replay, list view; "Twin" buttons on the brief (built 12 Oct) | 6–7 h |
+| 3 | **DryRun twin update** (batched confirm, reject, note, alias, forget) (built 12 Oct) | 1.5 h |
+| 4 | Prep reads twins: "Since last time" on the brief, twin seats in the practice panel (built 12 Oct; see the differences above) | 2 h |
 | 5 | WF4: voice note, Sarvam, per-person facts, follow-up with approval | 4 h |
 | 6 | Hit rate on the twin page | 1 h |
 | 7 | Ask the twin (stretch) | 2 h |
