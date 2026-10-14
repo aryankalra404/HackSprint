@@ -582,8 +582,6 @@ export interface Room {
   rehearse_in: RehearseIn;
   // The debrief of the run that just ended (0.20); null until a session ends, and again once one starts
   debrief: RoomDebrief | null;
-  // The sample meeting is in the room (0.21): the headset stands in for the presenter and the laptop answers turns from its script
-  scripted?: boolean;
 }
 
 export interface RoomDebrief {

@@ -7,8 +7,6 @@ import { addMeeting, getMeeting, prepSession, prepSteps } from "@/lib/api";
 import { othersDoingThis } from "@/lib/deckResearch";
 import { prepDone, prepFailed, prepProgress, prepStarted } from "@/lib/prepProgress";
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
-import { SAMPLE_ID, sampleDeck } from "@/lib/mock/sample";
-import { briefSample } from "@/lib/sample";
 import { getProfile, saveProfile } from "@/lib/profile";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -34,7 +32,7 @@ export async function practiseAction(meetingId: string): Promise<Result<never>> 
     prospect: { company: meeting.company, website: "", context: meeting.title },
   };
   // A deck belongs to its meeting: seating another meeting's panel takes it off the screens
-  if (getBrief()?.draft_id !== meeting.id) setDeck(meeting.id === SAMPLE_ID ? sampleDeck : null);
+  if (getBrief()?.draft_id !== meeting.id) setDeck(null);
   // The pitch length starts at n8n's suggestion for this meeting; the presenter can change it on the practice page
   updateRoom(
     { phase: "drafting", prospect: { company: meeting.company }, panel, bundle: null, session_id: null, pitch_minutes: proposal.pitch?.minutes ?? 5 },
@@ -106,8 +104,6 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
     live: null,
     debrief: null,
     rehearse_in: rehearseIn,
-    // A real brief ends the sample's scripted run
-    scripted: false,
     panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty, twin_email }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty, ...(twin_email ? { twin_email } : {}) })),
   });
   prepDone(runId, prepSteps(bundle, await othersDoingThis(draftId)));
@@ -115,7 +111,6 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
 }
 
 // Briefs the practice panel and puts the bundle in the room. Answers with where to rehearse: the browser's rehearsal page, or the dashboard (for VR).
-// The sample redirects straight away.
 export async function briefPanelAction(
   input: BriefInput,
   draftId: string,
@@ -128,9 +123,6 @@ export async function briefPanelAction(
   const roleless = panel.filter((m) => !m.role.trim()).map((m) => m.display_name || "someone");
   if (roleless.length) return { ok: false, error: `Add a role for ${roleless.join(" and ")}: what they do shapes what they push on.` };
   if (getRoom().phase === "live") return { ok: false, error: LIVE_RUN };
-  // The sample is briefed on the laptop, with its own panel: no n8n call
-  if (draftId === SAMPLE_ID) redirect(`/s/${briefSample()}`);
-
   let sessionId: string;
   try {
     sessionId = await prepare(input, draftId, panel, rehearseIn, runId);
@@ -148,8 +140,6 @@ export async function rebriefAction(): Promise<Result<never>> {
   const brief = getBrief();
   if (!brief || room.panel.length === 0) return { ok: false, error: "There's no panel in the room to brief again." };
   if (room.phase === "live") return { ok: false, error: LIVE_RUN };
-  // The sample's script is fixed: briefing it again just reseats it, with no n8n call
-  if (room.scripted) redirect(`/s/${briefSample()}`);
   let sessionId: string;
   try {
     sessionId = await prepare(brief.input, brief.draft_id, room.panel, room.rehearse_in);

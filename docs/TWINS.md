@@ -157,7 +157,7 @@ About two and a half days for 1–6. If time runs short, cut in this order: Ask 
 Executions: a build is one; a batch of confirmations is one; a voice note is one (the approval waits inside the same run); reading twins costs none after the first.
 
 ## The sample twin (offline, for testing and as the demo fallback)
-Like the sample meeting: "Rajiv Mehta (sample)" for the RouteIQ pitch, with fixed facts, sources and a recorded build log in `web/src/lib/mock/`. Replay works without n8n or a model, so the page can be shown even if n8n is down. Clearly labelled sample.
+"Rajiv Menon (sample)" of Kaveri Freight (made up), with fixed facts, sources and a recorded build log in `web/src/lib/mock/`. Replay works without n8n or a model, so the page can be shown even if n8n is down. Clearly labelled sample.
 
 ## Demo
 1. Before the event, on a real meeting of yours: open an attendee's twin, press "Build twin" and let the map assemble from your real emails; confirm one suggestion ("Same person"), reject one.

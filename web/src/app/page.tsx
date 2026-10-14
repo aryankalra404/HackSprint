@@ -3,7 +3,6 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { listMeetings, n8nProblem } from "@/lib/api";
 import type { Meeting } from "@/lib/contract";
-import { sampleMeeting } from "@/lib/mock/sample";
 import { MeetingList } from "@/components/meetings/MeetingList";
 import { PreparePopup } from "@/components/meetings/PreparePopup";
 import { RefreshWhileResearching } from "@/components/meetings/RefreshWhileResearching";
@@ -30,20 +29,8 @@ export default function Home() {
       <Suspense fallback={<Loading>Reading your meetings from n8n…</Loading>}>
         <Meetings />
       </Suspense>
-      <section className="flex flex-col gap-4" aria-labelledby="sample">
-        <SectionHead id="sample" title="Try the sample" note="A scripted meeting: no speaking, no n8n, no AI." />
-        <Suspense fallback={null}>
-          <Sample />
-        </Suspense>
-      </section>
     </ReadingPage>
   );
-}
-
-// The sample meeting, read at request time like the others (its card says how far off it is)
-async function Sample() {
-  await connection();
-  return <MeetingList meetings={[sampleMeeting]} />;
 }
 
 async function Meetings() {

@@ -42,7 +42,8 @@ function store(): Store {
       // No saved room yet
     }
     // A room saved by an older version may lack newer fields
-    const room = { ...EMPTY, ...saved.room };
+    // The sample meeting's scripted run was removed (0.33): a room saved while it was in the room starts empty
+    const room = (saved.room as { scripted?: boolean }).scripted ? { ...EMPTY } : { ...EMPTY, ...saved.room };
     // A debrief is followed in memory: one still running when the laptop stopped can't finish, so it shows as failed, with Try again
     if (room.debrief?.state === "running")
       room.debrief = { ...room.debrief, state: "failed", error: "The laptop restarted while n8n was debriefing this run. Try again." };

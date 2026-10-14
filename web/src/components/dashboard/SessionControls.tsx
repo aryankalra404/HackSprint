@@ -76,8 +76,8 @@ export function SessionControls({ room }: { room: Room }) {
           Run it again
         </button>
       )}
-      {room.phase === "done" && !room.scripted && (
-        // n8n re-briefs the same panel from the last debrief and presses on the weak spots (the sample's script is fixed)
+      {room.phase === "done" && (
+        // n8n re-briefs the same panel from the last debrief and presses on the weak spots
         <button
           type="button"
           disabled={busy || rebriefing || room.debrief?.state === "running"}

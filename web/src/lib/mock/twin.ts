@@ -1,7 +1,6 @@
 import type { Twin, TwinFact, TwinSource } from "../contract";
-import { SAMPLE_ID, sampleMeeting } from "./sample";
 
-// The sample twin: Rajiv Menon of the sample meeting (Kaveri Freight is made up). Its sources, facts and build are written here, so the
+// The sample twin: Rajiv Menon of Kaveri Freight (made up). Its sources, facts and build are written here, so the
 // twin page, its live build and Replay can be shown without n8n or a model. Labelled as a sample wherever it shows; never sent to n8n.
 export const SAMPLE_TWIN_EMAIL = "rajiv.menon@kaverifreight.in";
 
@@ -64,7 +63,7 @@ const FACTS: TwinFact[] = [
 const LOG: Twin["build_log"] = [
   { step: "load", text: "Started a twin of rajiv.menon@kaverifreight.in (Rajiv Menon)", t: 0, adds: { sources: [], facts: [], readings: [], meetings: [] } },
   { step: "emails", text: "Found 5 emails with rajiv.menon@kaverifreight.in", t: 1900, adds: { sources: ["s1", "s2", "s3", "s4", "s5", "s9"], facts: [], readings: [], meetings: [] } },
-  { step: "meetings", text: "Invited to 2 of your meetings: Intro call (2026-09-22), with your notes from it, and RouteIQ pitch (sample)", t: 3100, adds: { sources: ["s10"], facts: [], readings: [], meetings: ["intro", SAMPLE_ID] } },
+  { step: "meetings", text: "Invited to 1 of your meetings: Intro call (2026-09-22), with your notes from it", t: 3100, adds: { sources: ["s10"], facts: [], readings: [], meetings: ["intro"] } },
   { step: "mentions", text: "3 possible mentions by name: Priya Nair mentions a Rajiv Menon; kaverifreight.in/team lists a Rajiv Menon. Same person?", t: 5200, adds: { sources: ["s6", "s7", "s8"], facts: [], readings: [], meetings: [] } },
   {
     step: "extract",
@@ -89,7 +88,6 @@ export function sampleTwin(): Twin {
     ],
     meetings: [
       { id: "intro", title: "Intro call", date: "2026-09-22" },
-      { id: SAMPLE_ID, title: sampleMeeting.title, date: sampleMeeting.start.slice(0, 10) },
     ],
     // The rehearsal before the intro call asked 3 of the 4 things he raised there (sample)
     predictions: [{ meeting_id: "intro", date: "2026-09-22", asked: 4, predicted: 3, matched: ["f15", "f16", "f18"] }],

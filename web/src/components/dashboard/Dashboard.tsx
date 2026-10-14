@@ -97,8 +97,7 @@ export function Dashboard({
             <div className="flex flex-wrap items-center gap-3">
               <ViewSwitch view={view} onChange={setView} />
               {view === "plan" && room?.phase === "briefed" && <p className="text-xs text-muted">The headset view opens when the session starts.</p>}
-              {/* The sample's script runs in the headset only */}
-              {room?.phase === "briefed" && !room.scripted && <RehearseHere sessionId={bundle.session_id} switchFirst />}
+              {room?.phase === "briefed" && <RehearseHere sessionId={bundle.session_id} switchFirst />}
             </div>
           )}
           {browser && room && !debrief && (room.phase === "briefed" || room.phase === "live") && (
@@ -136,7 +135,7 @@ export function Dashboard({
             </>
           )}
         </section>
-        <AgentFeed items={feed} status={status ?? (room?.scripted ? "Sample: scripted on the laptop" : undefined)} />
+        <AgentFeed items={feed} status={status} />
       </main>
 
       <BottomStrip session={session} />

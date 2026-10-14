@@ -1,4 +1,4 @@
-import type { Twin, TwinChange, TwinFact, TwinFactKind, TwinLogStep, TwinMeeting, TwinSource, TwinSummary } from "./contract";
+import type { Twin, TwinChange, TwinFact, TwinLogStep, TwinMeeting, TwinSource, TwinSummary } from "./contract";
 
 // How the twin page reads a twin (contract 0.27). Safe on the client and the server. Nothing here decides what a twin knows: n8n
 // does (DryRun twin, DryRun twin update). The page only draws it.
@@ -146,19 +146,4 @@ export function applyChanges(twin: Twin, changes: TwinChange[]): Twin | null {
   if (t.role && !t.sources.some((s) => s.id === t.role!.source_id && s.status === "connected")) t.role = null;
   t.updated = now;
   return t;
-}
-
-// "Since last time" for the brief from one twin: what they raised and what you promised, connected facts only, newest first. n8n's
-// GET /meeting does the same for real meetings; this is for the sample, which never reaches n8n.
-export function sinceFromTwin(t: Twin): { email: string; name: string; raised: { text: string; date: string; source: string }[]; promised: { text: string; date: string; source: string }[] } | null {
-  const src = new Map(t.sources.filter((s) => s.status === "connected").map((s) => [s.id, s]));
-  const pick = (kinds: TwinFactKind[]) =>
-    t.facts
-      .filter((f) => f.status === "connected" && kinds.includes(f.kind) && src.has(f.source_id))
-      .map((f) => ({ text: f.text, date: src.get(f.source_id)!.date, source: sourceLabel(src.get(f.source_id)!) }))
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
-      .slice(0, 4);
-  const raised = pick(["raised", "decision"]);
-  const promised = pick(["promised"]);
-  return raised.length || promised.length ? { email: t.email, name: t.name, raised, promised } : null;
 }

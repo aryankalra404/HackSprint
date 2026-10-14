@@ -27,10 +27,8 @@ export async function PUT(request: Request) {
     const where = (["vr", "browser"] as RehearseIn[]).find((w) => w === body.rehearse_in);
     if (!where) return Response.json({ error: 'rehearse_in must be "vr" or "browser"' }, { status: 400 });
     // Not mid-run: the client taking turns can't change under the presenter
-    const { phase, scripted } = getRoom();
+    const { phase } = getRoom();
     if (phase !== "briefed" && phase !== "done") return Response.json({ error: `Where to rehearse can only change while the panel is briefed or the run is done, not ${phase}.` }, { status: 409 });
-    // The sample's script is played by the headset
-    if (scripted && where === "browser") return Response.json({ error: "The sample runs in the headset only." }, { status: 409 });
     patch.rehearse_in = where;
   }
   if (Object.keys(patch).length === 0) return Response.json({ error: "Send name_cards, height_offset, pitch_minutes or rehearse_in" }, { status: 400 });

@@ -1,7 +1,6 @@
 import { connection } from "next/server";
 import type { Bundle, Deck, Meeting, MeetingDetail, NewMeeting, PrepRequest, PrepStep, SessionRecord } from "./contract";
 import { demoMeeting, demoMeetingDetail, demoSkippedMeeting } from "./mock/meetings";
-import { SAMPLE_ID, sampleBundle, sampleDetail } from "./mock/sample";
 import { mockPrep } from "./mock/prep";
 import { demoPrepSession, demoSession } from "./mock/session";
 import { getBrief, getRoom } from "./room";
@@ -19,9 +18,6 @@ export const N8N_URL = process.env.DRYRUN_N8N_URL;
 export async function getSession(sessionId: string): Promise<SessionRecord | null> {
   // The sample sessions
   if (MOCKS[sessionId]) return MOCKS[sessionId];
-  // The sample meeting's, and its runs (never debriefed): from the laptop, so they never reach n8n
-  if (sessionId === SAMPLE_ID || sessionId.startsWith(`${SAMPLE_ID}-`))
-    return { bundle: sampleBundle, status: { done: true, steps: prepSteps(sampleBundle) }, telemetry: null, debrief_status: null, debrief: null, history: [] };
   // A run debriefed on this laptop: its copy, so opening a report costs no n8n call
   const cached = await cachedSession(sessionId);
   if (cached) return cached;
@@ -88,7 +84,7 @@ export async function postToN8n<T>(path: string, body: unknown, signal?: AbortSi
   return res.json();
 }
 
-// Upcoming meetings n8n has picked up (contract: GET /meetings). The sample meeting isn't one: the home page shows it on its own.
+// Upcoming meetings n8n has picked up (contract: GET /meetings)
 export async function listMeetings(): Promise<Meeting[]> {
   if (!N8N_URL) return [demoSkippedMeeting];
   return readOnce("meetings", (ms: Meeting[]) => (ms.some((m) => m.status === "researching") ? FRESH_MS : SETTLED_MS), async () => {
@@ -100,11 +96,6 @@ export async function listMeetings(): Promise<Meeting[]> {
 
 // One meeting with its brief and practice panel (contract: GET /meeting)
 export async function getMeeting(id: string): Promise<MeetingDetail | null> {
-  if (id === SAMPLE_ID) {
-    // Read at request time like n8n's meetings: its page says how far off it is
-    await connection();
-    return sampleDetail;
-  }
   if (!N8N_URL) return id === demoMeeting.id ? demoMeetingDetail : id === demoSkippedMeeting.id ? { meeting: demoSkippedMeeting, brief: null, proposal: null } : null;
   return readOnce(`meeting:${id}`, (d: MeetingDetail | null) => (d?.meeting.status === "researching" ? FRESH_MS : SETTLED_MS), async () => {
     const res = await fetch(`${N8N_URL}/meeting?id=${encodeURIComponent(id)}`, { cache: "no-store" });

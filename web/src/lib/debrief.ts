@@ -45,11 +45,6 @@ export function startDebrief(again = false): void {
   const id = runId(room.session_id, room.live.started_at);
   if (room.debrief?.run_id === id && !(again && room.debrief.state === "failed")) return;
   const feed = room.live.feed ?? [];
-  // The sample's run is scripted, so there's nothing of the presenter's to score (and it costs no n8n execution)
-  if (room.scripted) {
-    updateRoom({ debrief: { run_id: id, state: "skipped", steps: [], error: "The sample isn't scored: its run is scripted." } });
-    return;
-  }
   if (!N8N_URL || feed.length === 0) {
     updateRoom({ debrief: { run_id: id, state: "skipped", steps: [], error: N8N_URL ? "Nothing was said, so there's nothing to debrief." : "n8n isn't connected." } });
     return;

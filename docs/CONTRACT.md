@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.32, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.33, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -110,7 +110,7 @@ Field notes:
 - `meetings` are the real meetings they were in (from the DryRun meetings table, by attendee email). `predictions` *(0.28, WF4)*: per real meeting, how many of the things they really raised (`asked`) the practice seat's questions in the last rehearsal of that meeting had asked (`predicted`), and which of their facts those were (`matched`, fact ids). Only for someone who had a practice seat in that rehearsal. Nothing the practice seat said is kept: only the number and the real facts it matched.
 - `build_log` is the last build's steps with the time each arrived (`t`, ms from the start) and the ids of the sources, facts and readings it added, so the page can replay the build with no n8n call. The twin page plays one list of steps whether it comes live from the stream, from `build_log` (Replay) or from its timeline (rewinding to a date shows only facts whose source is dated on or before it).
 - `sources[].url` for an email is its Gmail link (`https://mail.google.com/mail/u/0/#all/<message id>`), so the page can open it.
-- `sample` is `true` only for the sample twin (Rajiv Menon of the sample meeting), which lives on the laptop and never reaches n8n.
+- `sample` is `true` only for the sample twin (Rajiv Menon of Kaveri Freight, made up), which lives on the laptop and never reaches n8n.
 
 ### POST `/twin` (streamed)
 Builds or refreshes a twin. One execution and one model call.
@@ -634,8 +634,7 @@ Long poll: answers as soon as the room's `version` is greater than `since`, or a
   "height_offset": 0,
   "pitch_minutes": 5,
   "rehearse_in": "vr | browser",
-  "debrief": { "run_id": "string", "state": "running | done | failed | skipped", "steps": [], "error": null, "overall": 63, "headline": "string" },
-  "scripted": false
+  "debrief": { "run_id": "string", "state": "running | done | failed | skipped", "steps": [], "error": null, "overall": 63, "headline": "string" }
 }
 ```
 Field notes:
@@ -655,7 +654,6 @@ Field notes:
 - `rehearse_in` *(0.23)*: where the presenter rehearses this panel, `"vr"` (the headset, the default, and for rooms saved before 0.23) or `"browser"` (the web app's rehearsal page, `/s/<session_id>/rehearse`). Set when the panel is briefed. **When it's `"browser"`, the headset** keeps seating the panel and showing slides, but doesn't start the session on speech or A, doesn't record or take turns, and its monitor says "Rehearsing in the browser". The browser page, when it's `"vr"`, offers "Rehearse here instead", which sets it to `"browser"`.
 - `pitch_minutes` *(0.18)*: how long the presenter means to pitch, sent to `/prep`. Set on the practice page; it starts at n8n's suggestion (`proposal.pitch.minutes`), or 5 without one. `null` *(0.25)*: no time limit.
 - `height_offset` raises (or, if negative, lowers) the presenter's eyes in VR, in metres from -0.5 to 0.5, to the centimetre; 0 unless moved on the web. It's for when the headset's floor is off. The headset eases to it and keeps it after teleporting.
-- `scripted` *(0.21)*: `true` while the sample meeting is in the room. Its bundle, slides and voices are files on the laptop (`/sample/...`), nothing goes to n8n, and the laptop answers `/api/turn` from the sample's script. The headset then stands in for the presenter: it sends each moment without audio once the panel is quiet (the opening after 3 s, a `segment` every 8 s, moving to the next slide, an `answer` 3 s after a question, `pitch_end` on the last slide) and ignores the mic. A run of the sample isn't debriefed (`debrief.state` `skipped`). The sample is always rehearsed in the headset: briefing it sets `rehearse_in` to `"vr"`, and `PUT /api/room/settings` refuses `"browser"` (`409`). Absent or `false` otherwise; briefing a real panel turns it off.
 - When the deck is converted, the laptop also extracts each slide's text, which it sends to `/prep` (not in the room).
 
 ### PUT `/api/room/panel`
@@ -750,3 +748,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.30 (12 Oct): the deck is researched, not reviewed. `POST /deck-review` becomes `POST /deck-research`: n8n picks the deck's claims worth checking, searches the news for each in the deck's own words, and answers with `findings` (backed, challenged or unproven, with sources) instead of pushback and a fix for the slides. Saved as `deck_research` on the meeting; `/prep` turns findings into objections, and `/debrief` gains `checks`: what was said against each finding.
 - 0.31 (12 Oct): the deck research looks for who else already does what the deck pitches, instead of checking the deck's claims (a deck is mostly about the presenter's own product, which the news can't speak to). `findings` becomes `others` (name, what, `same` or `near`, slide, question, sources). `/prep` gives each to the panel as a `research` objection that names them; `/debrief` drops `checks` and numbers their sources for `owed`. Nothing of it is shown on a page any more: the brief's "Checked from your deck", the practice page's line and the report's "Your claims against the research" are gone; the dashboard's agent feed names who was found.
 - 0.32 (14 Oct): wording only, no JSON change. `/deck-research` is an n8n AI Agent with a Search Google News tool: it decides what to search, reads the headlines and searches again when they're off (at most 3 searches, was a fixed plan of up to six). Its findings are kept only if they cite a headline the tool returned.
+- 0.33 (14 Oct): the sample meeting is gone, and with it the room's `scripted`. Every rehearsal is decided by n8n; the headset no longer stands in for the presenter. A room saved with `scripted` set starts empty.

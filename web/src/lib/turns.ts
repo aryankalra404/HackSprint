@@ -2,7 +2,6 @@ import type { Bundle, LiveSession, LoggedTurn, Reaction, Thread, ThinkingTurn, T
 import { postToN8n } from "./api";
 import { compressSpeech, saveAudio } from "./audio";
 import { getRoom, logFailedTurn, updateRoom } from "./room";
-import { sampleReply } from "./sample";
 import { pitchEndTimeoutS, turnTimeoutS } from "./rehearse/turn-taker";
 
 // The laptop's side of a turn (contract: POST /turn). The headset sends what the presenter said; the laptop adds what n8n needs to
@@ -92,10 +91,7 @@ function setThinking(startedAt: string, change: (list: ThinkingTurn[]) => Thinki
 async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { live: LiveSession; bundle: Bundle }, client?: AbortSignal): Promise<TurnResponse> {
   const feed = room.live.feed ?? [];
   let reply: TurnResponse;
-  if (room.scripted) {
-    // The sample meeting's run is scripted on the laptop: no n8n call
-    reply = await sampleReply(body, feed);
-  } else if (FAKE_TURNS) {
+  if (FAKE_TURNS) {
     await new Promise((r) => setTimeout(r, FAKE_DELAY_MS));
     reply = standInReply(body, room.bundle, feed);
   } else {

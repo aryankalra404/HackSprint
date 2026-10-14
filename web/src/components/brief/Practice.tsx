@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat, TwinSummary } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
@@ -13,7 +13,6 @@ import { HeightControl } from "../room/HeightControl";
 import { DeckPanel } from "../room/DeckPanel";
 import { PitchLength } from "./PitchLength";
 import { RehearseDialog } from "./RehearseDialog";
-import { SAMPLE_ID } from "@/lib/mock/sample";
 import { AppHeader } from "../shell";
 import { btn } from "../ui";
 
@@ -44,7 +43,6 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<"saved" | "saving" | "failed">("saved");
   const [headset, setHeadset] = useState<{ connected: boolean; via: "wifi" | "usb" }>({ connected: false, via: "usb" });
-  const [briefing, startBriefing] = useTransition();
   // The rehearse dialog: where to rehearse, then n8n's prep step by step
   const [choosing, setChoosing] = useState(false);
   const router = useRouter();
@@ -86,18 +84,6 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
     }, 200);
     return () => clearTimeout(timer);
   }, [members, proposal]);
-
-  // The sample's run is scripted for its own five, briefed on the laptop, and the headset plays it
-  const sample = meeting.id === SAMPLE_ID;
-
-  // The sample: seated on the laptop, no n8n call (the action redirects)
-  function briefSample() {
-    setError(null);
-    startBriefing(async () => {
-      const res = await briefPanelAction(input, proposal.draft_id, members, "vr");
-      if (!res.ok) setError(res.error);
-    });
-  }
 
   const notReady = members.length === 0 || members.some((m) => !m.role.trim());
 
@@ -184,48 +170,29 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
           <footer className="flex flex-col gap-3 border-t border-line p-5">
             <PitchLength initial={initialRoom.pitch_minutes} suggestion={pitch} />
             {error && <p role="alert" className="text-sm text-bad-ink">{error}</p>}
-            {sample ? (
-              <>
-                <button
-                  type="button"
-                  onClick={briefSample}
-                  disabled={briefing || notReady}
-                  className={btn("primary", "lg")}
-                >
-                  {briefing ? "Seating the sample…" : "Start the rehearsal (5)"}
-                </button>
-                <p className="text-xs text-muted">
-                  The sample seats these five with their slides and recorded voices, whatever you change, and the headset plays a scripted run
-                  without you speaking. Nothing calls n8n or an AI.
-                </p>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    setChoosing(true);
-                  }}
-                  disabled={notReady}
-                  className={btn("primary", "lg")}
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="currentColor">
-                    <path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.2-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5z" />
-                  </svg>
-                  Rehearse
-                </button>
-                {notReady && <p className="text-xs text-muted">Give everyone at the table a role first.</p>}
-                <RehearseDialog
-                  open={choosing}
-                  members={members}
-                  headset={headset}
-                  onStart={(where, runId) => briefPanelAction(input, proposal.draft_id, members, where, runId)}
-                  onOpen={(path) => router.push(path)}
-                  onClose={() => setChoosing(false)}
-                />
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setChoosing(true);
+              }}
+              disabled={notReady}
+              className={btn("primary", "lg")}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="currentColor">
+                <path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.2-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5z" />
+              </svg>
+              Rehearse
+            </button>
+            {notReady && <p className="text-xs text-muted">Give everyone at the table a role first.</p>}
+            <RehearseDialog
+              open={choosing}
+              members={members}
+              headset={headset}
+              onStart={(where, runId) => briefPanelAction(input, proposal.draft_id, members, where, runId)}
+              onOpen={(path) => router.push(path)}
+              onClose={() => setChoosing(false)}
+            />
           </footer>
         </aside>
       </main>

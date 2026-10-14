@@ -17,9 +17,7 @@ import { HowItWent } from "@/components/meetings/HowItWent";
 import { YourSide } from "@/components/brief/YourSide";
 import { getProfile } from "@/lib/profile";
 import { twinSummaries } from "@/lib/twins";
-import { sampleTwin } from "@/lib/mock/twin";
-import { SAMPLE_ID } from "@/lib/mock/sample";
-import { sinceFromTwin, shortDate } from "@/lib/twinView";
+import { shortDate } from "@/lib/twinView";
 import type { SinceLastTime, TwinSummary } from "@/lib/contract";
 
 export const metadata = { title: "DryRun brief" };
@@ -52,8 +50,8 @@ async function Meeting({ id }: { id: string }) {
   if (!detail) notFound();
   const { meeting, brief, proposal } = detail;
   const [profile, twins] = await Promise.all([getProfile(), twinSummaries(meeting.attendees)]);
-  // After the real meeting has started (0.28): "How did it go?", then what n8n found. The sample meeting never happens.
-  const happened = meeting.id !== SAMPLE_ID && meeting.status !== "researching" && hasStarted(meeting.start);
+  // After the real meeting has started (0.28): "How did it go?", then what n8n found
+  const happened = meeting.status !== "researching" && hasStarted(meeting.start);
   return (
     <>
       <div className="flex flex-col gap-4">
@@ -198,8 +196,8 @@ function BriefBody({ detail, twins }: { detail: MeetingDetail & { brief: NonNull
   const attendeeNames = brief.attendees.map((a) => a.name);
   // How each attendee sits at the practice table, so their twin's portrait matches
   const seatOf = (name: string) => detail.proposal?.members.find((m) => m.source === "email" && m.display_name === name);
-  // The sample's brief comes from its sample twin; a real one from n8n (GET /meeting joins the twins)
-  const since: SinceLastTime[] = brief.since_last_time ?? (meeting.id === SAMPLE_ID ? [sinceFromTwin(sampleTwin())].filter((x): x is SinceLastTime => !!x) : []);
+  // From n8n: GET /meeting joins the attendees' twins
+  const since: SinceLastTime[] = brief.since_last_time ?? [];
   return (
     <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-10">
       <div className="flex min-w-0 flex-col gap-12">

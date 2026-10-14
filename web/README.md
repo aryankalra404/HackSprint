@@ -16,9 +16,6 @@ Pages:
 - http://localhost:3000/s/<session id>: the dashboard for the big screen. For the session in the room it starts, ends and restarts the rehearsal, shows the room plan while waiting and switches to the headset view when the session goes live (for a browser rehearsal, the room plan stays, showing who is speaking and who has a hand up)
 - http://localhost:3000/about: what DryRun is
 
-The sample meeting, always on the home page (`src/lib/mock/sample.ts`, slides and voices in `public/sample/`):
-- http://localhost:3000/m/sample: a made-up meeting with its brief and practice panel. "Start the rehearsal" seats its fixed panel and the headset plays a scripted run: you don't speak, the panel raises hands, asks, follows up and closes. Nothing calls n8n or an AI, and the run isn't debriefed.
-
 Sample sessions (from `src/lib/mock/session.ts`):
 - http://localhost:3000/s/demo-prep: dashboard, room briefed and waiting for the presenter
 - http://localhost:3000/s/demo: dashboard after the session
