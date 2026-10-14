@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.31, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.32, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -228,8 +228,8 @@ Field notes:
 - `source: email` means a real attendee named in `prospect.context`; their real name and title are used.
 - `suggestions` are ranked roles not seated yet, offered when the presenter clicks an empty seat.
 
-## POST `/deck-research` *(0.31; 0.30 checked the deck's claims; was `/deck-review`, 0.26)*
-Sent by the laptop when the presenter uploads a deck for a meeting (once per upload, in the background after the slides are converted). A deck is mostly about the presenter's own product, which no outside source has written about; what a well-read panel knows is the competition. So n8n reads the deck, plans 2 or 3 Google News searches (each with a broader one) for who else already does what it pitches, and keeps only the companies, products, programmes or labs the headlines show doing the same or nearly the same thing. The panel asks how the pitch is different from them, by name (`/prep`). Nothing about it is shown on a page; the dashboard's agent feed names them. It never checks the presenter's own claims or advises on the slides.
+## POST `/deck-research` *(0.31, 0.32; 0.30 checked the deck's claims; was `/deck-review`, 0.26)*
+Sent by the laptop when the presenter uploads a deck for a meeting (once per upload, in the background after the slides are converted). A deck is mostly about the presenter's own product, which no outside source has written about; what a well-read panel knows is the competition. So an n8n AI Agent reads the deck and searches Google News for who else already does what it pitches (*0.32:* it decides each search itself, reads the headlines and searches again when they're off, at most 3 searches), and keeps only the companies, products, programmes or labs the headlines show doing the same or nearly the same thing. The panel asks how the pitch is different from them, by name (`/prep`). Nothing about it is shown on a page; the dashboard's agent feed names them. It never checks the presenter's own claims or advises on the slides.
 ```json
 { "meeting_id": "string", "deck": { "name": "RouteIQ.pdf", "slides": [{ "index": 0, "text": "string" }] }, "presenter": { "offer": "string" }, "goal": "string" }
 ```
@@ -252,8 +252,8 @@ Response:
 }
 ```
 Field notes:
-- `searched`: each Google News search n8n ran (at most six), on the slide where a panel would bring the competition up, with how many headlines it returned.
-- `others`: at most 4, those doing the same thing (`same`) first; usually 0 to 2, and an empty list is a normal answer. `near`: the same technology on the same kind of machine or user, or the same problem for the same user solved another way. Left out: the wider field, trend pieces and opinion, companies only investing or seeking partners, hobby projects, and the same technology in an unrelated field. `name` is who does the work, never the publisher: a Code node drops any whose name is its source's publisher, any citing no headline n8n found, and repeats. `what` says only what the headline says. `question` is how a panel would put it; it is practice, never shown as a fact.
+- `searched`: each Google News search the agent ran (at most 3 since 0.32; six before), on the slide where a panel would bring the competition up, with how many headlines it returned.
+- `others`: at most 4, those doing the same thing (`same`) first; usually 0 to 2, and an empty list is a normal answer. `near`: the same technology on the same kind of machine or user, or the same problem for the same user solved another way. Left out: the wider field, trend pieces and opinion, companies only investing or seeking partners, hobby projects, and the same technology in an unrelated field. `name` is who does the work, never the publisher: a Code node drops any whose name is its source's publisher, any citing no headline the agent's search tool returned (by the headline's id, 0.32), and repeats. `what` says only what the headline says. `question` is how a panel would put it; it is practice, never shown as a fact.
 - n8n saves it on the meeting (the DryRun meetings table's `deck_research`). The next `/prep` gives each to the panel member who would care most, as a `research` objection on its slide; `/debrief` numbers their sources after the brief's, so a suggested answer in `owed` can cite them. The laptop keeps a copy per meeting (`web/.deck-research/`, never committed) to skip a deck it has already researched (the slides' text, hashed) and to name them in the agent feed. Reading it costs no execution.
 
 ## POST `/prep`
@@ -749,3 +749,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.29 (12 Oct): `followup.status` gains `draft`, for a follow-up that still has a `[fill in: …]` gap. n8n no longer asks to send those: one click on "Send it" would have emailed the attendees the gaps.
 - 0.30 (12 Oct): the deck is researched, not reviewed. `POST /deck-review` becomes `POST /deck-research`: n8n picks the deck's claims worth checking, searches the news for each in the deck's own words, and answers with `findings` (backed, challenged or unproven, with sources) instead of pushback and a fix for the slides. Saved as `deck_research` on the meeting; `/prep` turns findings into objections, and `/debrief` gains `checks`: what was said against each finding.
 - 0.31 (12 Oct): the deck research looks for who else already does what the deck pitches, instead of checking the deck's claims (a deck is mostly about the presenter's own product, which the news can't speak to). `findings` becomes `others` (name, what, `same` or `near`, slide, question, sources). `/prep` gives each to the panel as a `research` objection that names them; `/debrief` drops `checks` and numbers their sources for `owed`. Nothing of it is shown on a page any more: the brief's "Checked from your deck", the practice page's line and the report's "Your claims against the research" are gone; the dashboard's agent feed names who was found.
+- 0.32 (14 Oct): wording only, no JSON change. `/deck-research` is an n8n AI Agent with a Search Google News tool: it decides what to search, reads the headlines and searches again when they're off (at most 3 searches, was a fixed plan of up to six). Its findings are kept only if they cite a headline the tool returned.

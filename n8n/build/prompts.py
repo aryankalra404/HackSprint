@@ -380,63 +380,41 @@ DEBRIEF_SCHEMA = {"type": "object", "properties": {
 # DryRun deck research (/deck-research, contract 0.31): who else already does what the deck pitches. A deck is mostly about the
 # presenter's own product, which no outside source has written about; what a well-read panel knows is the competition. n8n searches the
 # news for it, and the panel asks "how is yours different?" by name. It never checks the presenter's claims or advises on the slides.
-DECK_SEARCH_PROMPT = """You are preparing a presenter for a real meeting. Read their deck and plan how to find who else already does what
-it pitches: competitors, big companies with a similar product, startups, government programmes, research labs.
+# DryRun deck research (/deck-research, 0.32): an AI Agent with one tool, Search Google News. It decides what to search, reads what
+# comes back and searches again when the headlines are off; a Code node then holds its answer to the headlines the tool returned.
+DECK_AGENT_SYSTEM = """You are DryRun's research agent. A presenter has uploaded the deck for a real meeting. Find who else already
+does what the deck pitches (competitors, big companies with a similar product, startups, government programmes, research labs), so
+the practice panel can ask how the pitch is different from them, by name. Say only what the headlines say.
 
-The meeting: {meeting}
-What the presenter offers and wants from it: {side}
-The deck, slide by slide (index from 0):
-{deck}
+Your one tool, "Search Google News", searches Google News (India) and returns up to 8 headlines, each with an id.
+How to search:
+- Name the kind of product or solution in 3 to 5 words, the way a journalist would (e.g. "AI route optimisation logistics",
+  "remote patient monitoring app", "solar inverter fault detection"); never the presenter's own product name, project title or team;
+  spell out acronyms the way the deck means them; no quotes or operators.
+- Start with the most specific search and read what comes back. If the headlines are about something else (many share a word or an
+  acronym), or there are few, search again with other words, or a broader 2 or 3 word search (e.g. "fleet management software").
+- At most 3 searches: each one costs a model call. Stop as soon as you have enough. Finding nobody is a fine answer.
 
-about: one sentence on what the deck pitches and to whom, in plain words.
-searches: 2 or 3 Google News searches that would surface others doing the same thing, the most specific first. Each:
-- query: 3 to 5 words naming the kind of product or solution the way a journalist would (e.g. "AI route optimisation logistics",
-  "remote patient monitoring app", "solar inverter fault detection"), never the presenter's own product name, project title or team; spell out acronyms the way the
-  deck means them; no quotes or operators;
-- broad: a broader search, 2 or 3 words, for when the first finds nothing (e.g. "fleet management software");
-- slide_index: the slide where a panel would bring the competition up: the slide that says what is new or different, or the solution
-  slide (never the title slide unless the deck has nothing else).
-Answer in JSON."""
-
-DECK_SEARCH_SCHEMA = {"type": "object", "properties": {
-    "about": {"type": "string"},
-    "searches": {"type": "array", "items": {"type": "object", "properties": {
-        "query": {"type": "string"}, "broad": {"type": "string"}, "slide_index": {"type": "integer"}},
-        "required": ["query", "broad", "slide_index"]}}},
-    "required": ["about", "searches"]}
-
-DECK_OTHERS_PROMPT = """You find who else already does what a presenter pitches, before a real meeting, so the panel can ask how they
-are different. Say only what the sources say.
-
-The meeting: {meeting}
-What the deck pitches: {about}
-The deck's slides (index, title line): {slides}
-
-Headlines found (numbered sources; many will share a word or an acronym but be about something else):
-{headlines}
-
-others: up to 4 companies, products, programmes or labs that the headlines show already building or running the same or nearly the
-same thing as the deck (the same problem for the same kind of user, or the same technology for the same use). Leave out: a headline
-about the wider field (e.g. "AI in healthcare", "the EV boom"), a trend piece, explainer or opinion, a company only investing,
-hiring or seeking partners, and a hobby project. Most decks have 0 to 2; an empty list is a fine answer. Each:
-- name: who does the work, as the headline names them (e.g. "Tata Motors", "a Pune startup"); never the publisher, the outlet or a
-  think tank writing about it (if the headline doesn't say who, name the programme, e.g. "the state's telemedicine programme");
-- what: what the source says they do, in one plain sentence, with the date where the headline gives one; nothing beyond the headline;
-- close: "same" if they do what the deck pitches, "near" if it overlaps (the same technology on the same kind of machine or user, or
-  the same problem for the same user solved another way); the same technology in an unrelated industry (e.g. AI
-  fault detection on railway tracks, for a deck about factory machines) is neither: leave it out;
-- slide_index: the slide where the panel would bring them up (from the slides above);
-- question: how someone on the panel would put it, naming them, in one short sentence (e.g. "A Pune startup already plans routes for
-  fleets like ours. What does yours do that theirs doesn't?");
-- sources: the numbers of the headlines it rests on (at least one).
-Answer in JSON."""
-
-DECK_OTHERS_SCHEMA = {"type": "object", "properties": {
-    "others": {"type": "array", "items": {"type": "object", "properties": {
-        "name": {"type": "string"}, "what": {"type": "string"}, "close": {"type": "string", "enum": ["same", "near"]},
-        "slide_index": {"type": "integer"}, "question": {"type": "string"}, "sources": {"type": "array", "items": {"type": "integer"}}},
-        "required": ["name", "what", "close", "slide_index", "question", "sources"]}}},
-    "required": ["others"]}
+Then reply with only a JSON object, no other text:
+{"about": "...", "searched": [{"query": "...", "slide_index": 2}], "others": [{"name": "...", "what": "...", "close": "same",
+"slide_index": 2, "question": "...", "sources": ["h1x2y3"]}]}
+- about: one sentence on what the deck pitches and to whom, in plain words.
+- searched: every search you ran, each with the slide where a panel would bring the competition up: the slide that says what is new
+  or different, or the solution slide (never the title slide unless the deck has nothing else).
+- others: up to 4 companies, products, programmes or labs that the headlines show already building or running the same or nearly the
+  same thing as the deck (the same problem for the same kind of user, or the same technology for the same use). Leave out: a headline
+  about the wider field (e.g. "AI in healthcare", "the EV boom"), a trend piece, explainer or opinion, a company only investing,
+  hiring or seeking partners, and a hobby project. Most decks have 0 to 2; an empty list is a fine answer. Each:
+  - name: who does the work, as the headline names them (e.g. "Tata Motors", "a Pune startup"); never the publisher, the outlet or a
+    think tank writing about it (if the headline doesn't say who, name the programme, e.g. "the state's telemedicine programme");
+  - what: what the headline says they do, in one plain sentence, with the date where it gives one; nothing beyond the headline;
+  - close: "same" if they do what the deck pitches, "near" if it overlaps (the same technology on the same kind of machine or user,
+    or the same problem for the same user solved another way); the same technology in an unrelated industry (e.g. AI fault
+    detection on railway tracks, for a deck about factory machines) is neither: leave it out;
+  - slide_index: the slide where the panel would bring them up;
+  - question: how someone on the panel would put it, naming them, in one short sentence (e.g. "A Pune startup already plans routes
+    for fleets like ours. What does yours do that theirs doesn't?");
+  - sources: the ids of the headlines it rests on (at least one), exactly as the tool gave them."""
 
 # DryRun twin (/twin, contract 0.27): a factual file on one real person, from real sources only, every fact quoted
 TWIN_PROMPT = """You keep a factual file on one real person the presenter works with: {person}.

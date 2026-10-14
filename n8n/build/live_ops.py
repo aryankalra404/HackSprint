@@ -16,12 +16,14 @@ import json
 import re
 import sys
 
-HEADER = re.compile(r'const (\w+) = (?:node|trigger|ifElse)\(\{\n  type: "([^"]+)",\n  version: ([\d.]+),\n  config: ')
+HEADER = re.compile(r'const (\w+) = (?:node|trigger|ifElse|languageModel|tool)\(\{\n  type: "([^"]+)",\n  version: ([\d.]+),\n  config: ')
+# An agent's sub-nodes are SDK references, not JSON (connections in n8n, so left out here)
+SUBNODES = re.compile(r',\n\s*"subnodes": \{[^{}]*\}')
 
 
 def sdk_nodes(path, credentials):
     """Each node in the SDK file as n8n node JSON: expr("x") becomes "=x", newCredential("Name") the credential given for it."""
-    src = open(path).read()
+    src = SUBNODES.sub("", open(path).read())
     decoder = json.JSONDecoder()
     nodes = {}
     for m in HEADER.finditer(src):

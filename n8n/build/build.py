@@ -9,7 +9,7 @@ Credentials are referenced by name only (newCredential); nothing secret is writt
 import json
 from pathlib import Path
 
-from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_OTHERS_PROMPT, DECK_OTHERS_SCHEMA, DECK_SEARCH_PROMPT, DECK_SEARCH_SCHEMA, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
+from prompts import (BRIEF_PROMPT, BRIEF_SCHEMA, DEBRIEF_PROMPT, DEBRIEF_SCHEMA, DECK_AGENT_SYSTEM, REHEARSAL_PROMPT, REHEARSAL_SCHEMA, REHEARSAL_TIMED, REHEARSAL_UNTIMED, RESEARCH_PROMPT, TRIAGE_PROMPT, TRIAGE_SCHEMA, TURN_PROMPT,
                      TURN_SCHEMA, TWIN_PROMPT, TWIN_SCHEMA, WEB_PROMPT, AFTER_PROMPT, AFTER_SCHEMA)
 
 OUT = Path(__file__).resolve().parent.parent / "sdk"
@@ -74,11 +74,19 @@ class Expr:
         self.s = s
 
 
+class Raw:
+    """SDK code written as is, e.g. a node's subnodes: { model: [a, b], tools: [c] }."""
+    def __init__(self, s):
+        self.s = s
+
+
 def ts(v, indent=0):
     """Like lit() but Expr values become expr('...') calls."""
     pad = "  " * indent
     if isinstance(v, Expr):
         return "expr(" + json.dumps(v.s) + ")"
+    if isinstance(v, Raw):
+        return v.s
     if isinstance(v, dict):
         if not v:
             return "{}"
@@ -99,7 +107,8 @@ def make_node(var, fn, type_, version, name, params, output, credentials=None, e
     if credentials:
         creds = ", ".join(f"{json.dumps(k)}: newCredential({json.dumps(v)})" for k, v in credentials.items())
         body = body[:-1].rstrip() + f",\n    \"credentials\": {{ {creds} }}\n  }}"
-    out = body[:-1].rstrip() + f",\n    \"output\": {lit(output)}\n  }}"
+    # Sub-nodes (models, tools) have no output of their own
+    out = body if output is None else body[:-1].rstrip() + f",\n    \"output\": {lit(output)}\n  }}"
     return f"const {var} = {fn}({{\n  type: {json.dumps(type_)},\n  version: {version},\n  config: {out}\n}});\n\n"
 
 
@@ -1691,13 +1700,56 @@ return [{ json: { code: 200, body: { bundle: parse(row.bundle), status: { done: 
 
 DECK_REQUEST = {"body": {"meeting_id": "evt123", "deck": {"name": "RouteIQ.pdf", "slides": [{"index": 0, "text": "RouteIQ cuts fuel cost by 30%"}]},
                          "presenter": {"offer": "RouteIQ: route optimisation"}, "goal": "a paid pilot"}}
-# Headlines kept in all: enough to find the relevant ones among stories that only share a word
-DECK_HEADLINES = 16
+# The workflow the agent's Search Google News tool calls (DryRun news search)
+NEWS_SEARCH_ID = "6Ak1cDg376YAfG3J"
+# Headlines the tool gives the agent per search: enough to judge, few enough tokens for Groq's free tier (8,000 a minute)
+NEWS_HEADLINES = 8
+# Agent rounds: up to 3 searches and the answer, with one spare (each round is a Gemini call, on the free tier)
+DECK_AGENT_ROUNDS = 5
+
+
+def news_search():
+    """DryRun news search: one Google News search for the deck research agent's tool. Returns up to 8 headlines, each with a short id
+    the agent cites, so Hold to the sources can check every citation against what the tool really returned."""
+    c = IMPORTS
+    c += make_node("newsTrigger", "trigger", "n8n-nodes-base.executeWorkflowTrigger", 1.2, "Search wanted (agent)", {
+        "inputSource": "workflowInputs", "workflowInputs": {"values": [{"name": "query", "type": "string"}]},
+    }, [{"query": "AI route optimisation logistics"}])
+    c += make_node("newsGet", "node", "n8n-nodes-base.httpRequest", 4.5, "Google News", {
+        "method": "GET",
+        "url": Expr("https://news.google.com/rss/search?q={{ encodeURIComponent(String($json.query || '').split('\"').join('').trim()) }}&hl=en-IN&gl=IN&ceid=IN:en"),
+        "options": {"timeout": 20000, "response": {"response": {"responseFormat": "text"}}},
+    }, [{"data": "<rss></rss>"}], extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2})
+    c += code_node("newsHeadlines", "Headlines", """
+// Up to """ + str(NEWS_HEADLINES) + """ headlines (date, publisher, link), each with a short id from its link for the agent to cite
+const query = $('Search wanted (agent)').first().json.query || '';
+const xml = String($input.first().json.data || '');
+const unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+const tag = (it, t) => { const m = it.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };
+const id = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return 'h' + h.toString(36); };
+const all = xml.split('<item>').slice(1).map(it => {
+  const src = it.match(/<source url="([^"]*)">([^]*?)<\\/source>/);
+  const date = new Date(tag(it, 'pubDate'));
+  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10), url: tag(it, 'link') };
+}).filter(h => h.title && h.url);
+const headlines = all.slice(0, """ + str(NEWS_HEADLINES) + """).map(h => ({ id: id(h.url), ...h }));
+return [{ json: { query, found: all.length, headlines } }];""", [{"query": "AI route optimisation logistics", "found": 0, "headlines": []}])
+    c += ("const about = sticky('## DryRun news search\\nThe tool behind the deck research agent (DryRun deck research, Search Google News): "
+          "one Google News search, up to " + str(NEWS_HEADLINES) + " headlines back, each with an id the agent cites. "
+          "Hold to the sources then checks every citation against these.', [newsTrigger], { color: 4 });\n\n")
+    c += """export default workflow('dryrun-news-search', 'DryRun news search')
+  .add(about)
+  .add(newsTrigger)
+  .to(newsGet)
+  .to(newsHeadlines);
+"""
+    return c
 
 
 def deck_research():
-    """Who else already does what the deck pitches (contract 0.31): n8n plans news searches from the deck, keeps only the companies,
-    products and programmes the headlines show doing the same thing, and saves them on the meeting so /prep's panel asks how this is
+    """Who else already does what the deck pitches (contract 0.31, 0.32): an AI Agent with a Search Google News tool decides what to
+    search, reads the headlines and searches again when they're off; Hold to the sources keeps only the companies, products and
+    programmes it found that cite headlines the tool really returned, and saves them on the meeting so /prep's panel asks how this is
     different, by name. It never checks the presenter's own claims or advises on the slides."""
     c = IMPORTS
     c += make_node("deckTrigger", "trigger", "n8n-nodes-base.webhook", 2.2, "A deck was uploaded (laptop)", {
@@ -1708,7 +1760,7 @@ def deck_research():
         "filters": {"conditions": [{"keyName": "meeting_id", "condition": "eq", "keyValue": Expr("{{ $json.body.meeting_id || 'none' }}")}]},
     }, [{"meeting_id": "evt123", "title": "RouteIQ pitch", "company": "Delhivery", "brief": "{}", "proposal": "{}"}], extra={"alwaysOutputData": True})
     c += code_node("deckRead", "Read the deck", """
-// The deck's slide text, the meeting and what the presenter wants from it (docs/CONTRACT.md, POST /deck-research)
+// The deck's slide text, the meeting and what the presenter wants from it (docs/CONTRACT.md, POST /deck-research), for the agent
 const req = $('A deck was uploaded (laptop)').first().json.body;
 const row = $input.first().json || {};
 const parse = x => { try { return x ? JSON.parse(x) : null; } catch (e) { return null; } };
@@ -1718,83 +1770,71 @@ const offer = (req.presenter && req.presenter.offer) || '';
 const slides = ((req.deck && req.deck.slides) || []).map(s => ({ index: s.index, text: String(s.text || '').slice(0, 1200) })).filter(s => s.text);
 const meeting = (row.title || 'A meeting') + (row.company ? ' with ' + row.company : '');
 const side = (offer ? 'They offer: ' + offer + '. ' : '') + (goal ? 'They want: ' + goal + '.' : '') || 'Not given.';
-const parts = { meeting, side, deck: JSON.stringify(slides) };
-const PROMPT = """ + json.dumps(DECK_SEARCH_PROMPT) + """;
-const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-// Each slide's first line, so the model can place who it finds on a slide
-const titles = slides.map(s => s.index + ': ' + s.text.split('\\n')[0].trim().slice(0, 90)).join('; ');
-return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), titles, prompt } }];""",
-                   [{"meeting_id": "evt123", "found": True, "meeting": "RouteIQ pitch with Delhivery", "indexes": [0], "titles": "", "prompt": ""}])
-    c += llm_nodes("deckClaims", "Plan the searches", "$json.prompt", GEMINI_REPLY, schema=DECK_SEARCH_SCHEMA,
-                   source="$('Read the deck').first().json")
-    c += code_node("deckSearches", "The searches", REPLY_JS + """
-// Each planned search on Google News, then its broader one: at most six, no repeats
-const g = $('Read the deck').first().json;
-const d = JSON.parse(replyText($input.first().json) || '{}');
-const clean = q => String(q || '').split('"').join('').trim();
-const seen = new Set();
-const fallback = g.indexes.length > 1 ? g.indexes[1] : (g.indexes[0] || 0);
-const qs = (d.searches || []).flatMap(x => [clean(x.query), clean(x.broad)].filter(Boolean)
-  .map(q => ({ q, slide_index: g.indexes.includes(x.slide_index) ? x.slide_index : fallback })))
-  .filter(x => !seen.has(x.q.toLowerCase()) && seen.add(x.q.toLowerCase())).slice(0, 6);
-// Nothing to search still goes on (one empty search that fails quietly), so the laptop always gets an answer
-if (!qs.length) return [{ json: { none: true, about: d.about || '', url: '' } }];
-const url = q => 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=en-IN&gl=IN&ceid=IN:en';
-return qs.map(x => ({ json: { ...x, about: d.about || '', url: url(x.q) } }));""",
-                   [{"q": "route optimisation logistics", "slide_index": 1, "about": "", "url": ""}])
-    c += make_node("deckNews", "node", "n8n-nodes-base.httpRequest", 4.5, "Search the news", {
-        "method": "GET", "url": Expr("{{ $json.url }}"),
-        "options": {"timeout": 20000, "response": {"response": {"responseFormat": "text"}}},
-    }, [{"data": "<rss></rss>"}], extra={"onError": "continueRegularOutput", "retryOnFail": True, "maxTries": 2})
-    c += code_node("deckGather", "Gather what it found", """
-// Every headline found (date, publisher, link), without repeats, numbered for the model to cite
-const g = $('Read the deck').first().json;
-const all = $('The searches').all().map(i => i.json);
-const results = $input.all().map(i => String(i.json.data || ''));
-const unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-const tag = (xml, t) => { const m = xml.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };
-const headlines = xml => xml.split('<item>').slice(1).map(it => {
-  const src = it.match(/<source url="([^"]*)">([^]*?)<\\/source>/);
-  const date = new Date(tag(it, 'pubDate'));
-  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), url: tag(it, 'link'), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10) };
-}).filter(h => h.title && h.url);
-// Six from each search in turn, so one broad search can't crowd out the specific ones
-const seen = new Set();
-const sources = [];
-const per = all.map((x, k) => x.none ? [] : headlines(results[k] || '').slice(0, 6));
-for (let round = 0; round < 6; round++) per.forEach(list => {
-  const h = list[round];
-  if (h && sources.length < """ + str(DECK_HEADLINES) + """ && !seen.has(h.title.toLowerCase())) { seen.add(h.title.toLowerCase()); sources.push(h); }
-});
-const text = sources.map((h, i) => '[' + (i + 1) + '] ' + h.title + (h.publisher ? ' (' + h.publisher + (h.date ? ', ' + h.date : '') + ')' : '')).join('\\n');
-const about = (all[0] && all[0].about) || 'Not given.';
-const parts = { meeting: g.meeting, about, slides: g.titles || 'None.', headlines: text || 'No headlines found.' };
-const PROMPT = """ + json.dumps(DECK_OTHERS_PROMPT) + """;
-const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-const counts = {};
-all.forEach((x, k) => { if (!x.none) counts[x.q] = { query: x.q, slide_index: x.slide_index, found: headlines(results[k] || '').length }; });
-return [{ json: { searched: Object.values(counts), about, sources, prompt } }];""",
-                   [{"searched": [], "about": "", "sources": [], "prompt": ""}])
-    c += llm_nodes("deckWeigh", "Who else does this?", "$json.prompt", GEMINI_REPLY, schema=DECK_OTHERS_SCHEMA,
-                   source="$('Gather what it found').first().json")
-    c += code_node("deckBuild", "Hold to the sources", REPLY_JS + """
-// Held to the sources: each one cites at least one headline n8n found, on a real slide, no one twice; the same thing first
+const prompt = 'The meeting: ' + meeting + '\\nWhat the presenter offers and wants from it: ' + side + '\\nThe deck, slide by slide (index from 0):\\n' + JSON.stringify(slides);
+return [{ json: { meeting_id: row.meeting_id || '', found: !!row.meeting_id, meeting, indexes: slides.map(s => s.index), prompt } }];""",
+                   [{"meeting_id": "evt123", "found": True, "meeting": "RouteIQ pitch with Delhivery", "indexes": [0], "prompt": ""}])
+    # The agent's model: Gemini, and Groq when Gemini fails (quota, billing, an outage). Both on our own keys, not n8n's AI credits.
+    c += make_node("deckGemini", "languageModel", "@n8n/n8n-nodes-langchain.lmChatGoogleGemini", 1.2, "Gemini", {
+        "modelName": "models/" + GEMINI_MODEL, "options": {"temperature": 0.2, "maxOutputTokens": 4096},
+    }, None, credentials={"googlePalmApi": "Gemini"})
+    c += make_node("deckGroq", "languageModel", "@n8n/n8n-nodes-langchain.lmChatGroq", 1, "Groq (if Gemini fails)", {
+        "model": GROQ_MODEL, "options": {"temperature": 0.2, "maxTokensToSample": 4096},
+    }, None, credentials={"groqApi": "Groq"})
+    c += make_node("deckTool", "tool", "@n8n/n8n-nodes-langchain.toolWorkflow", 2.2, "Search Google News", {
+        "description": "Searches Google News (India) and returns up to " + str(NEWS_HEADLINES) + " headlines (id, title, publisher, date, url) and how many "
+                       "it found in all. query: 3 to 5 plain words naming a kind of product or solution, or a company's name.",
+        "source": "database",
+        "workflowId": {"__rl": True, "mode": "id", "value": NEWS_SEARCH_ID, "cachedResultName": "DryRun news search"},
+        "workflowInputs": {"mappingMode": "defineBelow",
+                           "value": {"query": Expr("{{ $fromAI('query', 'A few plain words to search Google News for, e.g. AI route optimisation logistics', 'string') }}")},
+                           "matchingColumns": [], "attemptToConvertTypes": False, "convertFieldsToString": False,
+                           "schema": [{"id": "query", "displayName": "query", "required": False, "defaultMatch": False, "display": True, "canBeUsedToMatch": True, "type": "string"}]},
+    }, None)
+    c += make_node("deckAgent", "node", "@n8n/n8n-nodes-langchain.agent", 3.1, "Who else does this?", {
+        "promptType": "define", "text": Expr("{{ $json.prompt }}"), "needsFallback": True,
+        "options": {"systemMessage": DECK_AGENT_SYSTEM, "maxIterations": DECK_AGENT_ROUNDS, "returnIntermediateSteps": True, "enableStreaming": False},
+    }, [{"output": "{}", "intermediateSteps": []}], extra={"subnodes": Raw("{ model: [deckGemini, deckGroq], tools: [deckTool] }")})
+    c += code_node("deckBuild", "Hold to the sources", """
+// Held to the sources: the agent may only cite headlines its Search Google News tool really returned; each one on a real slide, never
+// the publisher, no one twice; the same thing first
 const r = $('Read the deck').first().json;
-const g = $('Gather what it found').first().json;
-const d = JSON.parse(replyText($json) || '{}');
+const a = $input.first().json;
+const out = String(a.output || '');
+let d = {};
+try { d = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch (e) { d = {}; }
+// Every headline the tool returned (by id), and each search the agent ran with how many it found
+const byId = {};
+let last = null;
+const walk = x => {
+  if (typeof x === 'string' && /^[[{]/.test(x.trim())) { try { return walk(JSON.parse(x)); } catch (e) { return; } }
+  if (Array.isArray(x)) return x.forEach(walk);
+  if (!x || typeof x !== 'object') return;
+  if (Array.isArray(x.headlines)) last = x;
+  if (x.id && x.title && x.url) byId[x.id] = { title: String(x.title), url: String(x.url), publisher: String(x.publisher || ''), date: String(x.date || '') };
+  Object.values(x).forEach(walk);
+};
 const fallback = r.indexes.length > 1 ? r.indexes[1] : (r.indexes[0] || 0);
+const slideOf = i => r.indexes.includes(i) ? i : fallback;
+const planned = d.searched || [];
+const searched = (a.intermediateSteps || []).map(s => {
+  last = null;
+  walk(s.observation);
+  const ti = s.action && s.action.toolInput;
+  const query = String(typeof ti === 'string' ? ti : (ti && (ti.query || ti.input)) || (last && last.query) || '');
+  const p = planned.find(x => String(x.query || '').toLowerCase() === query.toLowerCase());
+  return { query, slide_index: slideOf(p ? p.slide_index : fallback), found: last ? Number(last.found) || 0 : 0 };
+}).filter(x => x.query).slice(0, 6);
 const named = new Set();
 const others = (d.others || []).map(o => {
-  const sources = [...new Set(o.sources || [])].map(n => g.sources[n - 1]).filter(Boolean).slice(0, 3);
+  const sources = [...new Set(o.sources || [])].map(id => byId[String(id).trim()]).filter(Boolean).slice(0, 3);
   const name = String(o.name || '').trim();
   // A publisher reporting on someone isn't the someone
   const publisher = sources.some(x => x.publisher && (x.publisher.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(x.publisher.toLowerCase())));
   if (!sources.length || !name || !o.what || publisher || named.has(name.toLowerCase())) return null;
   named.add(name.toLowerCase());
-  return { name, what: String(o.what), close: o.close === 'same' ? 'same' : 'near', slide_index: r.indexes.includes(o.slide_index) ? o.slide_index : fallback,
-           question: String(o.question || ''), sources };
+  return { name, what: String(o.what), close: o.close === 'same' ? 'same' : 'near', slide_index: slideOf(o.slide_index), question: String(o.question || ''), sources };
 }).filter(Boolean).sort((a, b) => (a.close === 'same' ? 0 : 1) - (b.close === 'same' ? 0 : 1)).slice(0, 4);
-const research = { about: g.about === 'Not given.' ? '' : g.about, searched: g.searched, others, at: new Date().toISOString() };
+const research = { about: String(d.about || ''), searched, others, at: new Date().toISOString() };
 return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_research: JSON.stringify(research), updated_at: research.at } }];""",
                    [{"meeting_id": "evt123", "found": True, "research": {"others": []}, "deck_research": "{}"}])
     c += make_node("deckKnown", "ifElse", "n8n-nodes-base.if", 2.3, "A known meeting?", {
@@ -1817,31 +1857,22 @@ return [{ json: { meeting_id: r.meeting_id, found: r.found, research, deck_resea
         "respondWith": "json", "responseBody": Expr("{{ JSON.stringify($('Hold to the sources').first().json.research) }}"), "options": {},
     }, [{}])
     c += ("const about = sticky('## DryRun deck research\\nWhen the presenter uploads a deck (POST /webhook/dryrun/deck-research, docs/CONTRACT.md): "
-          "who else already does what it pitches? n8n plans news searches from the deck, then keeps only the companies, products and "
-          "programmes the headlines show doing the same thing, each with its source. Saved on the meeting: in the next rehearsal the panel "
-          "asks how the pitch is different from them, by name. It never checks the presenter\\'s own claims.', [deckTrigger], { color: 4 });\n\n")
+          "who else already does what it pitches? An AI Agent reads the deck and decides what to search with its Search Google News tool, "
+          "reads the headlines and searches again when they are about something else (at most 3 searches). Hold to the sources then keeps "
+          "only the companies, products and programmes that cite headlines the tool really returned. Saved on the meeting: in the next "
+          "rehearsal the panel asks how the pitch is different from them, by name. It never checks the presenter\\'s own claims.', [deckTrigger], { color: 4 });\n\n")
     c += """export default workflow('dryrun-deck-research', 'DryRun deck research')
   .add(about)
   .add(deckTrigger)
   .to(deckMeeting)
   .to(deckRead)
-  .to(deckClaims)
-  .to(deckSearches)
-  .to(deckNews)
-  .to(deckGather)
-  .to(deckWeigh)
+  .to(deckAgent)
   .to(deckBuild)
   .to(deckKnown
     .onTrue(deckSave.to(deckReply))
     .onFalse(deckReply))
-  .add(deckClaims.onError(deckClaimsGroq))
-  .add(deckClaimsGroq)
-  .to(deckSearches)
-  .add(deckWeigh.onError(deckWeighGroq))
-  .add(deckWeighGroq)
-  .to(deckBuild)
-  .group('Read the deck', [deckMeeting, deckRead, deckClaims, deckClaimsGroq, deckSearches], { description: 'Plans news searches for who else already does what the deck pitches' })
-  .group('Research', [deckNews, deckGather, deckWeigh, deckWeighGroq, deckBuild], { description: 'Searches the news and keeps who the headlines show doing the same thing, held to the sources' });
+  .group('Read the deck', [deckMeeting, deckRead], { description: 'The deck, the meeting and what the presenter wants from it' })
+  .group('Research', [deckAgent, deckGemini, deckGroq, deckTool, deckBuild], { description: 'An agent searches the news for who else does this; held to the headlines it found' });
 """
     return c
 
@@ -2590,6 +2621,6 @@ return [{ json: { meeting_id: r.meeting_id, after: JSON.stringify(after) } }];""
 
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-research.ts", deck_research()), ("twin.ts", twin()), ("twin-update.ts", twin_update()), ("after-meeting.ts", after_meeting())]:
+    for fname, code in [("prep.ts", prep()), ("meetings-api.ts", api()), ("rehearsal-prep.ts", rehearsal()), ("turn.ts", turn()), ("debrief.ts", debrief()), ("deck-research.ts", deck_research()), ("news-search.ts", news_search()), ("twin.ts", twin()), ("twin-update.ts", twin_update()), ("after-meeting.ts", after_meeting())]:
         (OUT / fname).write_text(code)
         print("wrote", OUT / fname, len(code), "chars")

@@ -13,7 +13,8 @@ import sys
 
 sdk, layout, out = sys.argv[1:4]
 live = json.load(open(layout))
-src = open(sdk).read()
+# An agent's sub-nodes are SDK references; in n8n they are connections (ai_languageModel, ai_tool), which come from the live copy
+src = re.sub(r',\n\s*"subnodes": \{[^{}]*\}', "", open(sdk).read())
 
 
 def to_json(ts):
@@ -24,7 +25,7 @@ def to_json(ts):
 
 
 nodes = []
-for m in re.finditer(r'const (\w+) = (?:node|trigger|ifElse)\(\{\n  type: "([^"]+)",\n  version: ([\d.]+),\n  config: (\{.*?\n  \})\n\}\);', src, re.S):
+for m in re.finditer(r'const (\w+) = (?:node|trigger|ifElse|languageModel|tool)\(\{\n  type: "([^"]+)",\n  version: ([\d.]+),\n  config: (\{.*?\n  \})\n\}\);', src, re.S):
     cfg = to_json(m.group(4))
     version = float(m.group(3)) if "." in m.group(3) else int(m.group(3))
     n = {"name": cfg["name"], "type": m.group(2), "typeVersion": version, "position": live["positions"][cfg["name"]], "parameters": cfg["parameters"]}

@@ -1,0 +1,103 @@
+{
+  "name": "DryRun news search",
+  "nodes": [
+    {
+      "name": "Sticky Note 5c34cbef",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ],
+      "parameters": {
+        "content": "## DryRun news search\nThe tool behind the deck research agent (DryRun deck research, Search Google News): one Google News search, up to 8 headlines back, each with an id the agent cites. Hold to the sources then checks every citation against these.",
+        "color": 4
+      }
+    },
+    {
+      "name": "Search wanted (agent)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Google News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://news.google.com/rss/search?q={{ encodeURIComponent(String($json.query || '').split('\"').join('').trim()) }}&hl=en-IN&gl=IN&ceid=IN:en",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "name": "Headlines",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Up to 8 headlines (date, publisher, link), each with a short id from its link for the agent to cite\nconst query = $('Search wanted (agent)').first().json.query || '';\nconst xml = String($input.first().json.data || '');\nconst unescape = t => t.replace(/<!\\[CDATA\\[|\\]\\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\");\nconst tag = (it, t) => { const m = it.match(new RegExp('<' + t + '[^>]*>([^]*?)</' + t + '>')); return m ? unescape(m[1]).trim() : ''; };\nconst id = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return 'h' + h.toString(36); };\nconst all = xml.split('<item>').slice(1).map(it => {\n  const src = it.match(/<source url=\"([^\"]*)\">([^]*?)<\\/source>/);\n  const date = new Date(tag(it, 'pubDate'));\n  return { title: tag(it, 'title').replace(/ - [^-]+$/, ''), publisher: src ? unescape(src[2]) : '', date: isNaN(date) ? '' : date.toISOString().slice(0, 10), url: tag(it, 'link') };\n}).filter(h => h.title && h.url);\nconst headlines = all.slice(0, 8).map(h => ({ id: id(h.url), ...h }));\nreturn [{ json: { query, found: all.length, headlines } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Search wanted (agent)": {
+      "main": [
+        [
+          {
+            "node": "Google News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google News": {
+      "main": [
+        [
+          {
+            "node": "Headlines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
