@@ -1,8 +1,5 @@
 <div align="center">
 
-**PPT:** https://drive.google.com/file/d/1Et2ReRt8FW2MJp_U0RIgzbMFYAT_YETk/view?usp=sharing<br>
-**Short demo of VR:** https://www.youtube.com/watch?v=E9vuokGE2ao
-
 # DryRun
 
 ### Rehearse the meeting before it happens.
@@ -14,6 +11,8 @@ An n8n agent that prepares you for your most important meetings, then puts you i
 ![Sarvam AI](https://img.shields.io/badge/Sarvam%20AI-voices%20%26%20speech-FF6B00)
 ![Meta Quest](https://img.shields.io/badge/Meta%20Quest-VR%20boardroom-0467DF?logo=meta&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-web%20app-000000?logo=nextdotjs&logoColor=white)
+
+**[▶ Watch the VR demo](https://www.youtube.com/watch?v=E9vuokGE2ao)** &nbsp;&nbsp;|&nbsp;&nbsp; **[📑 View the pitch deck](https://drive.google.com/file/d/1Et2ReRt8FW2MJp_U0RIgzbMFYAT_YETk/view?usp=sharing)**
 
 **HackSprint at MAHE Bengaluru: Track T.02 AI & Automation, PS 22 "Built with n8n"**
 Team **Git Push and Pray**
