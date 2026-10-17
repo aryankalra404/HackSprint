@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.33, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.34, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -381,13 +381,19 @@ Headset to laptop:
   "audio_wav_base64": "string",
   "asked_by": "p1",
   "mid_slide": false,
-  "time_up": false
+  "time_up": false,
+  "pause": false,
+  "floor_opened": false,
+  "replaces_t": 177.5
 }
 ```
 Field notes:
 - `opening`: the presenter's first words, up to their first pause. n8n decides whether that was an introduction or a greeting that deserves a welcome, or the pitch itself (then nobody says anything).
 - `segment`: what they said on one slide, sent when they change slide, however long they spent on it *(0.25)*. Also sent mid-slide, with `mid_slide: true`, at the next pause once the presenter has said `after_s` seconds on a slide that has an entry in the bundle's `plan.interrupts` (once per entry), so that person can raise a hand in time. A slide recorded for over 5 minutes is also sent at the next pause (only so each upload stays small). Before 0.25 a slide past its `target_seconds` was sent at every pause.
 - `answer`: their answer to a question; `asked_by` is who asked (only sent with `answer`).
+- `replaces_t` *(0.34)*: an answer that carries on the previous one. The presenter paused to think, the client sent what they had said, and they carried on before any of the panel's reactions to it began (a filler doesn't count). The client drops that turn's reactions, and sends the whole answer again (the earlier audio, then the rest) with `replaces_t` set to the earlier turn's `t`. The laptop removes that turn from `live.feed` (so its threads changes are undone) and never logs it if n8n answers it late; n8n judges the whole answer. Only with `answer`.
+- `pause: true` *(0.34)*: a `segment` sent at a pause near the end of the pitch (the last slide, no deck, or past 60% of the pitch length), so n8n can hear the presenter say they've finished ("that's all from me", "happy to take questions") on any slide. Its audio is everything said on the slide so far, copied, not taken: the slide is still sent whole when the presenter moves on. Once per pause, with at least a second of new speech since the last one. n8n doesn't run the model for it: it checks the words for a finish. If it hears one, the reply has `pitch_over: true` and the chair's `open_floor` line (voiced ahead of time), and the client plays it and sends `pitch_end` with `floor_opened: true`; otherwise no reactions, and the laptop doesn't log it in `live.feed` (the slide's segment will carry the words).
+- `floor_opened: true` *(0.34)*: on `pitch_end`, the chair has already opened the floor (after a `pause` reply with `pitch_over`), so n8n goes straight to the first question, as after `time_up`.
 - `pitch_end`: what they said on the last slide, once they go quiet there. This moves the session to the questions (before 0.18 the session ended there). `time_up: true` *(0.25)*: the chair stopped the pitch for time with the `time_up` line, so n8n doesn't open the floor again and goes straight to the first question. The laptop keeps `time_up` on the turn in `live.feed`.
 
 Laptop to n8n: the same, except the audio is compressed (`audio_wav_base64` becomes `audio_base64` with `"audio_format": "m4a"`, or `"wav"` if compressing failed), plus `context`:
@@ -435,10 +441,12 @@ Response, n8n to laptop:
   ],
   "answer_verdict": "resolved | partial | dodged | null",
   "threads": [{ "id": "q1", "persona_id": "p3", "text": "string", "slide_index": 2, "status": "parked", "follow_ups": 1, "planned": false }],
-  "end_session": false
+  "end_session": false,
+  "pitch_over": false
 }
 ```
 Field notes:
+- `pitch_over` *(0.34)*: only on a `pause` segment: n8n heard the presenter finish the pitch. The client moves to the questions (see `pause`).
 - `transcript` is what the presenter said in this turn. The laptop keeps it per slide for the debrief.
 - `note` is n8n's one-line reading of the turn, also when nobody reacts (e.g. "You put a number on the savings, so Rajiv held his cost question"). The dashboard's live feed shows it.
 - `reactions` is empty when nobody reacts, which is most turns. Several play in order (the chair opens the floor, then hands over to whoever asks first).
@@ -449,15 +457,17 @@ Field notes:
 - `threads` *(0.26)*: the threads this turn opened or changed, whole; the laptop replaces each by `id`. `thread_id` on a reaction names the thread it belongs to (a question's own thread, or the one being answered for a follow-up, park, move-on or hand-back).
 - *(0.26)* When n8n's rules would drop any question anyway (a `segment` on the title slide, with too few words, or with nobody on the panel who interrupts), the turn skips the model: no reactions, and a `note` saying why.
 - `park`, `move_on`, `hand_back` *(0.26)*: the asker accepts "I don't know" ("That's fine, send it to us after."), lets a dodged question go ("Okay, let's leave that there."), or hands back to the pitch after a question during it ("Thanks, please go on."). Played like any other reaction.
-- n8n holds its own reactions to the rules after the model *(0.26)*, in a Code node: `open_floor` only on `pitch_end`, `closing` only after the pitch; during the pitch a question only from someone whose `manner` is `interrupts`, and only when the presenter said enough on the slide (about 12 words, fewer at an interruption point); after a question during the pitch is closed, the asker hands back; after the pitch, if the model's next question was dropped, the next open thread or an unasked objection is asked instead, or the chair closes.
+- n8n holds its own reactions to the rules after the model *(0.26)*, in a Code node: `open_floor` only on `pitch_end`, `closing` only after the pitch; *(0.34)* `hand_back` only during the pitch and never in a reply that asks something; an answer with no open thread of `asked_by`'s gets no follow-up, park or move-on, and no new question while someone else's question still waits for its answer; during the pitch a question only from someone whose `manner` is `interrupts`, and only when the presenter said enough on the slide (about 12 words, fewer at an interruption point); after a question during the pitch is closed, the asker hands back; after the pitch, if the model's next question was dropped, the next open thread or an unasked objection is asked instead, or the chair closes.
 - `end_session`: the reactions end with the chair's closing; the headset ends the session (`POST /api/room/session` `end`) once they finish playing.
 
 Laptop to headset: the same, with each `audio_base64` saved on the laptop as WAV and replaced by `audio_url`, and each `line_id` resolved to that line's `audio_url`. The laptop also adds the turn to the room's live feed.
 
 How turns are taken (the headset's rules; what is said is always n8n's):
 - It stops recording while anyone on the panel speaks, so their voices aren't heard as the presenter.
-- It drops reactions that arrive too late: a welcome once the presenter has carried on pitching, a reaction to a slide once they are two slides on.
-- A raised hand goes down after 15 s if the presenter keeps talking; the question stays in `pending` (above).
+- It drops reactions that arrive too late: a welcome once the presenter has carried on pitching, a reaction to a slide once they are two slides on. *(0.34)* A question or follow-up decided before another question was asked (one turn's reply landing after the next one's) is dropped too: one question waits for its answer at a time.
+- An answer ends at a pause of about 1.6 s; if the presenter carries on before the panel reacts, the answer is sent again whole (`replaces_t`, above), so a pause to think doesn't cut them off.
+- A raised hand waits for the presenter's pause. *(0.34)* If they talk on for 6 s of speech with the hand up, that person cuts in at their next breath, as people do. It goes down after 15 s if it still can't; the question stays in `pending` (above).
+- *(0.34)* The chair's spoken rescue ("Take your time", then the way-back-in question) comes at most once per slide and not within 30 s of the last one, never while a turn is on its way; the monitor's cues still show.
 - If `/api/turn` fails or takes longer than 15 s, nobody reacts and the pitch goes on. If a `pitch_end` fails, the session ends as it did before 0.18.
 
 ## POST `/debrief`
@@ -749,3 +759,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.31 (12 Oct): the deck research looks for who else already does what the deck pitches, instead of checking the deck's claims (a deck is mostly about the presenter's own product, which the news can't speak to). `findings` becomes `others` (name, what, `same` or `near`, slide, question, sources). `/prep` gives each to the panel as a `research` objection that names them; `/debrief` drops `checks` and numbers their sources for `owed`. Nothing of it is shown on a page any more: the brief's "Checked from your deck", the practice page's line and the report's "Your claims against the research" are gone; the dashboard's agent feed names who was found.
 - 0.32 (14 Oct): wording only, no JSON change. `/deck-research` is an n8n AI Agent with a Search Google News tool: it decides what to search, reads the headlines and searches again when they're off (at most 3 searches, was a fixed plan of up to six). Its findings are kept only if they cite a headline the tool returned.
 - 0.33 (14 Oct): the sample meeting is gone, and with it the room's `scripted`. Every rehearsal is decided by n8n; the headset no longer stands in for the presenter. A room saved with `scripted` set starts empty.
+- 0.34 (17 Oct): a meeting that flows. `/turn` gains `replaces_t` (an answer the presenter carried on after a pause is sent again whole, and the laptop drops the turn it replaces), `pause` segments near the end of the pitch (n8n checks the words for a finish and answers `pitch_over` with the chair opening the floor) and `floor_opened` on `pitch_end`. n8n's rules: `hand_back` only during the pitch and never with a question, no follow-up on a closed thread, no new question while another waits for its answer. The clients drop a question decided before another was asked, let a hand that's been ignored for 6 s of speech cut in, and the chair's spoken rescue comes at most once per slide. The last slide's wrap-up waits 3 s and counts down 2 (was 4 and 3).

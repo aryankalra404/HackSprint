@@ -948,8 +948,9 @@ const unnamed = (p, text) => { const t = String(text || '').trim(); const first 
 let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id] || SOCIAL.includes(x.kind)))
   .map(x => ({ ...x, text: unnamed(people[x.persona_id], x.text) }));
 if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
-// Stopped for time, the chair has already moved to the questions with a line the headset played (0.25)
-if (r.mode === 'pitch_end' && r.time_up) reactions = reactions.filter(x => x.kind !== 'open_floor');
+// Stopped for time (0.25), or the floor opened after the presenter said they'd finished (0.34): the chair has already moved to the
+// questions with a line the client played
+if (r.mode === 'pitch_end' && (r.time_up || r.floor_opened)) reactions = reactions.filter(x => x.kind !== 'open_floor');
 
 // Near-duplicates: about half the content words (cut to 5 letters, so "verify" matches "verification") of the shorter question are in the other
 const STOP = new Set(['what', 'that', 'this', 'with', 'your', 'have', 'will', 'would', 'could', 'should', 'about', 'there', 'their', 'them', 'they',
@@ -984,6 +985,13 @@ reactions = reactions.map(x => (SOCIAL.includes(x.kind) ? say(x.persona_id, x.ki
 // An answer closes its thread, or earns its one follow-up
 const verdict = r.mode === 'answer' && ['resolved', 'partial', 'dodged'].includes(d.answer_verdict) ? d.answer_verdict : null;
 const cur = r.answering_id ? byId[r.answering_id] : null;
+// An answer to nobody's open thread (0.34: e.g. more words after the asker already parked it) gets no follow-up, park, move-on or hand-back,
+// and while someone else's question still waits for its answer, nobody asks anything new: one question in the air at a time
+const lastAsk = r.turns.flatMap(t => (t.reactions || []).filter(x => x.kind === 'question' || x.kind === 'follow_up')).pop();
+const lastThread = lastAsk && lastAsk.thread_id ? byId[lastAsk.thread_id] : null;
+const waiting = r.mode === 'answer' && !cur && !!lastThread && !CLOSED.includes(lastThread.status);
+if (r.mode === 'answer' && !cur) reactions = reactions.filter(x => !['follow_up', 'park', 'move_on', 'hand_back'].includes(x.kind));
+if (waiting) reactions = reactions.filter(x => !['question', 'closing'].includes(x.kind));
 if (cur) {
   const asker = cur.persona_id;
   const unsure = d.presenter_unsure === true || /(not sure|not certain|don.t know|do not know|no idea|get back to|come back to|find out|have to check|need to check)/i.test(r.transcript);
@@ -1044,11 +1052,14 @@ for (const x of reactions) {
 }
 reactions = out;
 if (asked) reactions = reactions.filter(x => x.kind !== 'closing');
+// Handing back to the pitch (0.34) only happens during it, and never in a reply that asks something: "please go on" after a question
+// sounded random
+if (pitchOver || reactions.some(x => x.kind === 'question' || x.kind === 'follow_up')) reactions = reactions.filter(x => x.kind !== 'hand_back');
 
 // After the pitch someone always speaks next: if the model's question was dropped, the next open thread, then an objection nobody
 // has asked (they're written as questions), or, with none left or the plan's questions done, the chair closes
 const followedUp = reactions.some(x => x.kind === 'follow_up');
-if (pitchOver && (r.mode === 'answer' || r.mode === 'pitch_end') && !asked && !followedUp && !reactions.some(x => x.kind === 'closing')) {
+if (pitchOver && !waiting && (r.mode === 'answer' || r.mode === 'pitch_end') && !asked && !followedUp && !reactions.some(x => x.kind === 'closing')) {
   const open = threads.find(t => t.status === 'open' && t !== cur && people[t.persona_id]);
   const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
   const more = r.asked_after < Math.max(1, (r.bundle.plan || {}).after_pitch || 0);
@@ -1126,6 +1137,7 @@ if (rescue) {
   threads.push(answering);
 }
 const r = { session_id: q.session_id, mode: q.mode, slide_index: q.slide_index, t: q.t, asked_by: q.asked_by || '', mid_slide: !!q.mid_slide, time_up: !!q.time_up,
+               pause: q.mode === 'segment' && !!q.pause, floor_opened: q.mode === 'pitch_end' && !!q.floor_opened,
                bundle, elapsed: Math.round(ctx.elapsed_s || q.t || 0),
                turns, threads, answering_id: answering ? answering.id : '', asked_during: askedDuring, asked_after: askedAfter };
 """
@@ -1180,7 +1192,8 @@ const parts = {
   slide: slide ? JSON.stringify({ number: slide.index + 1, title: slide.title, key_points: slide.key_points }) : 'No slides.',
   turns: history,
   threads: r.threads.length ? r.threads.map(t => t.id + ' (' + name(t.persona_id) + ', ' + t.status + ', follow-ups ' + (t.follow_ups || 0) + '): "' + t.text + '"').join('; ') : 'None yet.',
-  mode: r.mode + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : ''),
+  mode: r.mode + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : '')
+    + (r.floor_opened ? ' (the chair has already opened the floor)' : ''),
   asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + (r.answering_id ? ', thread ' + r.answering_id : '') + ')' : '', transcript,
 };
 // Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
@@ -1188,11 +1201,20 @@ const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}'
 // No question is possible on this slide (0.26): "Check the reactions" would drop any, so the model is skipped
 const said = transcript.toLowerCase().split(/[^a-z0-9%]+/).filter(Boolean).length;
 const interrupters = (b.personas || []).filter(p => p.manner !== 'waits');
-const skip = r.mode === 'segment' && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide));
-const skip_note = !skip ? '' : !said ? 'Nothing came through on this slide, so the panel just listened.'
+// A pause near the end of the pitch (0.34): did the presenter say they've finished? Checked on their last words, without the model, so
+// the chair can open the floor at once. A pause without a finish is only listened to: the slide's segment carries the words.
+const spoken = transcript.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z']+/g, ' ').split(' ').filter(Boolean);
+// Clear ones anywhere in the last words ("happy to take questions"); short ones ("that's it", "thank you") only as the very last words
+const FINISH = /(end of (the|my|our) (pitch|presentation)|(done|finished) with (the|my|our) (pitch|presentation)|(happy|glad|open|ready) to (take|answer|hear) (any |your |some )?questions|(any|over to you for) questions|open (it|the floor) (up )?(to|for) (you|questions)|over to (you|the panel)|thank you (so much |very much |all )?for (listening|your time|having)|that (concludes|wraps up|was) (my|our|the) (pitch|presentation|demo))/;
+const LAST = /(that'?s (all|it|everything|about it)|that (was|is) (it|all|everything)|(i ?'?m|i am|we ?'?re|we are) (done|finished)|thank you|thanks)( so much| very much| all| everyone| from (me|us|our side|my side))?( for now| for today| guys)?$/;
+const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')));
+const skip = r.pause || (r.mode === 'segment' && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide)));
+const skip_note = !skip ? '' : finished ? 'You said you had finished, so the chair opened the floor.'
+  : r.pause ? 'You paused, and the panel waited for you to go on.'
+  : !said ? 'Nothing came through on this slide, so the panel just listened.'
   : !interrupters.length ? 'Nobody on this panel interrupts a pitch, so they held their questions.'
   : r.slide_index === 0 && !r.mid_slide ? 'Your opening slide: the panel let you get going.' : 'Only a few words on this slide, so nobody cut in.';
-return { ...r, transcript, prompt, skip, skip_note };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
+return { ...r, transcript, prompt, skip, skip_note, finished };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
     c += make_node("couldAsk", "ifElse", "n8n-nodes-base.if", 2.3, "Could anyone ask?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
@@ -1201,9 +1223,13 @@ return { ...r, transcript, prompt, skip, skip_note };""", [{"room": {"mode": "se
         }, "options": {},
     }, [{"room": {"skip": False}}])
     c += expr_node("nobody", "Nobody reacts", "reply", "object", """
-// Nobody could have asked here: no model call, just the transcript and why nobody spoke
+// Nobody could have asked here: no model call, just the transcript and why nobody spoke. Or the presenter said they've finished at a
+// pause (0.34): the chair opens the floor with the line voiced ahead of time, and the client sends the pitch end for the first question.
 const r = $('What the room knows').first().json.room;
-return { transcript: r.transcript, note: r.skip_note, reactions: [], answer_verdict: null, threads: [], end_session: false };""",
+const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
+const floor = r.finished && chair ? (r.bundle.lines || []).find(l => l.persona_id === chair.id && l.kind === 'open_floor') : null;
+const reactions = floor ? [{ persona_id: chair.id, kind: 'open_floor', text: floor.text, line_id: floor.id, raise_hand: false, reason: 'You said you had finished, so the chair opened the floor.' }] : [];
+return { transcript: r.transcript, note: r.skip_note, reactions, answer_verdict: null, threads: [], end_session: false, ...(r.finished ? { pitch_over: true } : {}) };""",
                    [{"reply": {"transcript": "", "note": "", "reactions": []}}])
     c += groq_first_nodes("decide", "Decide who reacts", prompt, [{"choices": [{"message": {"content": "{}"}}]}], TURN_SCHEMA, "$('What the room knows').first().json.room")
     c += expr_node("check", "Check the reactions", "out", "object", REPLY_JS + CHECK_JS, [{"out": {"reply": {"reactions": [], "threads": []}, "to_voice": []}}])

@@ -250,7 +250,7 @@ What to do for each moment:
   Partial or dodged: one "follow_up" only if the thread has had none yet (follow_ups 0) and it matters; if it already had one, they let
   it go, kind "move_on" ("Okay, let's leave that there."), visibly unconvinced if it was dodged. Never a second follow-up.
   During the pitch, unless there is a follow-up, the asker then hands back to the pitch, kind "hand_back" ("Thanks, please go on."),
-  and nobody asks anything new. After the pitch, add what comes next: the next "question" from whoever matters most (an open thread
+  and nobody asks anything new. After the pitch, nobody hands back or says "go on" (there is no pitch to go back to); add what comes next: the next "question" from whoever matters most (an open thread
   first, with its thread_id), or, once the questions in the plan are done or time is well past the pitch, the chair's "closing".
   Like a real panel, the next question can build on what was just said by someone else ("Building on Sneha's point, ..."), or the
   chair can check back with the asker within their question ("Sneha, does that cover it? Then, ..."), when it fits.
@@ -260,7 +260,8 @@ What to do for each moment:
   an empty thread_id; a follow-up, park, move_on or hand_back has the thread_id of the thread being answered.
 - pitch_end (the pitch is over): the chair opens the floor (kind "open_floor", its line_id), then the first "question" from whoever
   matters most, an open thread first. If the plan has no questions after the pitch, the chair closes instead. If the chair has just
-  stopped the pitch for time, they have already moved to the questions: no open_floor, straight to the first question.
+  stopped the pitch for time, or has already opened the floor, they have moved to the questions: no open_floor, straight to the first
+  question.
 - closing (by the chair): how this kind of meeting really ends, in one or two sentences, fitting how it went and what the presenter
   wants (a next step towards it if it went well, polite and noncommittal if not), and end_session true.
 After the pitch, questions are asked directly (raise_hand false). Every reaction has a reason: one sentence on why this person said this
