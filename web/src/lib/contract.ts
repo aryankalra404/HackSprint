@@ -253,6 +253,12 @@ export interface TurnRequest {
   mid_slide?: boolean;
   // A pitch_end after the chair stopped the pitch for time (0.25): n8n doesn't open the floor again
   time_up?: boolean;
+  // A segment sent at a pause near the end of the pitch, so n8n can hear the presenter finish (0.34); its audio is the slide so far
+  pause?: boolean;
+  // A pitch_end after the chair already opened the floor, following a pause reply with pitch_over (0.34)
+  floor_opened?: boolean;
+  // An answer the presenter carried on after a pause: the whole answer again, replacing the turn sent at this t (0.34)
+  replaces_t?: number;
 }
 
 // A turn as the laptop logs it and sends it back to n8n as context (no audio)
@@ -263,6 +269,8 @@ export interface LoggedTurn {
   asked_by?: PersonaId;
   // The chair stopped the pitch for time (0.25)
   time_up?: boolean;
+  // The chair had already opened the floor (0.34)
+  floor_opened?: boolean;
   transcript: string;
   note?: string;
   reactions: Pick<Reaction, "persona_id" | "kind" | "text" | "raise_hand" | "reason" | "thread_id">[];
@@ -292,6 +300,8 @@ export interface TurnResponse {
   threads?: Thread[];
   // The reactions end with the chair's closing: the headset ends the session once they've played
   end_session: boolean;
+  // On a pause segment (0.34): n8n heard the presenter finish the pitch, and the chair opens the floor
+  pitch_over?: boolean;
 }
 
 export type TelemetryEvent =

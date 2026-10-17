@@ -57,6 +57,20 @@ export function threadsFrom(feed: LoggedTurn[]): Thread[] {
   return [...threads.values()];
 }
 
+// Answers replaced by a later, whole one (0.34), per run: n8n's late reply to one of them never goes in the feed
+const replaced = new Map<string, number[]>();
+const sameT = (a: number, b: number) => Math.abs(a - b) < 0.01;
+// The chair's opening of the floor after a pause where the presenter said they'd finished (0.34), per run, for the pitch end that follows
+const floorOpened = new Map<string, LoggedTurn["reactions"]>();
+
+function dropReplaced(startedAt: string, t: number) {
+  replaced.set(startedAt, [...(replaced.get(startedAt) ?? []), t]);
+  const now = getRoom();
+  if (!now.live || now.live.started_at !== startedAt) return;
+  const feed = now.live.feed ?? [];
+  if (feed.some((x) => x.mode === "answer" && sameT(x.t, t))) updateRoom({ live: { ...now.live, feed: feed.filter((x) => !(x.mode === "answer" && sameT(x.t, t))) } });
+}
+
 // Where the session is, from its turns: opening until the first slide, pitch until the pitch ends, then questions, then closing
 function stageAfter(stage: LiveSession["stage"], turn: LoggedTurn): LiveSession["stage"] {
   if (turn.reactions.some((r) => r.kind === "closing")) return "closing";
@@ -72,6 +86,8 @@ export async function takeTurn(body: TurnRequest, client?: AbortSignal): Promise
   if (room.phase !== "live" || !room.live || !room.bundle) throw new TurnError(`The room is ${room.phase}, not live.`, 409);
   if (body.session_id && room.session_id && body.session_id !== room.session_id) throw new TurnError("That turn is for another session.", 409);
 
+  // The presenter carried on an answer (0.34): the turn it replaces leaves the feed, so its reactions and threads changes are undone
+  if (body.mode === "answer" && typeof body.replaces_t === "number") dropReplaced(room.live.started_at, body.replaces_t);
   const thinking: ThinkingTurn = { id: `${room.live.started_at}:${body.t}:${body.mode}`, mode: body.mode, slide_index: body.slide_index, t: body.t, ...(body.asked_by ? { asked_by: body.asked_by } : {}) };
   setThinking(room.live.started_at, (list) => [...list, thinking]);
   try {
@@ -89,7 +105,7 @@ function setThinking(startedAt: string, change: (list: ThinkingTurn[]) => Thinki
 }
 
 async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { live: LiveSession; bundle: Bundle }, client?: AbortSignal): Promise<TurnResponse> {
-  const feed = room.live.feed ?? [];
+  const feed = getRoom().live?.feed ?? room.live.feed ?? [];
   let reply: TurnResponse;
   if (FAKE_TURNS) {
     await new Promise((r) => setTimeout(r, FAKE_DELAY_MS));
@@ -124,6 +140,7 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
     t: body.t,
     ...(body.asked_by ? { asked_by: body.asked_by } : {}),
     ...(body.time_up ? { time_up: true } : {}),
+    ...(body.floor_opened ? { floor_opened: true } : {}),
     transcript: reply.transcript ?? "",
     note: reply.note ?? "",
     reactions: reactions.map(({ persona_id, kind, text, raise_hand, reason, thread_id }) => ({ persona_id, kind, text, raise_hand, reason, ...(thread_id ? { thread_id } : {}) })),
@@ -137,7 +154,19 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
   }
   // The room may have moved on while n8n worked (ended, restarted): only a live session of the same run keeps the turn
   const now = getRoom();
-  if (now.phase === "live" && now.live && now.live.started_at === room.live.started_at) {
+  const startedAt = room.live.started_at;
+  const superseded = body.mode === "answer" && (replaced.get(startedAt) ?? []).some((t) => sameT(t, body.t));
+  // A pause (0.34) isn't logged: the slide's segment or the pitch end that follows carries the same words. When n8n heard the presenter
+  // finish there, the chair's opening of the floor is logged with that pitch end.
+  if (body.mode === "segment" && body.pause) {
+    if (reply.pitch_over) floorOpened.set(startedAt, turn.reactions);
+    return { ...reply, reactions };
+  }
+  if (body.mode === "pitch_end" && body.floor_opened) {
+    turn.reactions = [...(floorOpened.get(startedAt) ?? []), ...turn.reactions];
+    floorOpened.delete(startedAt);
+  }
+  if (now.phase === "live" && now.live && now.live.started_at === startedAt && !superseded) {
     const next = [...(now.live.feed ?? []), turn].sort((a, b) => a.t - b.t);
     updateRoom({ live: { ...now.live, feed: next, stage: stageAfter(now.live.stage ?? "opening", turn) } });
   }
@@ -168,6 +197,9 @@ function standInReply(body: TurnRequest, bundle: Bundle, feed: LoggedTurn[]): Tu
   });
 
   if (body.mode === "opening") return reply(chair ? [say("welcome", chair.id, "Welcome, thanks for coming in. Go ahead whenever you're ready.", line("welcome", chair.id) ?? line("welcome"))] : []);
+
+  // A pause (0.34) is only listened to: the stand-in can't hear words, so it never hears the presenter finish
+  if (body.mode === "segment" && body.pause) return reply([]);
 
   if (body.mode === "segment") {
     const pitchedBefore = feed.some((t) => t.mode === "segment" && t.slide_index === body.slide_index);
