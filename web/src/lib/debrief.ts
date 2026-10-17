@@ -2,6 +2,7 @@ import type { Bundle, PrepStep, RoomDebrief, SessionRecord, Telemetry, Telemetry
 import { N8N_URL, forgetMeetingReads, jsonObjects, parseOrNull } from "./api";
 import { failedTurns, getBrief, getRoom, slideLog, updateRoom } from "./room";
 import { cacheSession } from "./sessions";
+import { forgetPrep } from "./prepCache";
 
 // The laptop's side of a debrief (contract: POST /debrief). When a run ends, whoever ended it, the laptop sends n8n what happened
 // (every turn with its transcript, the slide changes it saw, and the rehearsing client's telemetry if it came first), and shows n8n's
@@ -51,6 +52,9 @@ export function startDebrief(again = false): void {
   }
   const first: PrepStep = { id: "read", label: "Sent the session to n8n", state: "running", detail: `${feed.length} turn${feed.length === 1 ? "" : "s"} and the slide changes` };
   updateRoom({ debrief: { run_id: id, state: "running", steps: [first], error: null } });
+  // n8n's next prep for this meeting presses on this run's weak spots: the kept prep is out of date
+  const meetingId = getBrief()?.draft_id;
+  if (meetingId) void forgetPrep(meetingId).catch(() => {});
 
   const started = Date.parse(room.live.started_at);
   const ended = room.live.ended_at ? Date.parse(room.live.ended_at) : Date.now();

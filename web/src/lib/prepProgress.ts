@@ -93,6 +93,19 @@ export function prepDone(id: string | undefined, fallback: PrepStep[]) {
   set({ ...run, state: "done", steps });
 }
 
+// Nothing changed since n8n last prepared this rehearsal (prepCache.ts): the laptop reused it, with no n8n call. `steps` are what n8n did then.
+export function prepReused(id: string | undefined, at: string, steps: PrepStep[]) {
+  if (!id) return;
+  const when = new Date(at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
+  const reused: PrepStep = {
+    id: "reused",
+    label: "Reused the rehearsal n8n prepared earlier",
+    state: "done",
+    detail: `Same panel, deck, pitch length and goal as on ${when}, and nothing debriefed since, so n8n wasn't asked again`,
+  };
+  set({ id, started_at: Date.now(), state: "done", steps: [reused, ...steps], error: null, n8n_url: null });
+}
+
 export function prepFailed(id: string | undefined, error: string) {
   const run = current(id);
   if (!run) return;

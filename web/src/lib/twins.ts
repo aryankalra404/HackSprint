@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinListItem, TwinLogStep, TwinMeeting, TwinReading, TwinSource, TwinSummary } from "./contract";
@@ -67,6 +68,13 @@ export async function markTwinsStale(emails: string[]): Promise<void> {
     const stored = await readStored(email);
     if (stored && !stored.twin.sample) await writeStored(email, { ...stored, stale: true });
   }
+}
+
+// What the laptop knows of this person's twin, as a short string that changes whenever the twin does (for reusing a prep, prepCache.ts)
+export async function twinStamp(email: string): Promise<string> {
+  const stored = await readStored(email);
+  if (!stored) return "none";
+  return stored.stale ? "stale" : createHash("sha1").update(JSON.stringify(stored.twin)).digest("hex");
 }
 
 // Remember how this person looks at the table (from the meeting the presenter came from), for the portrait

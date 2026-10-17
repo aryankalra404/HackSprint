@@ -53,5 +53,8 @@ next-env.d.ts
 # voices n8n generated, saved by the laptop
 /.audio/
 
+# the last rehearsal n8n prepared for each meeting, reused while nothing it depends on changes
+/.prep-cache/
+
 # debriefed sessions kept on the laptop for the report
 /.sessions/

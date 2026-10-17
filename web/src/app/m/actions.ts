@@ -1,11 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import type { BriefInput, DraftMember, RehearseIn } from "@/lib/contract";
+import type { BriefInput, DraftMember, PrepRequest, RehearseIn } from "@/lib/contract";
 import { deckText } from "@/lib/deck";
-import { addMeeting, getMeeting, prepSession, prepSteps } from "@/lib/api";
+import { N8N_URL, addMeeting, getMeeting, prepSession, prepSteps } from "@/lib/api";
 import { othersDoingThis } from "@/lib/deckResearch";
-import { prepDone, prepFailed, prepProgress, prepStarted } from "@/lib/prepProgress";
+import { prepDone, prepFailed, prepProgress, prepReused, prepStarted } from "@/lib/prepProgress";
+import { forgetPrep, keepPrep, prepKey, reusablePrep } from "@/lib/prepCache";
 import { getBrief, getRoom, panelProblem, setDeck, updateRoom } from "@/lib/room";
 import { getProfile, saveProfile } from "@/lib/profile";
 
@@ -63,6 +64,8 @@ export async function retryMeetingAction(meetingId: string): Promise<Result<null
   } catch {
     return { ok: false, error: "n8n didn't take it. Check that the DryRun prep workflow is active." };
   }
+  // A new brief changes what /prep plans from
+  await forgetPrep(meetingId);
   return { ok: true, value: null };
 }
 
@@ -77,25 +80,49 @@ function rehearsalPath(sessionId: string, rehearseIn: RehearseIn): string {
   return rehearseIn === "browser" ? `/s/${sessionId}/rehearse` : `/s/${sessionId}`;
 }
 
-// Runs n8n's /prep for the panel and puts the bundle in the room, briefed. Returns the session id, or throws.
-// With a `runId`, the practice page follows n8n's progress (GET /api/prep/progress).
-async function prepare(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn, runId?: string): Promise<string> {
-  // n8n gets each slide's text (it can't reach the laptop's files) and the pitch length set on the practice page
+// What /prep gets for this panel: each slide's text (n8n can't reach the laptop's files), the pitch length set on the practice page,
+// and what the presenter offers and wants from this meeting (0.26: their own words, else n8n's guess)
+async function prepRequest(input: BriefInput, draftId: string, panel: DraftMember[]): Promise<PrepRequest> {
   const room = getRoom();
   const deck = room.deck ? await deckText(room.deck) : null;
-  // Know your side (0.26): what they offer, and what they want from this meeting (their own words, else n8n's guess)
   const profile = await getProfile();
   const own = profile.goals[draftId];
   const guess = getBrief()?.draft_id === draftId ? getBrief()?.goal?.text : undefined;
   const goal = own ? { text: own, source: "presenter" as const } : guess ? { text: guess, source: "n8n" as const } : null;
   input = { ...input, presenter: { ...input.presenter, ...(profile.offer ? { offer: profile.offer } : {}) } };
-  prepStarted(runId, deck ? deck.slides.length : null, panel.length, room.pitch_minutes);
+  return { ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel, goal };
+}
+
+// When n8n last prepared exactly this rehearsal (same panel, deck, pitch length and goal, nothing debriefed since), or null.
+// The practice page's Rehearse dialog says so, and offers to ask n8n again anyway.
+export async function reusablePrepAction(input: BriefInput, draftId: string, panel: DraftMember[]): Promise<string | null> {
+  if (!N8N_URL || panel.length === 0) return null;
+  const request = await prepRequest(input, draftId, panel);
+  return (await reusablePrep(draftId, await prepKey(request, await othersDoingThis(draftId))))?.at ?? null;
+}
+
+// Runs n8n's /prep for the panel and puts the bundle in the room, briefed. Returns the session id, or throws.
+// With a `runId`, the practice page follows n8n's progress (GET /api/prep/progress). Unless `fresh`, the same rehearsal prepared
+// before is reused from the laptop (prepCache.ts) and n8n isn't called.
+async function prepare(input: BriefInput, draftId: string, panel: DraftMember[], rehearseIn: RehearseIn, runId?: string, fresh = false): Promise<string> {
+  const room = getRoom();
+  const request = await prepRequest(input, draftId, panel);
+  const others = await othersDoingThis(draftId);
+  const key = N8N_URL ? await prepKey(request, others) : null;
+  const kept = key && !fresh ? await reusablePrep(draftId, key) : null;
   let bundle;
-  try {
-    bundle = await prepSession({ ...input, deck, draft_id: draftId, pitch_minutes: room.pitch_minutes, panel, goal }, room.deck, (p, url) => prepProgress(runId, p, url));
-  } catch (err) {
-    prepFailed(runId, "n8n couldn't plan the rehearsal. Try again in a moment.");
-    throw err;
+  if (kept) {
+    // The same deck uploaded again has new slide images: the bundle shows this one's
+    const images = new Map((room.deck?.slides ?? []).map((s) => [s.index, s.image_url]));
+    bundle = { ...kept.bundle, slides: kept.bundle.slides.map((s) => ({ ...s, image_url: images.get(s.index) ?? s.image_url })) };
+  } else {
+    prepStarted(runId, request.deck ? request.deck.slides.length : null, panel.length, room.pitch_minutes);
+    try {
+      bundle = await prepSession(request, room.deck, (p, url) => prepProgress(runId, p, url));
+    } catch (err) {
+      prepFailed(runId, "n8n couldn't plan the rehearsal. Try again in a moment.");
+      throw err;
+    }
   }
   updateRoom({
     phase: "briefed",
@@ -106,7 +133,13 @@ async function prepare(input: BriefInput, draftId: string, panel: DraftMember[],
     rehearse_in: rehearseIn,
     panel: bundle.personas.map(({ id, seat, color, role, role_short, display_name, avatar, difficulty, twin_email }) => ({ id, seat, color, role, role_short, display_name, avatar, difficulty, ...(twin_email ? { twin_email } : {}) })),
   });
-  prepDone(runId, prepSteps(bundle, await othersDoingThis(draftId)));
+  if (kept) {
+    prepReused(runId, kept.at, kept.steps);
+    return bundle.session_id;
+  }
+  const steps = prepSteps(bundle, others);
+  prepDone(runId, steps);
+  if (key) await keepPrep(draftId, key, bundle, steps).catch(() => {});
   return bundle.session_id;
 }
 
@@ -117,6 +150,7 @@ export async function briefPanelAction(
   panel: DraftMember[],
   rehearseIn: RehearseIn = "vr",
   runId?: string,
+  fresh = false,
 ): Promise<Result<string>> {
   const problem = panel.length === 0 ? "The panel needs at least one person." : panelProblem(panel);
   if (problem) return { ok: false, error: problem };
@@ -125,7 +159,7 @@ export async function briefPanelAction(
   if (getRoom().phase === "live") return { ok: false, error: LIVE_RUN };
   let sessionId: string;
   try {
-    sessionId = await prepare(input, draftId, panel, rehearseIn, runId);
+    sessionId = await prepare(input, draftId, panel, rehearseIn, runId, fresh);
   } catch {
     return { ok: false, error: "Couldn't brief the panel. Try again in a moment." };
   }
