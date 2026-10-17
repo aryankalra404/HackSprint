@@ -1,50 +1,152 @@
+<div align="center">
+
 # DryRun
 
-**Meet your buyers before you meet your buyers.**
+### Rehearse the meeting before it happens.
 
-DryRun prepares you for high-stakes meetings and lets you rehearse them. An n8n agent watches your calendar, decides which meetings matter, researches the company from your emails and the news, and sends you a brief that sticks to sourced facts. Then you rehearse the pitch in a VR boardroom (Meta Quest), in front of a panel built from the real attendees plus the roles that usually sign off on a deal like this.
+An n8n agent that prepares you for your most important meetings, then puts you in a room with the people you're about to meet: in VR or in the browser.
 
-Built for HackSprint 2026 (MAHE Bengaluru), Track: AI & Automation, PS 22 (Built with n8n).
+![n8n](https://img.shields.io/badge/n8n-the%20brain-EA4B71?logo=n8n&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-reasoning-4285F4?logo=googlegemini&logoColor=white)
+![Sarvam AI](https://img.shields.io/badge/Sarvam%20AI-voices%20%26%20speech-FF6B00)
+![Meta Quest](https://img.shields.io/badge/Meta%20Quest-VR%20boardroom-0467DF?logo=meta&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-web%20app-000000?logo=nextdotjs&logoColor=white)
 
-## What works today
-- **n8n prepares your meetings by itself.** A new Google Calendar event (or one added on the web) starts the workflow:
-  1. Gemini decides whether the meeting is worth preparing for, and says why.
-  2. It reads your recent emails with the attendees, the company's news (Google News) and its website. If the news is thin, it also searches the web (this needs a paid Gemini key).
-  3. It writes the brief: real attendees only, likely questions, risks, and dated news with sources.
-  4. It seats the real people from the invite as your practice panel, and suggests practice roles (a CFO, procurement) you can add with one tap.
-  5. It saves everything to an n8n data table and emails you the brief.
+**HackSprint at MAHE Bengaluru: Track T.02 AI & Automation, PS 22 "Built with n8n"**
+Team **Git Push and Pray**
 
-  The web app shows each step live as n8n works, with a link to the run.
-- **The web app** lists your upcoming meetings and asks "prepare for this meeting?". It shows the brief, and you can edit the practice panel: up to 6 people, any chair, any face. Upload your deck (PDF, PowerPoint or Keynote) and it goes on the boardroom TV.
-- **The VR boardroom** seats that panel live as you edit it. The headset finds the laptop over Wi-Fi, with USB as the fallback. Your slides are on the TV behind you, with a speaker view on the monitor you face; a quick pinch (right hand next, left hand back) or the controller's triggers change slides, no controllers needed. When you start speaking, the session starts and the panel turns to look at you; when you finish on your last slide, it wraps up by itself. The dashboard shows the headset's view on the big screen. (Tested in the Unity editor; testing on the Quest this week.)
+</div>
 
-- **n8n debriefs every rehearsal.** When a session ends, n8n reads what you said slide by slide, marks it (hedges, claims with no proof, what landed) with a better way to say each, scores you with quotes as evidence, judges who on the panel would back you, emails you the report and briefs the next rehearsal to press on your weak spots. The meeting shows every rehearsal and its report. (Tested end to end through the web app.)
+---
 
-- **Twins of the people you meet** (built 12 Oct). For each real person you meet, n8n keeps a twin: what they asked for, what you promised them, what they care about, every fact quoted from its source. It reads only real sources: your emails with their address, the meetings they were invited to, and their name on public pages and in news (those only as suggestions you confirm). Never anything from a rehearsal, and never its own briefs or reports. The twin page shows the person as a halftone portrait that fills in as facts are connected, with a tree from them to every fact and source; you can watch n8n build it live, replay the build, rewind it to a date, and confirm or reject what it found. The brief shows "Since last time" for people you know, and the rehearsal seats them from their twin. (Tested with a sample twin and with real builds on test addresses; not yet in a real rehearsal.)
+## The problem
+The meetings that matter most (a pitch to a buyer, a funding round, a review with leadership) are the ones people prepare for least. The context is scattered across your inbox, your calendar, the news and the other side's website. Pulling it together takes hours, so it gets skipped. Rehearsing is rarer still, because nobody is there to play the CFO who asks the hard question.
 
-- **After the real meeting** (built 12 Oct). The meeting page asks "How did it go?": record a voice note in the browser or type your notes. Sarvam transcribes it (Indian English and Hinglish), n8n writes down what each attendee raised, what you promised and what was decided, each quoted from what you said, adds it to their twins and checks how much of it your last rehearsal predicted ("your rehearsal asked 3 of the 4 things Rajiv raised"), shown on the meeting and on their twin page. It drafts the follow-up and emails it to you first; it goes to the attendees only if you answer "Send it". (Tested with recorded speech through Sarvam and a test run of the workflow on test data; not yet after a real meeting.)
+## The solution
+DryRun turns that whole process into an autonomous pipeline:
 
-## Being built
-In the headset: the panel interrupting with grounded questions in voice (built and tested in the Unity editor, not yet on the Quest), and the Rescue Agent that feeds you cues when you freeze.
+- **It notices.** A new calendar invite arrives, and n8n decides on its own whether the meeting deserves preparation, and logs why.
+- **It researches.** It reads your past emails with the attendees, the company's news and website, and searches the web when coverage is thin.
+- **It briefs you.** It emails you a brief built only on facts, each with its source.
+- **It rehearses you.** You pitch your real deck to a panel modelled on the real attendees. They interrupt, push back on your claims and name your competitors.
+- **It coaches you.** It scores the run with quoted evidence and drafts answers to the questions you couldn't handle. Then it makes the next rehearsal harder exactly where you were weak.
+- **It remembers.** It keeps a "twin" of every person you meet and gets sharper after each real meeting.
 
-A panel that feels real (built 12 Oct and live in n8n, not yet tried in a full spoken rehearsal):
-- Every question has one life: one follow-up at most, then it's answered, parked ("That's fine, send it to us after") or let go, and never asked again. n8n enforces this in code, not just in the prompt.
-- The panel says "mm-hm" the moment you finish an answer, and n8n's reply is about 1.7 s faster than before.
-- If you freeze, the chair says "Take your time", then asks a question that leads you back in.
-- The debrief judges only your own pitch time and discounts the system's mistakes. A run that's too short isn't scored. For every question you couldn't answer, it drafts a suggested answer with sources, and the next rehearsal asks it again.
-- n8n guesses what you want from the meeting, for you to confirm. When you upload your deck, an n8n AI Agent searches the news for who else already does what you pitch, deciding each search itself and searching again when the headlines miss, and the panel asks how yours is different, by name. Every competitor it names must cite a headline its search tool really returned.
+## How it works
 
-Rehearse in the browser: the same panel at the same table, your slides, raised hands, questions, rescue cues and the chair's closing, then the same debrief, for anyone without a headset. Built and tested end to end against stand-in turns; not yet with n8n's real turns.
+```
+  ┌───────────────┐    ┌────────────────┐    ┌─────────────────┐    ┌────────────────┐
+  │ Calendar      │───►│ n8n triage     │───►│ n8n research    │───►│ Brief email +  │
+  │ invite        │    │ worth it? why? │    │ Gmail · News ·  │    │ practice panel │
+  └───────────────┘    └────────────────┘    │ website · web   │    └───────┬────────┘
+                                             └─────────────────┘            │
+                                                                            ▼
+  ┌───────────────┐    ┌────────────────┐    ┌─────────────────┐    ┌────────────────┐
+  │ Next run      │◄───│ n8n debrief    │◄───│ Live rehearsal  │◄───│ n8n rehearsal  │
+  │ presses on    │    │ scores, drafts │    │ VR or browser,  │    │ prep: slides,  │
+  │ weak spots    │    │ owed answers   │    │ n8n every turn  │    │ panel, voices  │
+  └───────────────┘    └────────────────┘    └─────────────────┘    └────────────────┘
+                                                                            ▲
+  ┌──────────────────────────────────────────────────────────────┐          │
+  │ After the real meeting: voice note → n8n → twins update  ────┼──────────┘
+  └──────────────────────────────────────────────────────────────┘
+```
 
-## Stack
-- n8n Cloud, with Gemini (and Groq as the fallback)
-- Gmail and Google Calendar
-- Next.js web app
-- Unity 6.3 (URP, Meta XR SDK) on Meta Quest 3S
+### 1. Pre-flight: prep that starts itself
+A Google Calendar event triggers the workflow. Gemini triages the meeting: is it worth preparing, who is the company, what kind of meeting is it. Internal meetings are skipped, and the reason is kept. For the rest, n8n gathers your recent email threads with the attendees, Google News coverage and the company's website. It writes a brief that names only real attendees, cites every news item, and lists likely questions and risks. It seats the attendees as your practice panel, suggests a pitch length and emails you. The web app shows every step live as n8n works.
 
-## Repo
-- `n8n/`: the workflows, and the code that builds them
-- `web/`: the web app, which is also the hub the headset talks to
+### 2. Rehearsal prep: a panel briefed on you
+Upload your deck (PDF, PowerPoint or Keynote). n8n reads every slide and plans:
+- the key points and target time for each slide
+- each panellist's objections and manner, and who chairs
+- where someone may interrupt, and how the chair keeps time
+- a way back in for every slide, in case you freeze
 
-## Team
-Git Push and Pray
+Every line is voiced ahead of time with **Sarvam AI**, in natural Indian voices, so the room reacts instantly.
+
+At the same time, an **n8n AI Agent** researches your market. It runs its own Google News searches through a tool workflow and decides when to search again. It names who else already does what you're pitching, and every finding must cite a headline the tool really returned. The panel then asks how you're different, naming those competitors.
+
+### 3. Live: the boardroom
+Put on the Meta Quest and you're standing in a boardroom. Your slides are on the TV, a speaker view is on the confidence monitor, and the panel watches you. Change slides with a pinch of your fingers, no controllers needed. Every time you speak, n8n runs a turn:
+
+1. **Whisper** transcribes what you said.
+2. **n8n** decides whether anyone reacts, who and why.
+3. **Rules in n8n** keep the conversation human. Every question gets at most one follow-up, then it's answered, parked or dropped, never repeated. Only one question is in the air at a time.
+4. **Sarvam** voices the reply in that person's voice.
+
+If you freeze, the chair says *"Take your time"* and asks a question to get you going again. When you say *"that's all from me"*, the chair opens the floor. When questions run out, the meeting closes the way this kind of meeting would.
+
+A big-screen dashboard streams the headset's view live and shows what n8n is thinking, turn by turn. No headset? The same panel, voices and rules run in the browser.
+
+### 4. Post-flight: a debrief that acts
+When the run ends, n8n:
+- measures time, pace and filler words for every slide with fixed formulas, so the numbers are reproducible
+- marks your transcript with exact quotes (hedges, unproven claims, what landed) and offers a better way to say each one
+- scores clarity, evidence, objection handling and structure, each with evidence
+- judges who around the table you convinced, and the moment that decided it
+- drafts a sourced answer to every question you couldn't answer
+- emails you the full report
+
+Press **Run it again**. The panel re-asks what you owed them and presses harder on your weak spots.
+
+### 5. Twins: memory that compounds
+For every real person you meet, n8n builds a **twin**: what they care about, what they've raised and what you promised them. Every fact is quoted from a real source: your emails with them, their invites, and public pages that you confirm. A rule step drops anything the source doesn't support. Your next rehearsal seats them from their twin, and the brief shows "Since last time".
+
+### 6. After the real meeting
+Record a voice note on the meeting page. Sarvam transcribes it, including Indian English and Hinglish. n8n extracts what each attendee raised, what you promised and what was decided, and updates their twins. It shows how much of the real meeting your rehearsal predicted. It drafts the follow-up email and asks for your approval in Gmail before sending it to the attendees.
+
+## n8n is the brain
+Every decision in DryRun is made in n8n. The web app and the headset capture input, render the room and play audio. They never decide.
+
+| Workflow | Role |
+|---|---|
+| **DryRun prep** | Calendar trigger → triage with reasons → multi-source research → brief → panel → data table → email, with live progress and an error branch |
+| **DryRun rehearsal prep** | Plans slides, objections, the chair, interruptions and timekeeping, and pre-voices every line. Streams its progress to the web app |
+| **DryRun turn** | The real-time loop: transcribe → decide → enforce conversation rules → voice. No Code nodes on this path, so each turn stays fast |
+| **DryRun debrief** | Reproducible metrics, quoted judgement, drafted answers, report email, and weak spots carried into the next run |
+| **DryRun deck research** | An **AI Agent** with a Google News tool (**DryRun news search**). Every finding is grounded in a headline the tool returned |
+| **DryRun twin** · **twin update** | Builds and maintains a sourced profile of each person, with every fact quoted |
+| **DryRun after the meeting** | Voice note → per-person facts → twins → prediction hit rate → follow-up with human-in-the-loop approval |
+| **DryRun meetings API** | Serves meetings, rehearsals and twins from n8n data tables |
+
+**n8n features in use:** A Google Calendar trigger and Gmail actions, an AI Agent with a sub-workflow tool, data tables as long-term memory, streaming webhook responses, Gmail send-and-wait approval, error branches, and model fallbacks. Every Gemini step falls back to Groq, so a quota limit never stops a run.
+
+## Tech stack
+| Layer | Technology |
+|---|---|
+| Orchestration | **n8n Cloud** |
+| Reasoning | **Google Gemini**, with **Groq** (`gpt-oss-120b`) as a fallback |
+| Speech | **Sarvam AI** (`bulbul` voices, `saaras` transcription), **Groq Whisper** |
+| Data sources | Google Calendar, Gmail, Google News, company websites |
+| Web app | **Next.js**, Tailwind. Meetings, brief, practice panel, browser rehearsal, live dashboard and report. It's also the hub the headset connects to. |
+| VR | **Unity 6** (URP, Meta XR SDK) on **Meta Quest 3S**. Hand tracking, live headset streaming to the dashboard, discovery over Wi-Fi |
+
+## Run it
+```bash
+cd web
+npm install
+npm run dev          # http://localhost:3000
+```
+- **Sample data:** the app runs on sample data out of the box. Open `/s/demo/report` for a full debrief report and `/s/demo` for the dashboard.
+- **Live mode:** set `DRYRUN_N8N_URL` (your n8n webhook base) and `DRYRUN_OWNER_EMAIL` in `web/.env.local`.
+- **Workflows:** import the exports from [`n8n/`](n8n/) into any n8n instance. Credentials are removed.
+- **Deck conversion:** needs Ghostscript and ImageMagick, plus LibreOffice for PowerPoint and Keynote.
+- **Headset:** the Quest finds the laptop over Wi-Fi by itself. With a USB cable, run `npm run quest`.
+
+## Repository
+| Path | Contents |
+|---|---|
+| [`n8n/`](n8n/) | Workflow exports, and the Python build system that generates them |
+| [`web/`](web/) | The Next.js web app and the hub for the headset |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Every component and workflow, step by step |
+| [`docs/CONTRACT.md`](docs/CONTRACT.md) | The shared JSON contract between n8n, the web app and the headset |
+
+---
+
+<div align="center">
+
+**Git Push and Pray**
+
+*Rehearse the meeting before it happens.*
+
+</div>
