@@ -189,6 +189,8 @@ export class TurnTaker {
   private lastQuestionAt = -Infinity;
   private pauseSent = false;
   private pauseSpeechAt = 0;
+  // Seconds of questions during the pitch, from the question until the asker hands back: not pitch time (0.35)
+  private exchange = 0;
 
   constructor(
     private readonly bundle: Bundle,
@@ -238,6 +240,7 @@ export class TurnTaker {
     this.lastQuestionAt = -Infinity;
     this.pauseSent = false;
     this.pauseSpeechAt = 0;
+    this.exchange = 0;
     this.ears.beginRecording(preRollS);
     this.publish();
   }
@@ -266,6 +269,7 @@ export class TurnTaker {
     const speaking = this.ears.speaking;
     const paused = this.wasSpeaking && !speaking;
     this.wasSpeaking = speaking;
+    if (this.stage === "pitch" && (this.mode === "answer" || (this.current && !this.current.item.local))) this.exchange += dt;
     if (speaking) {
       this.speechClock += dt;
       this.lastActivity = now;
@@ -364,17 +368,22 @@ export class TurnTaker {
     if (sum(rec) >= minSpeechS) this.send("segment", this.slide, rec, undefined, due.length ? { mid_slide: true } : {});
   }
 
+  // Seconds of pitch so far: the session's time less the questions asked during the pitch (0.35: the chair's clock stops for them)
+  private pitchSeconds(): number {
+    return Math.max(0, this.deps.elapsed() - this.exchange);
+  }
+
   // The last slide, or without a deck, near the planned length
   private atPitchEnd(slideNow: number): boolean {
     const count = this.deps.slideCount();
-    return count != null ? slideNow >= count - 1 : this.deps.elapsed() >= noDeckPitchShare * (this.bundle.pitch_seconds || fallbackPitchS);
+    return count != null ? slideNow >= count - 1 : this.pitchSeconds() >= noDeckPitchShare * (this.bundle.pitch_seconds || fallbackPitchS);
   }
 
   // Pauses are checked on the last slide, without a deck, and from pauseCheckFrom of the pitch length on
   private pauseCheckDue(slideNow: number): boolean {
     const count = this.deps.slideCount();
     if (this.stage !== "pitch" || count == null || slideNow >= count - 1) return this.stage === "pitch";
-    return this.deps.elapsed() >= pauseCheckFrom * (this.bundle.pitch_seconds || fallbackPitchS);
+    return this.pitchSeconds() >= pauseCheckFrom * (this.bundle.pitch_seconds || fallbackPitchS);
   }
 
   // Back to the slide after an answer during the pitch: what they say next is the pitch again
@@ -434,13 +443,22 @@ export class TurnTaker {
 
   // 0.25 With a time limit, the chair keeps time as n8n planned it: says time is nearly up, and maybe stops the pitch for the questions.
   // From lines voiced ahead of time, at the presenter's next pause (the queue waits for it), with nothing sent to n8n. Never over the
-  // panel, a raised hand, a turn on its way, an answer or the wrap-up countdown.
+  // panel, a raised hand, a turn on its way, an answer or the wrap-up countdown. 0.35 On the pitch clock (questions during the pitch
+  // don't count), and on the last slide no nudge and no "time's up": they're finishing, so at the cut the pitch just ends at their next
+  // pause (after any pause check), and the chair opens the floor.
   private keepTime(): void {
     const time = this.bundle.time;
     if (!time?.limit_s || this.stage !== "pitch" || this.mode !== "segment") return;
     if (this.panelBusy() || this.wrap.countdownFrom != null) return;
-    const elapsed = this.deps.elapsed();
+    const elapsed = this.pitchSeconds();
     const chair = this.bundle.personas.find((p) => p.chair);
+    const slideNow = this.deps.slide();
+    if (this.atPitchEnd(slideNow)) {
+      if (this.timeKept.cut || !(time.cut_at_s > 0) || elapsed < time.cut_at_s || this.ears.speaking || this.ears.quietFor < lastSlidePauseCheckS) return;
+      this.timeKept = { nudged: true, cut: true };
+      this.endPitch(slideNow, false);
+      return;
+    }
     if (time.cut_at_s > 0 && elapsed >= time.cut_at_s && !this.timeKept.cut) {
       this.timeKept = { nudged: true, cut: true };
       const line = chair && this.line(chair.id, "time_up");
@@ -627,7 +645,7 @@ export class TurnTaker {
     const chair = this.bundle.personas.find((p) => p.chair);
     if (!chair || this.inFlight > 0) return;
     if (this.atPitchEnd(this.slide) && this.speechClock - this.slideSpeechFrom > 1) return;
-    if (this.bundle.time?.limit_s && this.deps.elapsed() >= this.bundle.time.limit_s) return;
+    if (this.bundle.time?.limit_s && this.pitchSeconds() >= this.bundle.time.limit_s) return;
     const soft = this.line(chair.id, "rescue_soft");
     const question = this.bundle.lines.find((l) => l.kind === "rescue_question" && l.persona_id === chair.id && l.slide_index === this.slide && l.audio_url);
     // A new rescue waits out the cooldown; the question that follows "Take your time" in the same freeze doesn't
@@ -689,7 +707,7 @@ export class TurnTaker {
   private pitchClock(): TurnView["time"] {
     const limit = this.bundle.time?.limit_s;
     if (!this.active || !limit || (this.stage !== "opening" && this.stage !== "pitch")) return null;
-    const elapsed = Math.floor(this.deps.elapsed());
+    const elapsed = Math.floor(this.pitchSeconds());
     return { elapsed, limit, tone: elapsed >= limit ? "over" : elapsed >= nearShare * limit ? "near" : "ok" };
   }
 

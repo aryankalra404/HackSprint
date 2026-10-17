@@ -18,13 +18,16 @@ interface Stored {
 const DIR = path.join(process.cwd(), ".prep-cache");
 const file = (meetingId: string) => path.join(DIR, `${meetingId.replace(/[^\w-]/g, "_")}.json`);
 
+// Bumped when n8n's rehearsal prep plans differently (0.35: more questions during the pitch), so a kept bundle isn't reused across it
+const PREP_LOGIC = "0.35";
+
 // What n8n's prep depends on, hashed. The voices the laptop already has (cached_voices) only save n8n work, so they're left out.
 export async function prepKey(request: PrepRequest, others: string[]): Promise<string> {
   const rest: PrepRequest = { ...request };
   delete rest.cached_voices;
   const emails = request.panel.flatMap((m) => (m.twin_email ? [m.twin_email] : [])).sort();
   const twins = await Promise.all(emails.map(async (e) => [e, await twinStamp(e)]));
-  return createHash("sha1").update(JSON.stringify({ rest, others, twins })).digest("hex");
+  return createHash("sha1").update(JSON.stringify({ logic: PREP_LOGIC, rest, others, twins })).digest("hex");
 }
 
 // The kept prep, if it was made for exactly this and its voices are still on the laptop
