@@ -166,14 +166,20 @@ export function setSlide(index: number): { ok: true; room: Room } | { ok: false;
 }
 
 // Why a panel can't be saved, or null if it's fine
-export function panelProblem(panel: DraftMember[]): string | null {
+export function panelProblem(panel: unknown): string | null {
   if (!Array.isArray(panel)) return "The panel must be a list.";
   if (panel.length > MAX_PANEL) return `The panel is at most ${MAX_PANEL} people.`;
+  if (panel.some((member) => !member || typeof member !== "object")) return "Each panel member must be an object.";
+  const members = panel as Partial<DraftMember>[];
+  if (members.some((member) => typeof member.id !== "string" || !member.id.trim())) return "Each person needs an id.";
+  if (members.some((member) => typeof member.role !== "string" || typeof member.role_short !== "string" || typeof member.display_name !== "string"))
+    return "Each person needs role, short role and display name text.";
+  if (members.some((member) => ![1, 2, 3].includes(member.difficulty as number))) return "Each person needs a difficulty from 1 to 3.";
   const unique = (xs: unknown[]) => new Set(xs).size === xs.length;
-  if (!unique(panel.map((m) => m.id))) return "Each person needs their own id.";
-  if (!unique(panel.map((m) => m.seat)) || panel.some((m) => !ALL_SEATS.includes(m.seat))) return "Each person needs their own seat.";
-  if (!unique(panel.map((m) => m.color)) || panel.some((m) => !ALL_COLORS.includes(m.color))) return "Each person needs their own colour.";
-  if (!unique(panel.map((m) => m.avatar)) || panel.some((m) => !AVATARS.some((a) => a.id === m.avatar))) return "Each person needs their own face.";
+  if (!unique(members.map((m) => m.id))) return "Each person needs their own id.";
+  if (!unique(members.map((m) => m.seat)) || members.some((m) => !ALL_SEATS.includes(m.seat as DraftMember["seat"]))) return "Each person needs their own seat.";
+  if (!unique(members.map((m) => m.color)) || members.some((m) => !ALL_COLORS.includes(m.color as DraftMember["color"]))) return "Each person needs their own colour.";
+  if (!unique(members.map((m) => m.avatar)) || members.some((m) => !AVATARS.some((a) => a.id === m.avatar))) return "Each person needs their own face.";
   return null;
 }
 
