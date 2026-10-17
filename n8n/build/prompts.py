@@ -150,12 +150,14 @@ Decide, for this meeting and this panel (never a generic template):
   presenter, open the floor and close the meeting.
 - plan: during_pitch and after_pitch, how many questions a real meeting of this kind and length would have during and after the
   pitch, and why (one sentence the presenter will read). Interruptions come from people whose manner is "interrupts". A question with
-  its answer takes about a minute, and interruptions eat into the pitch, so keep the numbers realistic for {pace}: a short
-  pitch gets few interruptions, if any. Pick the questions that matter most, not one per person. interrupts: where each question
+  its answer takes under a minute, and the chair's clock stops while it is asked and answered. A real panel engages: when someone's
+  manner is "interrupts", plan 2 questions during a pitch of 2 to 4 minutes, 3 for 5 minutes or more (fewer only for a meeting where
+  nobody would interrupt). Pick the questions that matter most, not one per person. interrupts: where each question
   during the pitch would come, one entry per question (as many as during_pitch): persona_id (someone whose manner is "interrupts"),
-  slide_index (the slide it is about; 0 if there is no deck), after_s (how many seconds the presenter would have talked on that slide
-  before this person's hand goes up, e.g. once the claim it is about has been made, 8 to 90; with no deck, seconds into the pitch) and
-  about (a few words). The presenter is only heard mid-slide at these points, so put them where a real interruption would come.
+  slide_index (the slide it is about, on different slides between the title and the last slide, which never get one; 0 if there is
+  no deck), after_s (how many seconds the presenter would have talked on that slide before this person's hand goes up, once the claim
+  it is about has been made, usually 5 to 20; with no deck, seconds into the pitch) and about (a few words). The presenter is only
+  heard mid-slide at these points, so put them where a real interruption would come.
 - time: {time_rule}
 - rescue_after_s: seconds of silence before the calm, keyword and bridge cues, rising (about 3, 6 and 10 for most presenters).
 - lines: short lines voiced ahead of time so common reactions play at once, in the voice of each person, for this meeting:
@@ -220,7 +222,8 @@ REHEARSAL_UNTIMED = {
 # DryRun turn (/turn): how the room reacts to what the presenter just said. n8n decides who speaks, what and why;
 # the headset only decides when (it waits for the presenter to pause).
 TURN_PROMPT = """You are the panel in a rehearsal of a real meeting, deciding how the room reacts to what the presenter just said.
-React as these people would in this meeting: realistic, specific, never theatrical. During the pitch, most of the time nobody speaks.
+React as these people would in this meeting: realistic, specific, never theatrical. A real panel is engaged: most slides pass in
+silence, but people do cut in with a sharp question where the plan has room, and now and then someone briefly reacts to a point.
 
 The meeting: {meeting}
 The plan for questions: {plan}. Asked so far: {asked_during} during the pitch, {asked_after} after it.
@@ -237,13 +240,19 @@ What the presenter just said: "{transcript}"
 What to do for each moment:
 - opening (their first words): if they introduced themselves or greeted the room, the chair welcomes them (kind "welcome", its line_id).
   If they went straight into the pitch, or said nothing, no reaction.
-- segment (what they said on one slide): decide whether anyone interrupts now. Only someone whose manner is "interrupts", only while
-  questions during the pitch remain in the plan (a guide: break it only for something that really matters), and only about this slide
+- segment (what they said on one slide): decide whether anyone reacts now. A question: only someone whose manner is "interrupts",
+  while questions during the pitch remain in the plan (a guide: break it only for something that really matters), about this slide
   or what was just said: a claim with nothing behind it, a number that does not add up, a gap against their objections or the research.
-  Never ask what the presenter already covered, nor anything a thread already asks. A question: kind "question", raise_hand true,
-  one or two sentences in that person's voice, referring to what was said. Otherwise no reaction. A segment sent mid-slide comes
-  at one of the plan's interruption points (plan.interrupts): the hand there goes up only if that point still matters after what
-  was said; if the presenter already answered it, nobody reacts.
+  Never ask what the presenter already covered, nor anything a thread already asks. kind "question", raise_hand true, one or two
+  sentences in that person's voice, referring to what was said. At one of the plan's interruption points (a segment sent mid-slide,
+  or the slide a plan.interrupts entry names while questions during the pitch remain) that person asks unless the presenter clearly
+  answered it already: a panelist with a question ready asks it. Never on the last slide: questions there wait for the floor.
+  If nobody asks, someone may briefly react to a specific point that landed, kind "acknowledge", raise_hand false: one of their
+  acknowledge lines by line_id if it fits, otherwise 2 to 6 words of new text about what was said ("Isolation forest, good choice.");
+  about every second or third slide, never on two slides running. Otherwise no reaction.
+- pause (a pause near the end of the pitch, with everything said on the slide so far): only decide whether the presenter has
+  finished the pitch: pitch_over true if they clearly wrapped up (a closing line such as "that was it" or "that's our project",
+  a thank-you, an invitation for questions); a pause mid-sentence or mid-point is false. No reactions.
 - answer (to the thread in this moment): judge it in answer_verdict: "resolved" (direct and specific), "partial" or "dodged", and set
   presenter_unsure true if they said they don't know, aren't sure or will come back to it. The person who asked reacts, once:
   resolved: an "acknowledge" line (by line_id). Unsure: they accept it and park it, kind "park" ("That's fine, send it to us after.").
@@ -282,8 +291,9 @@ TURN_SCHEMA = {"type": "object", "properties": {
         "required": ["persona_id", "kind", "text", "line_id", "raise_hand", "reason", "thread_id"]}},
     "answer_verdict": {"type": "string", "enum": ["resolved", "partial", "dodged", "none"]},
     "presenter_unsure": {"type": "boolean"},
-    "end_session": {"type": "boolean"}},
-    "required": ["note", "reactions", "answer_verdict", "presenter_unsure", "end_session"]}
+    "end_session": {"type": "boolean"},
+    "pitch_over": {"type": "boolean", "description": "Only for a pause: the presenter has finished the pitch"}},
+    "required": ["note", "reactions", "answer_verdict", "presenter_unsure", "end_session", "pitch_over"]}
 
 # DryRun debrief (/debrief): the judgement on one rehearsal. Times, words per minute, filler words and pacing are counted in a Code
 # node (the same input always gives the same numbers); this is what needs judgement, always tied to the presenter's own words.

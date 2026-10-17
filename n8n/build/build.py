@@ -948,6 +948,15 @@ const unnamed = (p, text) => { const t = String(text || '').trim(); const first 
 let reactions = (d.reactions || []).filter(x => people[x.persona_id] && KINDS.includes(x.kind) && (x.text || lines[x.line_id] || SOCIAL.includes(x.kind)))
   .map(x => ({ ...x, text: unnamed(people[x.persona_id], x.text) }));
 if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome').slice(0, 1);
+// A pause on the last slide whose words didn't settle it (0.35): the model only said whether the presenter finished. If so, the chair
+// opens the floor with the line voiced ahead of time, as when the words settle it, and the client sends the pitch end.
+if (r.pause) {
+  const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
+  const floor = d.pitch_over === true && chair ? (r.bundle.lines || []).find(l => l.persona_id === chair.id && l.kind === 'open_floor') : null;
+  return { reply: { transcript: r.transcript, note: d.pitch_over === true ? 'You wrapped up, so the chair opened the floor.' : 'You paused, and the panel waited for you to go on.',
+    reactions: floor ? [{ persona_id: chair.id, kind: 'open_floor', text: floor.text, line_id: floor.id, raise_hand: false, reason: 'You wrapped up the pitch, so the chair opened the floor.' }] : [],
+    answer_verdict: null, threads: [], end_session: false, ...(d.pitch_over === true ? { pitch_over: true } : {}) }, to_voice: [] };
+}
 // Stopped for time (0.25), or the floor opened after the presenter said they'd finished (0.34): the chair has already moved to the
 // questions with a line the client played
 if (r.mode === 'pitch_end' && (r.time_up || r.floor_opened)) reactions = reactions.filter(x => x.kind !== 'open_floor');
@@ -1036,6 +1045,7 @@ for (const x of reactions) {
     if (asked >= 1) continue;
     if (!pitchOver && r.mode !== 'segment') continue;
     if (r.mode === 'segment' && (people[x.persona_id].manner === 'waits' || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide))) continue;
+    if (r.mode === 'segment' && (r.bundle.slides || []).length > 1 && r.slide_index === (r.bundle.slides || []).length - 1) continue;
     let t = x.thread_id ? byId[x.thread_id] : null;
     if (!t) t = like(x.text) || null;
     if (t && (CLOSED.includes(t.status) || t === cur || t.persona_id !== x.persona_id)) continue;
@@ -1052,6 +1062,14 @@ for (const x of reactions) {
 }
 reactions = out;
 if (asked) reactions = reactions.filter(x => x.kind !== 'closing');
+// A brief reaction to a slide (0.35): one, only when nobody asks, never mid-slide and never on two slides running
+if (r.mode === 'segment') {
+  const prev = r.turns.filter(t => t.mode === 'segment').slice(-1)[0];
+  const reactedLast = !!prev && (prev.reactions || []).some(x => x.kind === 'acknowledge');
+  const acks = reactions.filter(x => x.kind === 'acknowledge');
+  reactions = reactions.filter(x => x.kind !== 'acknowledge');
+  if (acks.length && !asked && !r.mid_slide && !reactedLast) reactions.push({ ...acks[0], raise_hand: false });
+}
 // Handing back to the pitch (0.34) only happens during it, and never in a reply that asks something: "please go on" after a question
 // sounded random
 if (pitchOver || reactions.some(x => x.kind === 'question' || x.kind === 'follow_up')) reactions = reactions.filter(x => x.kind !== 'hand_back');
@@ -1192,7 +1210,8 @@ const parts = {
   slide: slide ? JSON.stringify({ number: slide.index + 1, title: slide.title, key_points: slide.key_points }) : 'No slides.',
   turns: history,
   threads: r.threads.length ? r.threads.map(t => t.id + ' (' + name(t.persona_id) + ', ' + t.status + ', follow-ups ' + (t.follow_ups || 0) + '): "' + t.text + '"').join('; ') : 'None yet.',
-  mode: r.mode + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : '')
+  mode: (r.pause ? 'pause' : r.mode) + (r.mid_slide ? " (mid-slide, at one of the plan's interruption points)" : '') + (r.time_up ? ' (the chair just stopped the pitch for time)' : '')
+    + ((b.slides || []).length > 1 && r.slide_index === (b.slides || []).length - 1 && r.mode === 'segment' ? ' (the last slide)' : '')
     + (r.floor_opened ? ' (the chair has already opened the floor)' : ''),
   asked_by: r.asked_by ? ' (answering ' + name(r.asked_by) + ', id ' + r.asked_by + (r.answering_id ? ', thread ' + r.answering_id : '') + ')' : '', transcript,
 };
@@ -1204,16 +1223,21 @@ const interrupters = (b.personas || []).filter(p => p.manner !== 'waits');
 // A pause near the end of the pitch (0.34): did the presenter say they've finished? Checked on their last words, without the model, so
 // the chair can open the floor at once. A pause without a finish is only listened to: the slide's segment carries the words.
 const spoken = transcript.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z']+/g, ' ').split(' ').filter(Boolean);
-// Clear ones anywhere in the last words ("happy to take questions"); short ones ("that's it", "thank you") only as the very last words
-const FINISH = /(end of (the|my|our) (pitch|presentation)|(done|finished) with (the|my|our) (pitch|presentation)|(happy|glad|open|ready) to (take|answer|hear) (any |your |some )?questions|(any|over to you for) questions|open (it|the floor) (up )?(to|for) (you|questions)|over to (you|the panel)|thank you (so much |very much |all )?for (listening|your time|having)|that (concludes|wraps up|was) (my|our|the) (pitch|presentation|demo))/;
-const LAST = /(that'?s (all|it|everything|about it)|that (was|is) (it|all|everything)|(i ?'?m|i am|we ?'?re|we are) (done|finished))( from (me|us|our side|my side))?( for now| for today| guys)?$/;
-// A bare "thank you" only on the last slide (or without a deck): Whisper sometimes adds one after the last words
-const THANKS = /(thank you|thanks)( so much| very much| all| everyone)?$/;
-const onLast = !(b.slides || []).length || r.slide_index >= (b.slides || []).length - 1;
-const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (onLast && THANKS.test(spoken.slice(-4).join(' '))));
-const skip = r.pause || (r.mode === 'segment' && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide)));
+// Clear ones anywhere in the last words ("happy to take questions", "that was it for my pitch"); short ones ("that's it") only as the
+// very last words; on the last slide also a bare "thank you" or "that's our project" (Whisper sometimes adds a thank-you after the last
+// words elsewhere). On the last slide, words that don't settle it go to the model, which only decides whether they finished (0.35).
+const FINISH = /(end of (the|my|our) (pitch|presentation)|(done|finished) with (the|my|our) (pitch|presentation)|(happy|glad|open|ready) to (take|answer|hear) (any |your |some )?questions|(any|over to you for) questions|open (it|the floor) (up )?(to|for) (you|questions)|over to (you|the panel)|thank you (so much |very much |all )?for (listening|your time|having)|that (concludes|wraps up|was|is) (my|our|the) (pitch|presentation|demo)|(that'?s|that is|that was|this is) (it|all|everything) (for|from) ((my|our|the) (pitch|presentation|side)|me|us|today|now)|(that'?s|that is|that was) the end)/;
+const LAST = /((that'?s|that is|that was) (all|it|everything|about it)|(i ?'?m|i am|we ?'?re|we are) (done|finished))( from (me|us|our side|my side))?( for now| for today| guys)?$/;
+const ON_LAST = /((thank you|thanks)( so much| very much| all| everyone)?|(that'?s|that is|so that'?s|and that'?s) (our|my) (pitch|presentation|project|product|solution|idea))$/;
+const slideCount = (b.slides || []).length;
+const onLast = !slideCount || r.slide_index >= slideCount - 1;
+const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (onLast && ON_LAST.test(spoken.slice(-7).join(' '))));
+// The last slide of a deck gets no question during the pitch (0.35): it waits for the floor
+const lastSlide = r.mode === 'segment' && !r.pause && slideCount > 1 && r.slide_index === slideCount - 1;
+const skip = (r.pause && (finished || !onLast || said < 2)) || lastSlide || (r.mode === 'segment' && !r.pause && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide)));
 const skip_note = !skip ? '' : finished ? 'You said you had finished, so the chair opened the floor.'
   : r.pause ? 'You paused, and the panel waited for you to go on.'
+  : lastSlide ? 'Your closing slide: the panel kept their questions for the floor.'
   : !said ? 'Nothing came through on this slide, so the panel just listened.'
   : !interrupters.length ? 'Nobody on this panel interrupts a pitch, so they held their questions.'
   : r.slide_index === 0 && !r.mid_slide ? 'Your opening slide: the panel let you get going.' : 'Only a few words on this slide, so nobody cut in.';
