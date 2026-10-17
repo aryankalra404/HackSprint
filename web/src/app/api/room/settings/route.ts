@@ -4,7 +4,8 @@ import { getRoom, updateRoom } from "@/lib/room";
 // Room settings from the web (contract: PUT /api/room/settings); the headset sees them on its next poll.
 // Send any of them. The pitch length only changes before the panel is briefed (it goes to /prep).
 export async function PUT(request: Request) {
-  const body = (await request.json()) as { name_cards?: unknown; height_offset?: unknown; side_offset?: unknown; pitch_minutes?: unknown; rehearse_in?: unknown };
+  const body = await request.json().catch(() => null) as { name_cards?: unknown; height_offset?: unknown; side_offset?: unknown; pitch_minutes?: unknown; rehearse_in?: unknown } | null;
+  if (!body) return Response.json({ error: "The request body must be valid JSON." }, { status: 400 });
   const patch: Partial<Pick<Room, "name_cards" | "height_offset" | "side_offset" | "pitch_minutes" | "rehearse_in">> = {};
   if (body.name_cards !== undefined) {
     if (typeof body.name_cards !== "boolean") return Response.json({ error: "name_cards must be true or false" }, { status: 400 });
