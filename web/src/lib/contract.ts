@@ -586,6 +586,8 @@ export interface Room {
   slide: number;
   // Metres to raise (or lower, if negative) the presenter's eyes in VR, from -0.5 to 0.5; 0 unless moved on the web
   height_offset: number;
+  // Metres to move the presenter right (or left, if negative) in VR, from -0.5 to 0.5; 0 unless moved on the web (0.36)
+  side_offset: number;
   // How long the presenter means to pitch, sent to /prep; starts at n8n's suggestion, or 5. null: no time limit (0.25)
   pitch_minutes: number | null;
   // Where the presenter rehearses this panel (0.23): the headset, or the browser's rehearsal page; "vr" for older rooms

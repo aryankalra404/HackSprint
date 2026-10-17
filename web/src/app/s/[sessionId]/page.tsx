@@ -28,6 +28,7 @@ async function Session({ sessionId }: { sessionId: string }) {
       session={session}
       nameCards={room.name_cards}
       heightOffset={room.height_offset}
+      sideOffset={room.side_offset}
       room={inRoom ? room : null}
       meetingId={inRoom ? (getBrief()?.draft_id ?? null) : null}
     />

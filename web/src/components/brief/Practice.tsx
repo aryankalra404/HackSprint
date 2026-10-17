@@ -9,7 +9,7 @@ import { PanelTable, type Selection } from "./PanelTable";
 import { PanelEditor } from "./PanelEditor";
 import { useRoom } from "@/lib/useRoom";
 import { NameCardsToggle } from "../room/NameCardsToggle";
-import { HeightControl } from "../room/HeightControl";
+import { PositionControl } from "../room/PositionControl";
 import { DeckPanel } from "../room/DeckPanel";
 import { PitchLength } from "./PitchLength";
 import { RehearseDialog } from "./RehearseDialog";
@@ -124,7 +124,7 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
         actions={
           <>
           <NameCardsToggle initial={nameCards} />
-          <HeightControl initial={initialRoom.height_offset} />
+          <PositionControl height={initialRoom.height_offset} side={initialRoom.side_offset} />
           <p className="inline-flex items-center gap-2 h-8 rounded-full border border-line bg-surface px-3 text-xs" aria-live="polite">
             <span
               aria-hidden="true"

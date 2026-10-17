@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.35, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.36, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -643,6 +643,7 @@ Long poll: answers as soon as the room's `version` is greater than `since`, or a
   },
   "slide": 0,
   "height_offset": 0,
+  "side_offset": 0,
   "pitch_minutes": 5,
   "rehearse_in": "vr | browser",
   "debrief": { "run_id": "string", "state": "running | done | failed | skipped", "steps": [], "error": null, "overall": 63, "headline": "string" }
@@ -665,13 +666,14 @@ Field notes:
 - `rehearse_in` *(0.23)*: where the presenter rehearses this panel, `"vr"` (the headset, the default, and for rooms saved before 0.23) or `"browser"` (the web app's rehearsal page, `/s/<session_id>/rehearse`). Set when the panel is briefed. **When it's `"browser"`, the headset** keeps seating the panel and showing slides, but doesn't start the session on speech or A, doesn't record or take turns, and its monitor says "Rehearsing in the browser". The browser page, when it's `"vr"`, offers "Rehearse here instead", which sets it to `"browser"`.
 - `pitch_minutes` *(0.18)*: how long the presenter means to pitch, sent to `/prep`. Set on the practice page; it starts at n8n's suggestion (`proposal.pitch.minutes`), or 5 without one. `null` *(0.25)*: no time limit.
 - `height_offset` raises (or, if negative, lowers) the presenter's eyes in VR, in metres from -0.5 to 0.5, to the centimetre; 0 unless moved on the web. It's for when the headset's floor is off. The headset eases to it and keeps it after teleporting.
+- `side_offset` *(0.36)* moves the presenter left (negative) or right in VR, in metres from -0.5 to 0.5, to the centimetre, along the direction the presenter's seat faces; 0 unless moved on the web. It's for lining yourself up with the seat while sitting, without standing up to recentre. Eased in like `height_offset`.
 - When the deck is converted, the laptop also extracts each slide's text, which it sends to `/prep` (not in the room).
 
 ### PUT `/api/room/panel`
 Web only: saves the presenter's edits while drafting. Body: `{ "panel": [...] }` (the same items as `/prep`'s `panel`). Bumps `version`.
 
 ### PUT `/api/room/settings`
-Web only. Body: `{ "name_cards": true, "height_offset": 0.12, "pitch_minutes": 5, "rehearse_in": "browser" }`, any of them. `pitch_minutes` is a whole number from 1 to 60, or `null` for no time limit *(0.25)*, allowed only before the panel is briefed. `rehearse_in` *(0.23)* is `"vr"` or `"browser"`, allowed while `briefed` or `done` (`409` otherwise). `height_offset` is clamped to -0.5 to 0.5 and rounded to the centimetre; the web sends it several times a second while its height bar is dragged. Answers with the room, or `400` with `{ "error": "string" }`. Bumps `version`.
+Web only. Body: `{ "name_cards": true, "height_offset": 0.12, "side_offset": -0.05, "pitch_minutes": 5, "rehearse_in": "browser" }`, any of them. `pitch_minutes` is a whole number from 1 to 60, or `null` for no time limit *(0.25)*, allowed only before the panel is briefed. `rehearse_in` *(0.23)* is `"vr"` or `"browser"`, allowed while `briefed` or `done` (`409` otherwise). `height_offset` and `side_offset` are clamped to -0.5 to 0.5 and rounded to the centimetre; the web sends them several times a second while their bars are dragged. Answers with the room, or `400` with `{ "error": "string" }`. Bumps `version`.
 
 ### POST `/api/room/deck`
 Web only: uploads the presenter's deck. Body: `multipart/form-data` with one `file`: a PDF, PowerPoint (`.pptx`, `.ppt`) or Keynote (`.key`) file, up to 100 MB. The laptop converts it (PowerPoint and Keynote through LibreOffice, then every format through Ghostscript), which takes a few seconds, and answers with the room. Errors answer `400` (wrong type, empty, unreadable) or `500` (conversion failed) with `{ "error": "string" }`. Bumps `version`.
@@ -762,3 +764,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.33 (14 Oct): the sample meeting is gone, and with it the room's `scripted`. Every rehearsal is decided by n8n; the headset no longer stands in for the presenter. A room saved with `scripted` set starts empty.
 - 0.34 (17 Oct): a meeting that flows. `/turn` gains `replaces_t` (an answer the presenter carried on after a pause is sent again whole, and the laptop drops the turn it replaces), `pause` segments near the end of the pitch (n8n checks the words for a finish and answers `pitch_over` with the chair opening the floor) and `floor_opened` on `pitch_end`. n8n's rules: `hand_back` only during the pitch and never with a question, no follow-up on a closed thread, no new question while another waits for its answer. The clients drop a question decided before another was asked, let a hand that's been ignored for 6 s of speech cut in, and the chair's spoken rescue comes at most once per slide. The last slide's wrap-up waits 3 s and counts down 2 (was 4 and 3).
 - 0.35 (17 Oct): a livelier panel that knows when you've finished. Prep plans about 2 questions during a 2 to 4 minute pitch, never on the title or last slide, earlier in the slide; at a planned point the panelist asks unless it was answered; a slide can get a brief `acknowledge`. The last slide gets no question during the pitch, no nudge and no `time_up` (at the cut, a plain `pitch_end`); the pitch clock stops during questions asked in the pitch. More finish phrases ("that was it for my pitch"), and on the last slide the model decides when the words don't. No JSON change.
+- 0.36 (17 Oct): the room gains `side_offset` (moves the presenter left or right in VR, set from a bar on the web next to the height bar), and `PUT /api/room/settings` takes it. For lining up with the seat while sitting.

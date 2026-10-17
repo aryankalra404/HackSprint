@@ -28,7 +28,7 @@ interface RunLog {
   failed: { t: number; mode: TurnMode }[];
 }
 
-const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, pitch_minutes: 5, rehearse_in: "vr", debrief: null };
+const EMPTY: Room = { version: 0, phase: "empty", prospect: null, panel: [], bundle: null, session_id: null, name_cards: false, live: null, deck: null, slide: 0, height_offset: 0, side_offset: 0, pitch_minutes: 5, rehearse_in: "vr", debrief: null };
 
 // On globalThis so dev-mode reloads keep one store
 const g = globalThis as { __dryrunRoom?: Store };

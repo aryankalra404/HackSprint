@@ -12,7 +12,7 @@ import { AgentFeed } from "./AgentFeed";
 import { BottomStrip } from "./BottomStrip";
 import { PersonaDrawer } from "./PersonaDrawer";
 import { NameCardsToggle } from "../room/NameCardsToggle";
-import { HeightControl } from "../room/HeightControl";
+import { PositionControl } from "../room/PositionControl";
 import { SessionControls } from "./SessionControls";
 import { HeadsetView } from "./HeadsetView";
 import { DeckPanel } from "../room/DeckPanel";
@@ -30,12 +30,14 @@ export function Dashboard({
   session,
   nameCards,
   heightOffset,
+  sideOffset,
   room: initialRoom,
   meetingId = null,
 }: {
   session: SessionRecord;
   nameCards: boolean;
   heightOffset: number;
+  sideOffset: number;
   room: Room | null;
   meetingId?: string | null;
 }) {
@@ -78,7 +80,7 @@ export function Dashboard({
           <>
           {room && !debrief && <DeckPanel room={room} compact />}
           <NameCardsToggle initial={nameCards} />
-          <HeightControl initial={heightOffset} />
+          <PositionControl height={heightOffset} side={sideOffset} />
           {room && !debrief ? (
             <SessionControls room={room} />
           ) : (

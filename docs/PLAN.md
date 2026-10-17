@@ -90,6 +90,7 @@ Nothing in the meeting is scripted: n8n decides who speaks, what they say and wh
 - [x] VR: the deck on the TV and a speaker view on the confidence monitor (this slide, the next, the time); right trigger next, left trigger back; every slide cached on the headset (editor-tested)
 - [x] VR: controller-free: hand tracking with the rig's tracked hands; a quick pinch changes slides (right hand next, left hand back); no session gesture with hands (speech starts it, the last slide or the dashboard ends it); controllers still work (contracts 0.16 and 0.17; compiles, pinches need a Quest build)
 - [x] Eye height: a height bar on the practice page and dashboard moves the presenter's eyes in VR (`height_offset`, contract 0.16; tested in editor Play mode)
+- [x] Seat position: a left-right bar beside it moves the presenter sideways in VR, to line up with the seat while sitting (`side_offset`, contract 0.36, 17 Oct; the web route tested, the headset compiles, not yet run on the Quest)
 - [x] VR: hands dressed for the boardroom: lit skin (one material to match the presenter) and a suit sleeve with a shirt cuff that follows an estimated forearm, instead of the rig's grey hands (checked by editor snapshots)
 - [ ] Quest: test the quick pinches (one pinch, one slide) (and that talking with your hands doesn't change slides), and how the dressed hands look and follow when tracked
 - [ ] WF1 Panel (`/panel`): not needed for the demo, since meeting prep already proposes the panel; parked
