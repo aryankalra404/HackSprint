@@ -54,6 +54,10 @@ export class VoiceActivity {
   get recordedSpeech(): number {
     return this.speech;
   }
+  // Seconds the level has been below the threshold: a breath between words while still speaking (0 while muted)
+  get gapFor(): number {
+    return this.muted ? 0 : this.softFor;
+  }
 
   push(samples: Float32Array): void {
     const win = Math.round(this.rate * windowSeconds);
@@ -85,6 +89,11 @@ export class VoiceActivity {
     this.chunks = n > 0 ? [this.fromRing(n)] : [];
     this.recordedSamples = n;
     this.speech = 0;
+  }
+
+  // The recording so far, left in place (a pause check sends a copy, contract 0.34)
+  peekRecording(): Recording {
+    return { samples: concat(this.chunks), speech: this.speech };
   }
 
   // The recording so far, and starts a new one
