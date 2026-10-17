@@ -83,14 +83,25 @@ export function waitForChange(since: number, timeoutMs: number, signal?: AbortSi
   const s = store();
   if (s.room.version > since) return Promise.resolve(s.room);
   return new Promise((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const done = () => {
-      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
       s.waiters.delete(done);
+      signal?.removeEventListener("abort", done);
       resolve(s.room);
     };
-    const timer = setTimeout(done, timeoutMs);
+    if (signal?.aborted) {
+      resolve(s.room);
+      return;
+    }
+    timer = setTimeout(done, timeoutMs);
     s.waiters.add(done);
-    signal?.addEventListener("abort", done);
+    signal?.addEventListener("abort", done, { once: true });
+    // Close the race where the room changes or the request aborts while the waiter is being registered.
+    if (s.room.version > since || signal?.aborted) done();
   });
 }
 
