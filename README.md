@@ -19,10 +19,10 @@ Team **Git Push and Pray**
 
 </div>
 
-Setup Instructions:\n
-git clone https://github.com/aryankalra404/HackSprint\n
-cd web\n
-npm run dev
+Setup Instructions:  
+git clone https://github.com/aryankalra404/HackSprint. 
+cd web. 
+npm run dev. 
 
 ---
 
