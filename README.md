@@ -1,5 +1,8 @@
 <div align="center">
 
+**PPT:** https://drive.google.com/file/d/1Et2ReRt8FW2MJp_U0RIgzbMFYAT_YETk/view?usp=sharing<br>
+**Short demo of VR:** https://www.youtube.com/watch?v=E9vuokGE2ao
+
 # DryRun
 
 ### Rehearse the meeting before it happens.
