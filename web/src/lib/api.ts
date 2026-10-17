@@ -111,6 +111,7 @@ export async function getMeeting(id: string): Promise<MeetingDetail | null> {
 const FRESH_MS = 2_500;
 const SETTLED_MS = 30_000;
 const reads = ((globalThis as { __dryrunReads?: Map<string, { until: number; value: Promise<unknown> }> }).__dryrunReads ??= new Map());
+let readsEpoch = 0;
 
 export async function readOnce<T>(key: string, keepFor: (value: T) => number, load: () => Promise<T>): Promise<T> {
   // n8n's answer can change at any time, so it's read at request time, never while prerendering (the clock below needs it too)
@@ -118,12 +119,17 @@ export async function readOnce<T>(key: string, keepFor: (value: T) => number, lo
   const hit = reads.get(key);
   if (hit && Date.now() < hit.until) return hit.value as Promise<T>;
   const value = load();
+  const epoch = readsEpoch;
   // In flight: everyone asking now shares this request
   reads.set(key, { until: Number.POSITIVE_INFINITY, value });
   value.then(
-    (v) => reads.set(key, { until: Date.now() + keepFor(v), value }),
+    (v) => {
+      if (epoch === readsEpoch && reads.get(key)?.value === value) reads.set(key, { until: Date.now() + keepFor(v), value });
+    },
     // A failure is kept for a few seconds too, so pages that can't reach n8n don't retry it in a tight loop
-    () => reads.set(key, { until: Date.now() + FAILED_MS, value }),
+    () => {
+      if (epoch === readsEpoch && reads.get(key)?.value === value) reads.set(key, { until: Date.now() + FAILED_MS, value });
+    },
   );
   return value;
 }
@@ -141,6 +147,7 @@ export function n8nProblem(err: unknown): string {
 
 // After a change (a meeting added or retried), the next read goes to n8n
 export function forgetMeetingReads(): void {
+  readsEpoch++;
   reads.clear();
 }
 
