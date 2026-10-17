@@ -1,10 +1,11 @@
 import { convertDeck, DeckError } from "@/lib/deck";
-import { getBrief, setDeck } from "@/lib/room";
+import { getBrief, getRoom, setDeck } from "@/lib/room";
 import { startDeckResearch } from "@/lib/deckResearch";
 
 // The presenter uploads their deck from the web (contract: POST /api/room/deck). The laptop turns it into slide images,
 // puts it in the room, and the headset loads it on its next poll.
 export async function POST(request: Request) {
+  if (getRoom().phase === "live") return Response.json({ error: "The deck cannot change during a live rehearsal." }, { status: 409 });
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) return Response.json({ error: "Send the deck as multipart form data, in a field called file." }, { status: 400 });
@@ -23,5 +24,6 @@ export async function POST(request: Request) {
 }
 
 export function DELETE() {
+  if (getRoom().phase === "live") return Response.json({ error: "The deck cannot change during a live rehearsal." }, { status: 409 });
   return Response.json(setDeck(null));
 }
