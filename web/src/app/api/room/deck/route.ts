@@ -1,11 +1,23 @@
-import { convertDeck, DeckError } from "@/lib/deck";
+import { convertDeck, DeckError, MAX_DECK_BYTES } from "@/lib/deck";
 import { getBrief, getRoom, setDeck } from "@/lib/room";
 import { startDeckResearch } from "@/lib/deckResearch";
 
-// The presenter uploads their deck from the web (contract: POST /api/room/deck). The laptop turns it into slide images,
+// The presenter uploads their deck from the web (contract: POST /api/room/deck). The laptop turns the upload into slide images,
 // puts it in the room, and the headset loads it on its next poll.
 export async function POST(request: Request) {
   if (getRoom().phase === "live") return Response.json({ error: "The deck cannot change during a live rehearsal." }, { status: 409 });
+
+  // formData() buffers the request, so reject oversized or unbounded uploads before reading the body.
+  // Leave room for multipart headers around a file at the 100 MB file limit.
+  const contentLength = request.headers.get("content-length");
+  const requestBytes = contentLength && /^\d+$/.test(contentLength) ? Number(contentLength) : NaN;
+  if (!Number.isSafeInteger(requestBytes) || requestBytes < 0) {
+    return Response.json({ error: "Send a deck upload with a valid Content-Length header." }, { status: 411 });
+  }
+  if (requestBytes > MAX_DECK_BYTES + 1024 * 1024) {
+    return Response.json({ error: "That upload is over 100 MB." }, { status: 413 });
+  }
+
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) return Response.json({ error: "Send the deck as multipart form data, in a field called file." }, { status: 400 });
