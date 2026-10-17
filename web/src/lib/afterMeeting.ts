@@ -16,17 +16,20 @@ const MIN_PIECE_S = 1;
 // A 16-bit PCM WAV (what the meeting page records: 16 kHz mono), cut into WAVs of at most PIECE_S seconds each, in order
 export function cutWav(wav: Buffer, seconds = PIECE_S): Buffer[] {
   if (wav.length < 44 || wav.subarray(0, 4).toString("latin1") !== "RIFF" || wav.subarray(8, 12).toString("latin1") !== "WAVE") throw new Error("The recording isn't a WAV file");
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("The recording piece length is invalid");
   let at = 12;
   let fmt: Buffer | null = null;
   while (at + 8 <= wav.length) {
     const id = wav.subarray(at, at + 4).toString("latin1");
     const size = wav.readUInt32LE(at + 4);
+    if (size > wav.length - at - 8) throw new Error("The recording has an invalid WAV chunk");
     if (id === "fmt ") fmt = wav.subarray(at + 8, at + 8 + size);
     if (id === "data") {
-      if (!fmt || fmt.readUInt16LE(14) !== 16) throw new Error("The recording isn't 16-bit PCM");
+      if (!fmt || fmt.length < 16 || fmt.readUInt16LE(0) !== 1 || fmt.readUInt16LE(14) !== 16) throw new Error("The recording isn't 16-bit PCM");
       const channels = fmt.readUInt16LE(2);
       const rate = fmt.readUInt32LE(4);
       const frame = channels * 2;
+      if (channels < 1 || channels > 2 || rate < 1 || fmt.readUInt16LE(12) !== frame) throw new Error("The recording has invalid audio format");
       const data = wav.subarray(at + 8, Math.min(wav.length, at + 8 + size));
       const step = seconds * rate * frame;
       const pieces: Buffer[] = [];
