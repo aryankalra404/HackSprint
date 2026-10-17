@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AvatarId, ColorIndex, Twin, TwinChange, TwinFact, TwinListItem, TwinLogStep, TwinMeeting, TwinReading, TwinSource, TwinSummary } from "./contract";
+import type { AvatarId, ColorIndex, Twin, TwinBuildRequest, TwinChange, TwinFact, TwinListItem, TwinLogStep, TwinMeeting, TwinReading, TwinSource, TwinSummary } from "./contract";
 import { N8N_URL, forgetMeetingReads, jsonObjects, n8nRunUrl, parseOrNull, postToN8n, readOnce } from "./api";
 import { SAMPLE_TWIN_EMAIL, sampleTwin } from "./mock/twin";
 import { applyChanges, summarize } from "./twinView";
@@ -168,7 +168,7 @@ function addStep(run: TwinRun, s: StreamedStep) {
 }
 
 // Starts building a twin; one build per person at a time. Each real build is one n8n execution and one model call.
-export function startTwinBuild(input: { email: string; name?: string; company?: string; domain?: string }): TwinRun {
+export function startTwinBuild(input: TwinBuildRequest): TwinRun {
   const email = norm(input.email);
   const running = runs.get(email);
   if (running?.state === "running") return running;
@@ -202,7 +202,7 @@ function replaySample(run: TwinRun) {
   );
 }
 
-async function streamBuild(run: TwinRun, body: { email: string; name?: string; company?: string; domain?: string }) {
+async function streamBuild(run: TwinRun, body: TwinBuildRequest) {
   try {
     const res = await fetch(`${N8N_URL}/twin`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok || !res.body) throw new Error(`n8n /twin failed: ${res.status}`);

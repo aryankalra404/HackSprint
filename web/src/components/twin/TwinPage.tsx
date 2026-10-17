@@ -78,6 +78,9 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
   const who = shown.name || shown.email;
   const first = who.split(" ")[0];
   const building = run?.state === "running";
+  // n8n has never saved this person: there's nothing to update yet, so queued notes go with the first build (0.37)
+  const unbuilt = !twin.updated && !twin.sample;
+  const queuedNotes = queue.flatMap((c) => (c.op === "note" ? [{ text: c.text, kind: c.kind }] : []));
   const animating = play.mode !== "idle";
   const sourceOf = useMemo(() => new Map(view.sources.map((s) => [s.id, s])), [view.sources]);
   const connected = view.facts.filter((f) => f.status === "connected");
@@ -109,12 +112,15 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
   const build = async () => {
     stopTimers();
     setProblem(null);
-    const res = await fetch("/api/twin/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: twin.email, ...ask, name: twin.name || ask.name, company: twin.company || ask.company }) });
+    const notes = unbuilt ? queuedNotes : [];
+    const res = await fetch("/api/twin/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: twin.email, ...ask, name: twin.name || ask.name, company: twin.company || ask.company, notes }) });
     const r = (await res.json()) as TwinRun & { error?: string };
     if (!res.ok || r.state === "failed") {
       setProblem(r.error ?? "Couldn't start the build.");
       return;
     }
+    // Those notes are in n8n's build now; anything else queued is saved as usual once the twin exists
+    if (notes.length) setQueue((q) => q.filter((c) => c.op !== "note"));
     setRun(r);
     setPlay({ mode: "live", steps: r.steps, upto: r.steps.length, clock0: r.started });
   };
@@ -166,8 +172,8 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
   // Leaving with changes unsaved sends them anyway (one batch)
   const unsaved = useRef(queue);
   useEffect(() => {
-    unsaved.current = queue;
-  }, [queue]);
+    unsaved.current = unbuilt ? [] : queue;
+  }, [queue, unbuilt]);
   useEffect(() => {
     const flush = () => {
       if (unsaved.current.length) navigator.sendBeacon("/api/twin", JSON.stringify({ email: twin.email, changes: unsaved.current }));
@@ -216,9 +222,9 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
 
         <div className="flex flex-wrap items-center gap-2 print:hidden">
           <button type="button" onClick={build} disabled={building || (!n8n && !shown.sample)} className={btn("primary")}>
-            {building ? "n8n is building…" : shown.sources.length ? "Build again" : `Build ${first}'s twin`}
+            {building ? "n8n is building…" : shown.sources.length && !unbuilt ? "Build again" : `Build ${first}'s twin`}
           </button>
-          <button type="button" onClick={replay} disabled={building || animating || !shown.sources.length} className={btn("secondary")}>
+          <button type="button" onClick={replay} disabled={building || animating || unbuilt || !shown.sources.length} className={btn("secondary")}>
             <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3" fill="currentColor"><path d="M4.5 2.8v10.4a.6.6 0 0 0 .9.5l8.2-5.2a.6.6 0 0 0 0-1L5.4 2.3a.6.6 0 0 0-.9.5z" /></svg>
             Replay how n8n built it
           </button>
@@ -227,7 +233,7 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
             {shown.sample ? "The sample never reaches n8n: building it replays a recorded build." : n8n ? "A build is one n8n run. Replay costs nothing." : "n8n isn't set up on this laptop, so this twin can't be built here."}
           </span>
         </div>
-        {panel === "note" && <NoteForm first={first} onAdd={(text, kind) => { queueChange({ op: "note", text, kind }); setPanel(null); }} onCancel={() => setPanel(null)} />}
+        {panel === "note" && <NoteForm first={first} unbuilt={unbuilt} onAdd={(text, kind) => { queueChange({ op: "note", text, kind }); setPanel(null); }} onCancel={() => setPanel(null)} />}
 
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
           <Stat label="How well DryRun knows them" value={full.label} note={full.text} />
@@ -243,12 +249,22 @@ export function TwinPage({ initial, look, n8n, ask, run: initialRun }: Props) {
 
       {queue.length > 0 && (
         <div className="sticky top-3 z-30 -my-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink bg-surface px-4 py-3 text-sm shadow-lg shadow-ink/5 print:hidden" role="status">
-          <span>{plural(queue.length, "change")} to save. They go to n8n together, as one run.</span>
+          <span>
+            {unbuilt && queuedNotes.length
+              ? `${plural(queuedNotes.length, "note")} for ${first}'s first build. n8n reads them with your emails in the same run.`
+              : `${plural(queue.length, "change")} to save. They go to n8n together, as one run.`}
+          </span>
           <span className="flex gap-2">
             <button type="button" onClick={() => setQueue([])} className={btn("quiet", "sm")}>Undo</button>
-            <button type="button" onClick={() => save()} disabled={saving} className={btn("primary", "sm")}>
-              {saving ? "Saving…" : "Save"}
-            </button>
+            {unbuilt && queuedNotes.length ? (
+              <button type="button" onClick={build} disabled={building || !n8n} className={btn("primary", "sm")}>
+                {building ? "n8n is building…" : "Build with these notes"}
+              </button>
+            ) : (
+              <button type="button" onClick={() => save()} disabled={saving} className={btn("primary", "sm")}>
+                {saving ? "Saving…" : "Save"}
+              </button>
+            )}
           </span>
         </div>
       )}
@@ -596,7 +612,7 @@ function Stat({ label, value, note }: { label: string; value: number | string; n
   );
 }
 
-function NoteForm({ first, onAdd, onCancel }: { first: string; onAdd: (text: string, kind: TwinFactKind) => void; onCancel: () => void }) {
+function NoteForm({ first, unbuilt, onAdd, onCancel }: { first: string; unbuilt: boolean; onAdd: (text: string, kind: TwinFactKind) => void; onCancel: () => void }) {
   const [text, setText] = useState("");
   const [kind, setKind] = useState<TwinFactKind>("context");
   return (
@@ -621,7 +637,9 @@ function NoteForm({ first, onAdd, onCancel }: { first: string; onAdd: (text: str
             <option value="promised">something you promised</option>
           </select>
         </label>
-        <span className="text-xs text-muted">{text.length >= 300 ? "Long text is kept as a source; n8n reads it for facts on the next build." : "Kept as you wrote it, marked “you added this”."}</span>
+        <span className="text-xs text-muted">{text.length >= 300
+            ? unbuilt ? "Long text is kept as a source; n8n reads it for facts when you build." : "Long text is kept as a source; n8n reads it for facts on the next build."
+            : "Kept as you wrote it, marked “you added this”."}</span>
         <span className="ml-auto flex gap-2">
           <button type="button" onClick={onCancel} className={btn("quiet", "sm")}>Cancel</button>
           <button type="submit" className={btn("primary", "sm")}>Add</button>

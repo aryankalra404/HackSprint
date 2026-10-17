@@ -2023,6 +2023,19 @@ const ownTitle = s => s.type === 'email' && ((String(s.title).startsWith('Your b
 const gone = new Set(twin.sources.filter(ownTitle).map(s => s.id));
 twin.sources = twin.sources.filter(s => !gone.has(s.id));
 twin.facts = twin.facts.filter(f => !gone.has(f.source_id));
+// The presenter's notes sent with the build (0.37), added as a note change would add them, so a twin of someone with no emails (their
+// pasted profile) is read in this same run
+const notes = (Array.isArray(req.notes) ? req.notes : []).map(x => (x && typeof x === 'object' ? x : { text: x }))
+  .map(x => ({ text: String(x.text || '').trim().slice(0, 8000), kind: KINDS.includes(x.kind) ? x.kind : 'context' })).filter(x => x.text).slice(0, 5);
+let sN = maxId(twin.sources, 's');
+let fN = maxId(twin.facts, 'f');
+const now = new Date().toISOString();
+notes.forEach(({ text, kind }) => {
+  if (twin.sources.some(s => s.type === 'manual' && s.text === text)) return;
+  const s = { id: 's' + (++sN), type: 'manual', title: text.length < 300 ? 'Your note' : 'Text you pasted', date: now.slice(0, 10), status: 'connected', why: 'You added this', key: 'manual:' + now + ':' + sN, text };
+  twin.sources.push(s);
+  if (text.length < 300) twin.facts.push({ id: 'f' + (++fN), kind, text: text.slice(0, 120), source_id: s.id, quote: text, status: 'connected', added: now });
+});
 // What's there already is drawn first, so a replay starts from nothing
 const kept = twin.sources.filter(s => s.status !== 'rejected');
 const facts = twin.facts.filter(f => f.status !== 'rejected');
@@ -2232,7 +2245,10 @@ const ids = {};
 const facts = old.concat(fresh);
 const connected = new Set(facts.filter(f => f.status === 'connected').map(f => f.id));
 const held = r => ({ text: String(r.text || '').slice(0, 80), evidence: Array.from(new Set((r.evidence || []).map(e => ids[e] || e))).filter(id => connected.has(id)) });
-let readings = (d.readings || []).map(held).filter(r => r.text && r.evidence.length >= 2).slice(0, 3);
+// Two readings on exactly the same evidence say one thing twice (the second is usually a stretch): the first stays
+const seenEvidence = new Set();
+const distinct = r => { const k = r.evidence.slice().sort().join(','); if (seenEvidence.has(k)) return false; seenEvidence.add(k); return true; };
+let readings = (d.readings || []).map(held).filter(r => r.text && r.evidence.length >= 2).filter(distinct).slice(0, 3);
 // Readings are read afresh each build; with none new, last time's stay while their evidence holds
 if (!readings.length) readings = g.twin.readings.map(held).filter(r => r.text && r.evidence.length >= 2);
 readings = readings.map((r, i) => ({ id: 'r' + (i + 1), ...r }));

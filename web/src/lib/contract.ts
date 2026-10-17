@@ -769,3 +769,12 @@ export type TwinChange =
   | { op: "alias"; email: string }
   | { op: "delete"; fact_id: string }
   | { op: "forget" };
+
+// POST /twin: who to build, and (0.37) the presenter's notes on someone n8n has no twin of yet, read in the same build
+export interface TwinBuildRequest {
+  email: string;
+  name?: string;
+  company?: string;
+  domain?: string;
+  notes?: { text: string; kind?: TwinFactKind }[];
+}

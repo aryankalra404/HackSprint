@@ -1,6 +1,6 @@
 # Webhook contract
 
-**Version 0.36, DRAFT. Agree on this with the whole team before anyone builds against it.**
+**Version 0.37, DRAFT. Agree on this with the whole team before anyone builds against it.**
 Any change here bumps the version and gets a line in the changelog at the bottom. The VR and web clients send identical JSON. Fields marked *(VR)* are optional and omitted by the web client.
 
 There is one headset and one room. The laptop running the web app is the hub:
@@ -115,9 +115,9 @@ Field notes:
 ### POST `/twin` (streamed)
 Builds or refreshes a twin. One execution and one model call.
 ```json
-{ "email": "rajiv.menon@kaverifreight.in", "name": "Rajiv Menon", "company": "Kaveri Freight", "domain": "kaverifreight.in" }
+{ "email": "rajiv.menon@kaverifreight.in", "name": "Rajiv Menon", "company": "Kaveri Freight", "domain": "kaverifreight.in", "notes": [{ "text": "string", "kind": "context" }] }
 ```
-`name`, `company` and `domain` are optional (from the meeting the presenter came from). n8n loads the row (or starts one), reads up to 20 of the presenter's emails from or to every address (connected), the real meetings they were in, their name in other emails, the company's team page and news with their full name and company (suggestions), then extracts facts with quotes and readings with evidence, drops what fails the rules, merges with what's there (no duplicates, rejected stays rejected, the presenter's own notes are never overwritten) and saves.
+`name`, `company` and `domain` are optional (from the meeting the presenter came from). `notes` *(0.37)* are optional (each `{ text, kind }` as in a `note` change, or a plain string, kind `context`): the presenter's queued notes on a twin n8n hasn't built yet (their pasted profile, for someone you have no emails with), added first exactly as a `note` change would add them (below), so they're read in the same build: one execution instead of a build, a save and another build. `/twin/update` only changes a twin that exists. n8n loads the row (or starts one), reads up to 20 of the presenter's emails from or to every address (connected), the real meetings they were in, their name in other emails, the company's team page and news with their full name and company (suggestions), then extracts facts with quotes and readings with evidence, drops what fails the rules, merges with what's there (no duplicates, rejected stays rejected, the presenter's own notes are never overwritten) and saves.
 
 The answer streams like `/prep`'s (n8n's `{ type, content }` objects). Each `item` is a step, `{ "step": { "step": "load" | "emails" | "meetings" | "mentions" | "fallback" | "extract" | "save", "text": "Found 7 emails with rajiv.menon@kaverifreight.in", "adds": { "sources": [source], "facts": [fact], "readings": [reading] } } }` (the first also has `execution_id` and `workflow_id`), then last `{ "twin": twin }`. `adds` holds what that step added, whole, so the page can draw it as it arrives; the laptop stamps each step's `t` as it arrives.
 
@@ -765,3 +765,4 @@ A voice line n8n generated (a `/prep` line or a `/turn` reaction), saved by the 
 - 0.34 (17 Oct): a meeting that flows. `/turn` gains `replaces_t` (an answer the presenter carried on after a pause is sent again whole, and the laptop drops the turn it replaces), `pause` segments near the end of the pitch (n8n checks the words for a finish and answers `pitch_over` with the chair opening the floor) and `floor_opened` on `pitch_end`. n8n's rules: `hand_back` only during the pitch and never with a question, no follow-up on a closed thread, no new question while another waits for its answer. The clients drop a question decided before another was asked, let a hand that's been ignored for 6 s of speech cut in, and the chair's spoken rescue comes at most once per slide. The last slide's wrap-up waits 3 s and counts down 2 (was 4 and 3).
 - 0.35 (17 Oct): a livelier panel that knows when you've finished. Prep plans about 2 questions during a 2 to 4 minute pitch, never on the title or last slide, earlier in the slide; at a planned point the panelist asks unless it was answered; a slide can get a brief `acknowledge`. The last slide gets no question during the pitch, no nudge and no `time_up` (at the cut, a plain `pitch_end`); the pitch clock stops during questions asked in the pitch. More finish phrases ("that was it for my pitch"), and on the last slide the model decides when the words don't. No JSON change.
 - 0.36 (17 Oct): the room gains `side_offset` (moves the presenter left or right in VR, set from a bar on the web next to the height bar), and `PUT /api/room/settings` takes it. For lining up with the seat while sitting.
+- 0.37 (17 Oct): `POST /twin` takes optional `notes` (`{ text, kind }`), added as the presenter's notes before the build reads its sources, so a twin of someone you have no emails with can start from their pasted profile in one run.
