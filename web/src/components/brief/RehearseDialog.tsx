@@ -12,29 +12,47 @@ const POLL_MS = 500;
 const DONE_HOLD_MS = 1500;
 
 interface Props {
-  open: boolean;
   members: DraftMember[];
   headset: { connected: boolean; via: "wifi" | "usb" };
-  // Starts n8n's prep for this run; answers with where to rehearse, or an error
-  onStart: (where: RehearseIn, runId: string) => Promise<{ ok: true; value: string } | { ok: false; error: string }>;
+  // Is there a deck in the room? Without one the dialog asks first.
+  hasDeck: boolean;
+  // When n8n last prepared exactly this rehearsal, or null; asked each time the dialog opens
+  findReusable: () => Promise<string | null>;
+  // Starts n8n's prep for this run (or reuses the last one, unless `fresh`); answers with where to rehearse, or an error
+  onStart: (where: RehearseIn, runId: string, fresh: boolean) => Promise<{ ok: true; value: string } | { ok: false; error: string }>;
+  onAddDeck: () => void;
   onOpen: (path: string) => void;
   onClose: () => void;
 }
 
 // Rehearse: pick where (this laptop or the headset), then watch n8n prepare the rehearsal step by step.
 // The same n8n prep runs either way; only where the panel sits differs.
-export function RehearseDialog({ open, members, headset, onStart, onOpen, onClose }: Props) {
+// Mounted only while open, so each opening starts from the choice.
+export function RehearseDialog({ members, headset, hasDeck, findReusable, onStart, onAddDeck, onOpen, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [where, setWhere] = useState<RehearseIn | null>(null);
   const [run, setRun] = useState<PrepRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  // Going on without a deck, once asked
+  const [noDeck, setNoDeck] = useState(false);
+  // When n8n prepared this same rehearsal, and whether to ask it again anyway
+  const [reusedAt, setReusedAt] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(false);
   const busy = where != null && !error;
 
   useEffect(() => {
-    if (open && !dialog.current?.open) dialog.current?.showModal();
-    if (!open && dialog.current?.open) dialog.current.close();
-  }, [open]);
+    if (!dialog.current?.open) dialog.current?.showModal();
+    let live = true;
+    findReusable().then(
+      (at) => live && setReusedAt(at),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening, with the panel as it is then
+  }, []);
 
   async function start(choice: RehearseIn) {
     const runId = `prep-${Date.now().toString(36)}`;
@@ -56,7 +74,7 @@ export function RehearseDialog({ open, members, headset, onStart, onOpen, onClos
       }
     };
     poll();
-    const res = await onStart(choice, runId);
+    const res = await onStart(choice, runId, fresh);
     polling = false;
     try {
       const last = (await (await fetch(`/api/prep/progress?run=${runId}`, { cache: "no-store" })).json()) as PrepRun | null;
@@ -92,8 +110,10 @@ export function RehearseDialog({ open, members, headset, onStart, onOpen, onClos
       }}
       className="m-auto w-[min(94vw,44rem)] rounded-2xl border border-line bg-surface p-0 text-ink shadow-xl backdrop:bg-ink/50"
     >
-      {where == null ? (
-        <Choose members={members} headset={headset} onPick={start} onClose={onClose} />
+      {where == null && !hasDeck && !noDeck ? (
+        <NoDeck onAddDeck={onAddDeck} onSkip={() => setNoDeck(true)} onClose={onClose} />
+      ) : where == null ? (
+        <Choose members={members} headset={headset} onPick={start} onClose={onClose} reusedAt={reusedAt} fresh={fresh} onFresh={setFresh} />
       ) : (
         <Progress
           where={where}
@@ -108,7 +128,43 @@ export function RehearseDialog({ open, members, headset, onStart, onOpen, onClos
   );
 }
 
-function Choose({ members, headset, onPick, onClose }: Pick<Props, "members" | "headset" | "onClose"> & { onPick: (w: RehearseIn) => void }) {
+// No deck in the room: say what that changes, and offer to add one first
+function NoDeck({ onAddDeck, onSkip, onClose }: { onAddDeck: () => void; onSkip: () => void; onClose: () => void }) {
+  return (
+    <div className="flex flex-col gap-5 p-5 sm:p-6">
+      <header className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 id="rehearse-title" className="font-display text-2xl leading-tight">
+            Rehearse without a deck?
+          </h2>
+          <p className="text-sm text-ink-2">
+            n8n plans the rehearsal around your slides. Without them, the TV in the room stays blank, the panel keeps every question for the end
+            (questions during the pitch follow the slides), and n8n has only the brief to go on.
+          </p>
+        </div>
+        <CloseButton onClick={onClose} />
+      </header>
+      <footer className="flex flex-wrap justify-end gap-2">
+        <button type="button" onClick={onSkip} className={btn("secondary")}>
+          Rehearse without one
+        </button>
+        <button type="button" onClick={onAddDeck} className={btn("primary")}>
+          Add your deck
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+function Choose({
+  members,
+  headset,
+  onPick,
+  onClose,
+  reusedAt,
+  fresh,
+  onFresh,
+}: Pick<Props, "members" | "headset" | "onClose"> & { onPick: (w: RehearseIn) => void; reusedAt: string | null; fresh: boolean; onFresh: (fresh: boolean) => void }) {
   return (
     <div className="flex flex-col gap-5 p-5 sm:p-6">
       <header className="flex items-start justify-between gap-4">
@@ -120,6 +176,18 @@ function Choose({ members, headset, onPick, onClose }: Pick<Props, "members" | "
         </div>
         <CloseButton onClick={onClose} />
       </header>
+      {reusedAt && (
+        <div className="flex flex-col gap-2 rounded-xl bg-paper px-4 py-3 text-sm">
+          <p>
+            <span className="font-medium">Nothing has changed since n8n prepared this at {when(reusedAt)}.</span>{" "}
+            <span className="text-ink-2">Same panel, deck, pitch length and goal, and no debrief since, so that rehearsal is reused with no n8n run.</span>
+          </p>
+          <label className="inline-flex items-center gap-2 text-ink-2">
+            <input type="checkbox" checked={fresh} onChange={(e) => onFresh(e.target.checked)} className="size-4 accent-ink" />
+            Ask n8n to prepare it again anyway
+          </label>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Option
           onClick={() => onPick("browser")}
@@ -321,6 +389,13 @@ function CloseButton({ onClick }: { onClick: () => void }) {
       </svg>
     </button>
   );
+}
+
+// "14:32", or "14:32, 15 Oct" on another day
+function when(iso: string): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${time}, ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
 }
 
 // Whole seconds since `from`, ticking while `running`

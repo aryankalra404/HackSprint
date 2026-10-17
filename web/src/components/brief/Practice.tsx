@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BriefInput, DraftMember, PanelProposal, PanelSuggestion, PitchSuggestion, Room, Seat, TwinSummary } from "@/lib/contract";
 import { ALL_COLORS, ALL_SEATS, AVATARS, MAX_PANEL } from "@/lib/personas";
-import { briefPanelAction } from "@/app/m/actions";
+import { briefPanelAction, reusablePrepAction } from "@/app/m/actions";
 import { PanelTable, type Selection } from "./PanelTable";
 import { PanelEditor } from "./PanelEditor";
 import { useRoom } from "@/lib/useRoom";
@@ -46,6 +46,9 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
   // The rehearse dialog: where to rehearse, then n8n's prep step by step
   const [choosing, setChoosing] = useState(false);
   const router = useRouter();
+
+  // Next keeps this page's state when it's left (Activity): the dialog closes then, so coming back shows the table, not the last prep
+  useLayoutEffect(() => () => setChoosing(false), []);
 
   // Is the headset following the room? Checked every few seconds while editing.
   useEffect(() => {
@@ -147,7 +150,9 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
               <PanelTable members={members} selection={selection} onSelect={setSelection} onMove={move} twins={twins} />
             </div>
           </section>
-          <DeckPanel room={room} />
+          <div id="deck">
+            <DeckPanel room={room} />
+          </div>
         </div>
         <aside className="flex min-h-0 flex-col rounded-2xl border border-line bg-surface">
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -185,14 +190,23 @@ export function Practice({ meeting, input, draft, pitch, panel, nameCards, room:
               Rehearse
             </button>
             {notReady && <p className="text-xs text-muted">Give everyone at the table a role first.</p>}
-            <RehearseDialog
-              open={choosing}
-              members={members}
-              headset={headset}
-              onStart={(where, runId) => briefPanelAction(input, proposal.draft_id, members, where, runId)}
-              onOpen={(path) => router.push(path)}
-              onClose={() => setChoosing(false)}
-            />
+            {choosing && (
+              <RehearseDialog
+                members={members}
+                headset={headset}
+                hasDeck={room.deck != null}
+                findReusable={() => reusablePrepAction(input, proposal.draft_id, members)}
+                onStart={(where, runId, fresh) => briefPanelAction(input, proposal.draft_id, members, where, runId, fresh)}
+                onAddDeck={() => {
+                  setChoosing(false);
+                  document.getElementById("deck")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  // Still in the click, so the browser lets the file picker open
+                  document.querySelector<HTMLInputElement>("#deck input[type=file]")?.click();
+                }}
+                onOpen={(path) => router.push(path)}
+                onClose={() => setChoosing(false)}
+              />
+            )}
           </footer>
         </aside>
       </main>
