@@ -1206,8 +1206,11 @@ const interrupters = (b.personas || []).filter(p => p.manner !== 'waits');
 const spoken = transcript.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z']+/g, ' ').split(' ').filter(Boolean);
 // Clear ones anywhere in the last words ("happy to take questions"); short ones ("that's it", "thank you") only as the very last words
 const FINISH = /(end of (the|my|our) (pitch|presentation)|(done|finished) with (the|my|our) (pitch|presentation)|(happy|glad|open|ready) to (take|answer|hear) (any |your |some )?questions|(any|over to you for) questions|open (it|the floor) (up )?(to|for) (you|questions)|over to (you|the panel)|thank you (so much |very much |all )?for (listening|your time|having)|that (concludes|wraps up|was) (my|our|the) (pitch|presentation|demo))/;
-const LAST = /(that'?s (all|it|everything|about it)|that (was|is) (it|all|everything)|(i ?'?m|i am|we ?'?re|we are) (done|finished)|thank you|thanks)( so much| very much| all| everyone| from (me|us|our side|my side))?( for now| for today| guys)?$/;
-const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')));
+const LAST = /(that'?s (all|it|everything|about it)|that (was|is) (it|all|everything)|(i ?'?m|i am|we ?'?re|we are) (done|finished))( from (me|us|our side|my side))?( for now| for today| guys)?$/;
+// A bare "thank you" only on the last slide (or without a deck): Whisper sometimes adds one after the last words
+const THANKS = /(thank you|thanks)( so much| very much| all| everyone)?$/;
+const onLast = !(b.slides || []).length || r.slide_index >= (b.slides || []).length - 1;
+const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (onLast && THANKS.test(spoken.slice(-4).join(' '))));
 const skip = r.pause || (r.mode === 'segment' && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide)));
 const skip_note = !skip ? '' : finished ? 'You said you had finished, so the chair opened the floor.'
   : r.pause ? 'You paused, and the panel waited for you to go on.'
