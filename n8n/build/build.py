@@ -285,7 +285,18 @@ const shaped = $('Shape the event').isExecuted ? $('Shape the event').all() : $(
 return $input.all().map((item, i) => {
   const d = JSON.parse(replyText(item.json) || '{}');
   const m = shaped[i].json;
-  const domain = d.company_domain || ((m.attendees[0] && m.attendees[0].email) || '').split('@')[1] || '';
+  const publicDomain = value => {
+    const domain = String(value || '').trim().toLowerCase().replace(/^https?:\\/\\//, '').split('/')[0];
+    if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) return '';
+    if (domain === 'localhost' || domain.endsWith('.local') || domain.endsWith('.internal')) return '';
+    const octets = domain.split('.').map(Number);
+    if (octets.length === 4 && octets.every(Number.isInteger) && octets.every(n => n >= 0 && n <= 255)) {
+      const [first, second] = octets;
+      if (first === 0 || first === 10 || first === 127 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168)) return '';
+    }
+    return domain;
+  };
+  const domain = publicDomain(d.company_domain) || publicDomain(((m.attendees[0] && m.attendees[0].email) || '').split('@')[1]);
   // Added by hand (or "Prepare anyway"): always prepared, and the reason says so when n8n would have skipped it
   const why = m.from_web && !d.prepare ? "Prepared because you asked. n8n's view: " + (d.why || 'not a high-stakes meeting') : (d.why || '');
   return { json: { ...m, prepare: m.from_web || !!d.prepare, why, company: d.company || m.title, company_domain: domain, kind: d.kind || 'other' } };
@@ -340,7 +351,7 @@ return [{ json: { meeting, emails, count: msgs.length } }];""", [{"meeting": MEE
     c += make_node("website", "node", "n8n-nodes-base.httpRequest", 4.5, "Read their website", {
         "method": "GET",
         "url": Expr("https://{{ $('Summarise the emails').first().json.meeting.company_domain || 'invalid.invalid' }}"),
-        "options": {"timeout": 15000, "redirect": {"redirect": {}}, "response": {"response": {"responseFormat": "text"}}},
+      "options": {"timeout": 15000, "redirect": {"redirect": {"followRedirects": False}}, "response": {"response": {"responseFormat": "text"}}},
     }, [{"data": "<html></html>"}], extra={"onError": "continueRegularOutput"})
     c += code_node("gatherSources", "Gather the sources", """
 // Up to 15 recent headlines (with date, publisher and link) and the readable text of their homepage
