@@ -207,7 +207,28 @@ export function attachHeadsetRelay(server: http.Server) {
   server.on("upgrade", (request, socket, head) => {
     let pathname: string;
     try {
-      pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+      const url = new URL(request.url ?? "/", "http://localhost");
+      pathname = url.pathname;
+      // Browsers on another origin must not be able to claim the headset role or join the room.
+      // Native Quest clients do not send Origin, so their existing connection flow remains supported.
+      const origin = request.headers.origin;
+      const host = request.headers.host;
+      if (origin && url.searchParams.get("role") === "headset") {
+        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      if (origin && host) {
+        const originUrl = new URL(origin);
+        const requestHost = new URL(`http://${host}`);
+        const appPort = Number(process.env.PORT) || 3000;
+        const originPort = originUrl.port ? Number(originUrl.port) : originUrl.protocol === "https:" ? 443 : 80;
+        if (originUrl.hostname !== requestHost.hostname || originPort !== appPort) {
+          socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+      }
     } catch {
       socket.destroy();
       return;
