@@ -45,6 +45,19 @@ Columns of **DryRun people** (one row per real person, keyed by lower-cased emai
 
 Columns of **DryRun sessions** (one row per run of a panel): `session_id, meeting_id, at, status (debriefing | done | failed), overall, headline, bundle, telemetry, debrief_status, debrief, execution_id, workflow_id, updated_at`.
 
+## The n8n plan: Pro, and going back
+The account (`aryankalra47`) is on **n8n Pro since 17 Oct**: 10,000 executions a month (the trial had 1,000), 20 at once, 5 days of workflow history, unlimited steps and 5,000 AI assistant credits.
+
+**Nothing in DryRun's code depends on Pro.** Everything was built to fit the trial's cap, so dropping back to a smaller plan needs no code change. Only habits change:
+- **Budget executions again.** A rehearsal costs about 15 to 25: rehearsal prep 1, deck research 1 (its Search Google News tool runs as separate executions), one per turn (pause checks near the end of the pitch included; about 12 to 20) and the debrief 1. Divide the new plan's monthly executions by about 20 for the number of rehearsals left, and keep real test runs few (prefer `DRYRUN_FAKE_TURNS=1` and offline checks of the expression nodes, as on 17 Oct).
+- **Keep exporting after every deploy** (`wf*.json`, see Changing a workflow): with less workflow history, the export is the only way back from a bad deploy. With Pro, a bad deploy can also be undone from the workflow's version history (`restore_workflow_version` through the MCP server) for 5 days.
+- **Keep the savings that are already built:** shared meeting reads (`readOnce`), the prep cache, the debrief streaming instead of polling, the turn skipping the model where no question is possible, pause checks only near the end of the pitch. Don't undo them while on Pro either: most also save Groq tokens or seconds.
+
+**Considered with Pro on 17 Oct, and not done, so don't redo them on the strength of the plan alone:**
+- *Send an answer at the first short pause and let the carry-on logic (`replaces_t`) throw it away if the presenter continues.* About 0.8 s faster, but it roughly doubles model calls during the questions. Each turn's model call is about 3,500 Groq tokens (execution 344), and Groq's free tier allows 8,000 a minute, so it would push turns onto the slower Gemini fallback. It would also play the filler during short thinking pauses, and the mic is muted while it plays. Worth reconsidering only with a paid Groq tier.
+- *Pause checks all through the pitch.* The last slide (and a pitch without a deck) is already always checked, so the gain is only an early finish on a middle slide, while short phrases like "and that's it" mid-pitch would end it falsely.
+- *Use the AI assistant credits at runtime.* They're for n8n's in-editor assistant (building workflows on the canvas), not for workflows to call.
+
 ## Changing a workflow
 The n8n MCP server is set up for this project in Claude Code (local scope, so the token isn't in the repo). With it:
 1. Change `build/*.py`, run `python3 n8n/build/build.py`, and check the code with `validate_workflow`.
